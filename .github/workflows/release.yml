@@ -1,0 +1,127 @@
+name: release
+
+# Cross-compile the graft CLI, cache server and helper tools for all supported
+# operating systems and architectures, package them with checksums, and
+# attach them to a GitHub Release when a version tag is pushed.
+#
+# The gitaly server binary itself is intentionally NOT released here: it embeds
+# a full git build and must be compiled on the target platform (see
+# doc/development.md), usually via `make build`.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Tools shipped in the release. All are pure Go and cross-compile cleanly.
+  RELEASE_TOOLS: graft graft-cache graft-verify graft-bench
+
+jobs:
+  build:
+    name: build (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: linux, arch: amd64}
+          - {os: linux, arch: arm64}
+          - {os: darwin, arch: amd64}
+          - {os: darwin, arch: arm64}
+          - {os: windows, arch: amd64}
+          - {os: windows, arch: arm64}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compute version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(git describe --match 'v*' --tags 2>/dev/null | sed 's/^v//' || true)"
+          if [ -z "${version}" ]; then
+            revision="$(git rev-parse --short HEAD)"
+            version="$(cat VERSION 2>/dev/null || echo unknown)-g${revision}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Release version: ${version}"
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          ldflags="-X github.com/feder-cr/git-ai/internal/version.version=${{ steps.version.outputs.version }}"
+          ext=""
+          if [ "${{ matrix.os }}" = "windows" ]; then ext=".exe"; fi
+          mkdir -p "dist/git-ai-${{ steps.version.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"
+          for tool in ${RELEASE_TOOLS}; do
+            CGO_ENABLED=0 GOOS="${{ matrix.os }}" GOARCH="${{ matrix.arch }}" \
+              go build -trimpath -ldflags "${ldflags} -s -w" \
+              -o "dist/git-ai-${{ steps.version.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}/${tool}${ext}" \
+              "./cmd/${tool}"
+          done
+          chmod +x "dist/git-ai-${{ steps.version.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"/* || true
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="git-ai-${{ steps.version.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            (cd "dist/${pkg}" && zip -9 -r "../${pkg}.zip" .)
+          else
+            tar -C "dist/${pkg}" -czf "dist/${pkg}.tar.gz" .
+          fi
+          (cd dist && rm -rf "${pkg}")
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/git-ai-*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish a GitHub Release for tag pushes; workflow_dispatch runs
+    # just validate and upload artifacts.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum git-ai-* > checksums.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ github.ref_name }}" --verify-tag \
+            --generate-notes \
+            --title "git-ai ${{ github.ref_name }}" \
+            dist/*
