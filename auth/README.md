@@ -25,3 +25,10 @@ client-provided signature matches the computed signature the message is
 accepted. Next, the server checks if its current time is no more than
 30 seconds ahead or behind the timestamp. If the timestamp is too old
 or too new the request is denied. Otherwise it goes ahead.
+
+The window defaults to 30 seconds and can be widened with the
+`GITALY_TOKEN_VALIDITY` environment variable on the server, for example
+`GITALY_TOKEN_VALIDITY=10m`. This is meant for clients whose clock
+differs from the server's, such as machines without a working NTP sync;
+widening it also widens the window in which a stolen token can be
+replayed, so prefer fixing the client clock over widening the window.

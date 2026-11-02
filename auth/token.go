@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,13 +18,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// defaultTokenValidityDuration is the validation window of v2 tokens. Clients
+// whose clock is more than this far from the server's are denied.
+const defaultTokenValidityDuration = 30 * time.Second
+
 var (
 	//nolint:gochecknoglobals
 	// This infrastructure is required for testing purposes and there is no
 	// proper place to put it instead. While we could move it into the
 	// config, we certainly don't want to make it configurable for now, so
 	// it'd be a bad fit there.
-	tokenValidityDuration = 30 * time.Second
+	tokenValidityDuration = tokenValidityFromEnv()
 
 	errUnauthenticated = status.Errorf(codes.Unauthenticated, "authentication required")
 
@@ -35,6 +40,22 @@ var (
 		[]string{"version", "error"},
 	)
 )
+
+// tokenValidityFromEnv returns the validation window of v2 tokens as set by
+// the GITALY_TOKEN_VALIDITY environment variable, or the default when the
+// variable is unset or invalid. It lets an operator widen the window beyond
+// the default 30 seconds, so that clients whose clock differs from the
+// server's (for example a machine without working NTP) can still
+// authenticate.
+func tokenValidityFromEnv() time.Duration {
+	if v := os.Getenv("GITALY_TOKEN_VALIDITY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+
+	return defaultTokenValidityDuration
+}
 
 const tokenVersionV2 = "v2"
 

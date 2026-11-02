@@ -2,10 +2,17 @@ package server
 
 import (
 	netctx "context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +46,7 @@ import (
 	expcredentials "google.golang.org/grpc/experimental/credentials"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 func TestSanity(t *testing.T) {
@@ -440,4 +448,148 @@ sleep %v
 			require.NoError(t, err)
 		}
 	}
+}
+
+// tokenValidityHelperEnv makes the test binary act as a gitaly server whose
+// process environment decides the token validity window. The parent test uses
+// it to prove that the GITALY_TOKEN_VALIDITY environment variable widens the
+// window for a whole server process, exactly as the deployment sets it on the
+// gitaly service.
+const (
+	tokenValidityHelperEnv    = "GIT_AI_TOKEN_VALIDITY_HELPER"
+	tokenValidityHelperOutEnv = "GIT_AI_TOKEN_VALIDITY_HELPER_OUTPUT"
+)
+
+// TestTokenValidityHelperProcess is not a real test: it is the program the
+// parent test runs. It starts a gitaly server and performs a unary call with a
+// v2 token signed five minutes in the past, as a client whose clock lags the
+// server's would. Whether the call is accepted depends on the process's
+// GITALY_TOKEN_VALIDITY, which the auth package read before this test ran. The
+// outcome is written to the file named by the GIT_AI_TOKEN_VALIDITY_HELPER_OUTPUT
+// environment variable.
+func TestTokenValidityHelperProcess(t *testing.T) {
+	outPath := os.Getenv(tokenValidityHelperOutEnv)
+	if outPath == "" {
+		t.Skip("only runs as a helper process")
+	}
+
+	const token = "secret-token"
+	cfg := testcfg.Build(t, testcfg.WithBase(config.Cfg{
+		Auth: auth.Config{Token: token},
+	}))
+	path := runServer(t, cfg)
+
+	conn, err := dial(testhelper.Context(t), path, client.WithGrpcOptions([]grpc.DialOption{
+		grpc.WithPerRPCCredentials(skewedClockCredentials{token: token, skew: -5 * time.Minute}),
+	}))
+	if err != nil {
+		failTokenValidityHelper(t, outPath, "dial: %v", err)
+	}
+
+	err = performUnaryRequest(t, conn)
+	switch {
+	case err == nil:
+		writeTokenValidityHelperResult(t, outPath, "accepted")
+	case status.Code(err) == codes.PermissionDenied:
+		writeTokenValidityHelperResult(t, outPath, "denied")
+	default:
+		failTokenValidityHelper(t, outPath, "unexpected code %v: %v", status.Code(err), err)
+	}
+}
+
+// TestTokenValidityEnvWidensWindow proves end to end that a server process
+// started with GITALY_TOKEN_VALIDITY accepts a client whose clock is minutes
+// behind, while the default window rejects the same client.
+func TestTokenValidityEnvWidensWindow(t *testing.T) {
+	testCases := []struct {
+		desc string
+		env  []string
+		want string
+	}{
+		{desc: "default window rejects a slow client", want: "denied"},
+		{desc: "widened window accepts a slow client", env: []string{"GITALY_TOKEN_VALIDITY=10m"}, want: "accepted"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			require.Equal(t, tc.want, runTokenValidityHelper(t, tc.env...))
+		})
+	}
+}
+
+func runTokenValidityHelper(t *testing.T, extraEnv ...string) string {
+	t.Helper()
+
+	outPath := filepath.Join(t.TempDir(), "result")
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestTokenValidityHelperProcess$")
+	cmd.Env = withoutEnv(os.Environ(), "GITALY_TOKEN_VALIDITY")
+	cmd.Env = append(cmd.Env,
+		tokenValidityHelperEnv+"=1",
+		tokenValidityHelperOutEnv+"="+outPath,
+	)
+	cmd.Env = append(cmd.Env, extraEnv...)
+
+	require.NoError(t, cmd.Start())
+	require.NoError(t, cmd.Wait())
+	require.FileExists(t, outPath)
+
+	result, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+
+	return strings.TrimSpace(string(result))
+}
+
+// withoutEnv returns env without the variables named by drop.
+func withoutEnv(env []string, drop ...string) []string {
+	kept := make([]string, 0, len(env))
+	for _, kv := range env {
+		key := strings.SplitN(kv, "=", 2)[0]
+		dropKey := false
+		for _, d := range drop {
+			if key == d {
+				dropKey = true
+				break
+			}
+		}
+		if !dropKey {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
+}
+
+func writeTokenValidityHelperResult(t *testing.T, path, result string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(result+"\n"), 0o600))
+	os.Exit(0)
+}
+
+func failTokenValidityHelper(t *testing.T, path, format string, args ...any) {
+	t.Helper()
+	_ = os.WriteFile(path, []byte("error "+fmt.Sprintf(format, args...)+"\n"), 0o600)
+	os.Exit(1)
+}
+
+// skewedClockCredentials sends a v2 token signed at now+skew, as a client
+// whose clock differs from the server's by skew would.
+type skewedClockCredentials struct {
+	token string
+	skew  time.Duration
+}
+
+func (skewedClockCredentials) RequireTransportSecurity() bool { return false }
+
+func (c skewedClockCredentials) GetRequestMetadata(netctx.Context, ...string) (map[string]string, error) {
+	message := strconv.FormatInt(time.Now().Add(c.skew).Unix(), 10)
+	signature := hmacV2([]byte(c.token), message)
+
+	return map[string]string{"authorization": "Bearer " + fmt.Sprintf("v2.%x.%s", signature, message)}, nil
+}
+
+func hmacV2(secret []byte, message string) []byte {
+	mac := hmac.New(sha256.New, secret)
+	// hash.Hash never returns an error.
+	_, _ = mac.Write([]byte(message))
+
+	return mac.Sum(nil)
 }
