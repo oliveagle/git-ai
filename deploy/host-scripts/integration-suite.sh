@@ -32,6 +32,12 @@ export GRAFT_USER="${GRAFT_USER:-it-runner}"
 export GRAFT_AUTHOR="integration test <it@localhost>"
 graft="$LANE_DIR/current/bin/graft"
 
+# The storage commands name their repository with -repo, so they must not run
+# inside a workspace: graft refuses a -repo that is not the workspace's own.
+neutral="$work/neutral"
+mkdir -p "$neutral"
+storage() { (cd "$neutral" && "$graft" storage "$@"); }
+
 passes=0
 failures=0
 results=""
@@ -53,15 +59,41 @@ verdict() {
   fi
 }
 
+# at_least and is_zero read a count that may be empty when the query behind
+# it failed: empty or non-numeric is a failure, never a passing comparison.
+at_least() {
+  v="$(printf '%s' "${1:-}" | tr -d '[:space:]')"
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$v" -ge "$2" ]
+}
+is_zero() { v="$(printf '%s' "${1:-}" | tr -d '[:space:]')"; [ "$v" = "0" ]; }
+
 # psql on the lane's database, and on another database of the same server.
 psql_db() { docker exec -u postgres "$PG_CONTAINER" psql -p "$PG_IN_CONTAINER_PORT" -d "$1" -tAc "$2" 2>/dev/null | tr -d '[:space:]'; }
 psql_this() { psql_db "$LANE_PG_DB" "$1"; }
 psql_other() { psql_db "$OTHER_PG_DB" "$1"; }
 
-# The bucket's directory on the host (RustFS keeps one directory per bucket).
-rustfs_data() {
-  docker inspect "$RUSTFS_CONTAINER" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}'
+# Object counts go through the object store container: the bucket directories
+# are owned by its uid, so the deploy user cannot walk them from the host.
+bucket_files() {
+  docker exec "$RUSTFS_CONTAINER" sh -c "find /data/$1 -type f 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]'
 }
+
+# The cache daemon's object_hits counter, read from its metrics endpoint.
+object_hits() {
+  curl -s --max-time 3 "http://127.0.0.1:$LANE_CACHE_METRICS_PORT/stats" |
+    sed -n 's/.*"object_hits":\([0-9]*\).*/\1/p'
+}
+
+# What the lanes hold before the run writes anything, so the isolation case
+# can show growth in this lane's bucket and none in the other.
+this_bucket_before="$(bucket_files "${LANE_BUCKET:-}")"
+this_bucket_before="${this_bucket_before:-0}"
+other_bucket_before=""
+if [ -n "${OTHER_BUCKET:-}" ]; then
+  other_bucket_before="$(bucket_files "$OTHER_BUCKET")"
+  other_bucket_before="${other_bucket_before:-0}"
+fi
 
 repo_main="it-$run_id-main.git"
 repo_other="it-$run_id-side.git"
@@ -72,7 +104,7 @@ begin "repo_create_clone"
 {
   "$graft" repo create "$repo_main" --initial-commit --branch main --json
   "$graft" clone "$GRAFT_ADDRESS" "$repo_main" "$work/main" --branch main
-} >>"$report_log" 2>&1
+} >>"$report_log" 2>&1 || true
 if [ -f "$work/main/README.md" ]; then verdict 0 "cloned $repo_main"; else verdict 1 "no README.md in the clone"; fi
 
 # --- 2. a clean workspace says so ----------------------------------------
@@ -95,11 +127,14 @@ begin "commit_land_read"
   "$graft" log --limit 5
   "$graft" show HEAD --json
   "$graft" cat "HEAD:$file_a"
-} >>"$report_log" 2>&1
-rc=0
-(cd "$work/main" && "$graft" cat "HEAD:$file_a" 2>/dev/null | tr -d '\n') | sed -n 's/.*first line.*second line.*/ok/p' >>"$report_log" || rc=1
-landed="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repository_id = (SELECT id FROM graft_repositories WHERE name = '$repo_main')")"
-if [ "${landed:-0}" -ge 2 ]; then verdict 0 "$landed changelog rows"; else verdict 1 "changelog rows: ${landed:-none}"; fi
+} >>"$report_log" 2>&1 || true
+head_file="$(cd "$work/main" && "$graft" cat "HEAD:$file_a" 2>/dev/null | tr -d '\n')"
+landed="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repo_id = (SELECT repo_id FROM graft_repositories WHERE relative_path = '$repo_main')")"
+case "$head_file" in
+  *"first line"*"second line"*)
+    if at_least "${landed:-0}" 2; then verdict 0 "$landed changelog rows, file content kept"; else verdict 1 "changelog rows: ${landed:-none}"; fi ;;
+  *) verdict 1 "HEAD:$file_a does not hold the landed content" ;;
+esac
 
 # --- 4. history, blame and search agree on the file ----------------------
 begin "history_blame_search"
@@ -108,10 +143,10 @@ begin "history_blame_search"
   "$graft" history "$file_a"
   "$graft" blame "$file_a"
   "$graft" search "first line" --json
-} >>"$report_log" 2>&1
-hits="$("$graft" -C "$work/main" history "$file_a" 2>/dev/null | wc -l)"
-found="$("$graft" -C "$work/main" search "first line" 2>/dev/null | wc -l)"
-if [ "$hits" -ge 1 ] && [ "$found" -ge 1 ]; then verdict 0 "$hits commits, $found matches"
+} >>"$report_log" 2>&1 || true
+hits="$(cd "$work/main" && "$graft" history "$file_a" 2>/dev/null | wc -l)"
+found="$(cd "$work/main" && "$graft" search "first line" 2>/dev/null | wc -l)"
+if at_least "$hits" 1 && at_least "$found" 1; then verdict 0 "$hits commits, $found matches"
 else verdict 1 "history $hits, search $found"; fi
 
 # --- 5. a review is opened on a pending commit and approved -------------
@@ -124,10 +159,10 @@ review_file="review/$run_id.txt"
   "$graft" commit -m "review $run_id"
   "$graft" review create --branch main --title "review $run_id" --description "integration"
   "$graft" review list --branch main
-} >>"$report_log" 2>&1
-review_id="$("$graft" -C "$work/main" review list --branch main 2>/dev/null | awk -v t="review $run_id" '$0 ~ t {print $1}' | tail -1)"
+} >>"$report_log" 2>&1 || true
+review_id="$(cd "$work/main" && "$graft" review list --branch main 2>/dev/null | awk -v t="review $run_id" '$0 ~ t {print $1}' | tail -1)"
 if [ -n "$review_id" ]; then
-  if "$graft" -C "$work/main" review approve "$review_id" --body "approved by the gate" >>"$report_log" 2>&1; then
+  if (cd "$work/main" && "$graft" review approve "$review_id" --body "approved by the gate") >>"$report_log" 2>&1; then
     verdict 0 "review $review_id approved"
   else
     verdict 1 "approve of review $review_id failed"
@@ -146,7 +181,7 @@ begin "update_revert"
   "$graft" status
   "$graft" revert "$file_a"
   "$graft" status
-} >>"$report_log" 2>&1
+} >>"$report_log" 2>&1 || true
 if (cd "$work/main" && "$graft" status 2>&1 | sed -n 's/.*nothing changed.*/clean/p' | head -1 | wc -l | awk '$1==1{exit 0} {exit 1}'); then
   verdict 0 "land + update + revert left the workspace clean"
 else
@@ -163,7 +198,7 @@ side="it-$run_id-writer"
   printf 'side\n' >"side.txt"
   "$graft" commit -m "side $run_id" --land main
   "$graft" log --limit 3
-} >>"$report_log" 2>&1
+} >>"$report_log" 2>&1 || true
 if (cd "$work/side" && "$graft" cat "HEAD:side.txt" 2>/dev/null | sed -n 's/.*side.*/ok/p' | head -1 | wc -l | awk '$1==1{exit 0} {exit 1}'); then
   verdict 0 "the second repository landed its first change"
 else
@@ -176,22 +211,22 @@ begin "stale_writer_refused"
   cd "$work/side"
   printf 'side two\n' >"side.txt"
   "$graft" commit -m "second side $run_id" --land main
-} >>"$report_log" 2>&1
+} >>"$report_log" 2>&1 || true
 # A writer whose base is behind lands only if the server accepts it; the
 # change must either land on top or be refused, never lose the first one.
 out="$(cd "$work/side" && "$graft" log --limit 5 2>&1)"
 printf '%s\n' "$out" >>"$report_log"
-first_still_there="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repository_id = (SELECT id FROM graft_repositories WHERE name = '$repo_other')")"
-if [ "${first_still_there:-0}" -ge 2 ]; then verdict 0 "$first_still_there changelog rows, no history lost"; else verdict 1 "history lost: ${first_still_there:-0} rows"; fi
+first_still_there="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repo_id = (SELECT repo_id FROM graft_repositories WHERE relative_path = '$repo_other')")"
+if at_least "${first_still_there:-0}" 2; then verdict 0 "$first_still_there changelog rows, no history lost"; else verdict 1 "history lost: ${first_still_there:-0} rows"; fi
 
 # --- 9. the storage core verifies its objects --------------------------
 begin "storage_verify"
 {
-  "$graft" storage state -repo "$repo_main" --json
-  "$graft" storage verify -repo "$repo_main" --connectivity
-  "$graft" storage gc -repo "$repo_main" --dry-run
-} >>"$report_log" 2>&1
-if "$graft" storage verify -repo "$repo_main" --connectivity 2>/dev/null | sed -n 's/.*consistent.*/ok/p' | head -1 | wc -l | awk '$1==1{exit 0} {exit 1}'; then
+  storage state -repo "$repo_main" --json
+  storage verify -repo "$repo_main" --connectivity
+  storage gc -repo "$repo_main" --dry-run
+} >>"$report_log" 2>&1 || true
+if storage verify -repo "$repo_main" --connectivity 2>/dev/null | sed -n 's/.*consistent.*/ok/p' | head -1 | wc -l | awk '$1==1{exit 0} {exit 1}'; then
   verdict 0 "state, connectivity and a dry-run gc are clean"
 else
   verdict 1 "storage verify did not report consistency"
@@ -203,7 +238,7 @@ if [ -n "${OTHER_DIR:-}" ] && [ -s "$OTHER_DIR/tokens/shared" ]; then
   other_token="$(cat "$OTHER_DIR/tokens/shared")"
   if [ "$other_token" = "$GRAFT_TOKEN" ]; then
     verdict 1 "both lanes hold the same token"
-  elif GRAFT_TOKEN="$other_token" "$graft" storage state -repo "$repo_main" --json >/dev/null 2>&1; then
+  elif GRAFT_TOKEN="$other_token" storage state -repo "$repo_main" --json >/dev/null 2>&1; then
     verdict 1 "the other lane's token was accepted"
   else
     verdict 0 "the other lane's token is refused"
@@ -214,49 +249,57 @@ fi
 
 # --- 11. the writes reached this lane's database and bucket only -------
 begin "data_isolation"
-rows_here="$(psql_this "SELECT count(*) FROM graft_repositories WHERE name IN ('$repo_main','$repo_other')")"
+rows_here="$(psql_this "SELECT count(*) FROM graft_repositories WHERE relative_path IN ('$repo_main','$repo_other')")"
 if [ -n "${OTHER_PG_DB:-}" ]; then
-  rows_there="$(psql_other "SELECT count(*) FROM graft_repositories WHERE name IN ('$repo_main','$repo_other')")"
+  rows_there="$(psql_other "SELECT count(*) FROM graft_repositories WHERE relative_path IN ('$repo_main','$repo_other')")"
 else
   rows_there="0"
 fi
-data_dir="$(rustfs_data)"
-this_bucket_files=0
-other_bucket_files=0
-if [ -n "$data_dir" ] && [ -d "$data_dir/$LANE_BUCKET" ]; then
-  this_bucket_files="$(find "$data_dir/$LANE_BUCKET" -type f 2>/dev/null | wc -l)"
-fi
-if [ -n "$data_dir" ] && [ -n "${OTHER_BUCKET:-}" ] && [ -d "$data_dir/$OTHER_BUCKET" ]; then
-  other_bucket_files="$(find "$data_dir/$OTHER_BUCKET" -type f 2>/dev/null | wc -l)"
-fi
-printf 'repos here=%s there=%s, bucket files here=%s there=%s\n' \
-  "$rows_here" "$rows_there" "$this_bucket_files" "$other_bucket_files" >>"$report_log"
-if [ "${rows_here:-0}" -ge 2 ] && [ "${rows_there:-0}" = "0" ]; then
-  verdict 0 "2 repositories in $LANE_PG_DB, none in ${OTHER_PG_DB:-another}"
+this_bucket_files="$(bucket_files "$LANE_BUCKET")"
+other_bucket_files="$other_bucket_before"
+if [ -n "${OTHER_BUCKET:-}" ]; then other_bucket_files="$(bucket_files "$OTHER_BUCKET")"; fi
+printf 'repos here=%s there=%s, objects here=%s (was %s) there=%s (was %s)\n' \
+  "$rows_here" "$rows_there" "$this_bucket_files" "$this_bucket_before" \
+  "$other_bucket_files" "$other_bucket_before" >>"$report_log"
+# What this run wrote must sit in this lane's database and bucket, and the
+# other lane must look exactly as it did before the run started.
+if at_least "${rows_here:-0}" 2 && is_zero "${rows_there:-x}" &&
+   at_least "${this_bucket_files:-0}" "$((this_bucket_before + 1))" &&
+   [ "${other_bucket_files:-x}" = "${other_bucket_before:-y}" ]; then
+  verdict 0 "2 repositories and new objects in $LANE_PG_DB/$LANE_BUCKET only"
 else
-  verdict 1 "repositories here=$rows_here there=$rows_there"
+  verdict 1 "repos here=$rows_here there=$rows_there, objects here=$this_bucket_files (was $this_bucket_before) there=$other_bucket_files (was $other_bucket_before)"
 fi
 
 # --- 12. the cache serves repeated reads ------------------------------
 begin "cache_serves"
+hits_before="$(object_hits)"
 {
-  for i in 1 2 3 4 5; do "$graft" storage state -repo "$repo_main" --json; done
-} >>"$report_log" 2>&1
+  # Cloning the same repository again reads the same objects: the cache in
+  # front of the object store is what serves them the second time.
+  (cd "$neutral" && "$graft" clone "$GRAFT_ADDRESS" "$repo_main" "$work/cache-probe" --branch main)
+} >>"$report_log" 2>&1 || true
 stats="$(curl -s --max-time 3 "http://127.0.0.1:$LANE_CACHE_METRICS_PORT/stats")"
 printf '%s\n' "$stats" >>"$report_log"
-hits="$(printf '%s' "$stats" | sed -n 's/.*"object_hits":\([0-9]*\).*/\1/p')"
-if [ "${hits:-0}" -ge 1 ]; then verdict 0 "$hits object hits"; else verdict 1 "no object hits (${hits:-0})"; fi
+hits_after="$(object_hits)"
+# Whatever the counter was, reading the repository a second time has to raise
+# it: a cache that is not in the read path leaves it flat.
+if at_least "${hits_after:-0}" "$((${hits_before:-0} + 1))"; then
+  verdict 0 "object_hits $hits_before -> $hits_after on a repeated clone"
+else
+  verdict 1 "object_hits stayed at ${hits_after:-0} on a repeated clone"
+fi
 
 # --- 13. the data outlives the process and its local cache ------------
 begin "restart_survives"
-before="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repository_id = (SELECT id FROM graft_repositories WHERE name = '$repo_main')")"
+before="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repo_id = (SELECT repo_id FROM graft_repositories WHERE relative_path = '$repo_main')")"
 docker restart "$LANE_CONTAINER" >>"$report_log" 2>&1
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   sleep 2
-  if "$graft" storage state -repo "$repo_main" --json >/dev/null 2>&1; then break; fi
+  if storage state -repo "$repo_main" --json >/dev/null 2>&1; then break; fi
 done
-after="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repository_id = (SELECT id FROM graft_repositories WHERE name = '$repo_main')")"
-if "$graft" storage state -repo "$repo_main" --json >>"$report_log" 2>&1 && [ "$before" = "$after" ]; then
+after="$(psql_this "SELECT count(*) FROM graft_changelog WHERE repo_id = (SELECT repo_id FROM graft_repositories WHERE relative_path = '$repo_main')")"
+if storage state -repo "$repo_main" --json >>"$report_log" 2>&1 && [ "$before" = "$after" ]; then
   verdict 0 "restart kept $after changelog rows"
 else
   verdict 1 "before=$before after=$after"
