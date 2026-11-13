@@ -86,6 +86,9 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 			"branch":    branch,
 			"reference": update.Reference,
 			"code":      decision.Code,
+			// The generation says which reload of the rules decided, as the
+			// access policy's denials do.
+			"policy_generation": m.branchPolicy.Generation(),
 		}
 		if !decision.Allowed {
 			fields["reason"] = decision.Reason
