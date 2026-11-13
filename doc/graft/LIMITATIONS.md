@@ -305,7 +305,10 @@ Git hooks use private.
   operator credential (the shared token) and the server's own operations are
   trusted, like for the access policy: the verifier may revert a commit that
   broke the branch. A CI that lands with the shared token is not decided by
-  the server, and has to run `graft gate check` itself.
+  the server when it lands, and has to run `graft gate check` itself: the
+  server answers that question with the policy it enforces, so the check and
+  the enforcement cannot disagree, but the server does not run the check for
+  the CI.
 - The gate does not run the tests. With `require_verified` it asks whether the
   verification checkpoint of the branch covers its tip, which is what
   graft-verify records; a server without a verifier has no checkpoint, and
