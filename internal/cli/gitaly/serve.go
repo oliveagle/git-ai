@@ -640,6 +640,10 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	prometheus.MustRegister(reviewroots.DefaultSweeper)
 
 	hookManagerOpts := []hook.ManagerOption{hook.WithEagerObserver(eagerObserver), hook.WithPolicyStore(graftPolicy)}
+	// The branch management policy decides the updates of a managed branch with
+	// the reviews of the repository and the verification checkpoint of the
+	// branch.
+	hookManagerOpts = append(hookManagerOpts, hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)))
 	var (
 		storageSyncer corestore.Freshener
 		storageGate   *gate.Gate

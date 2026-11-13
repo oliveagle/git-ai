@@ -152,6 +152,13 @@ func (m *GitLabHookManager) ReferenceTransactionHook(ctx context.Context, state 
 			return err
 		}
 
+		// The branch management policy decides the same updates with the
+		// reviews of the branch and its verification checkpoint: a managed
+		// branch is only updated by a land that carries them.
+		if err := m.enforceBranchGate(ctx, payload, env, changes); err != nil {
+			return err
+		}
+
 		// The storage core commits the transaction while git holds the locks, after the
 		// policy allowed it. In authoritative mode this is the commit point: an error
 		// aborts the transaction (see doc/graft/PLAN6.md, "Write path").

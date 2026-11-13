@@ -91,6 +91,10 @@ type GitLabHookManager struct {
 	policy *policystore.Store
 	// storageVoter commits reference transactions to the Graft storage core, nil when it is off.
 	storageVoter StorageVoter
+	// branchGate gives the branch management policy the state of a branch: its
+	// reviews and its verification checkpoint. It is nil when the server has
+	// none, and the gate then refuses every land that asks for one.
+	branchGate BranchGateSource
 	// startLandIntentsCompaction starts a compaction of land intents that a prepared
 	// transaction asked for, without the hook waiting for it. Nil runs it in a goroutine;
 	// tests set it.
@@ -115,6 +119,14 @@ func WithEagerObserver(observer *eager.Observer) ManagerOption {
 func WithPolicyStore(store *policystore.Store) ManagerOption {
 	return func(m *GitLabHookManager) {
 		m.policy = store
+	}
+}
+
+// WithBranchGate sets the source of the state the branch management policy
+// decides with, see enforceBranchGate.
+func WithBranchGate(source BranchGateSource) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.branchGate = source
 	}
 }
 

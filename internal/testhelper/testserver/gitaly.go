@@ -394,6 +394,11 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 		gsd.graftPolicy = policystore.New(cfg.Graft.Policy)
 	}
 	hookManagerOpts := []hook.ManagerOption{hook.WithPolicyStore(gsd.graftPolicy)}
+	// The branch management policy reads the reviews of a repository and the
+	// verification checkpoint of a branch (internal/gitaly/hook). The factory
+	// reads references only, so it needs no catfile cache.
+	hookManagerOpts = append(hookManagerOpts, hook.WithBranchGate(hook.NewBranchGateSource(gsd.graftStorage,
+		localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))))
 	if gsd.graftStorage.Enabled() {
 		if gsd.catfileCache == nil {
 			cache := catfile.NewCache(cfg)
