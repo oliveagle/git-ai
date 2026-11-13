@@ -211,6 +211,30 @@ alone and red together with the tip, and it paces the branch: after every land
 the checkpoint is behind the new tip, so the next land waits for the next run.
 The next section closes both.
 
+## Where a project's tests belong
+
+git-ai runs none of a project's tests. It gives the policy three places to
+attach them to, and a suite belongs to the one whose question it answers:
+
+| Suite | Where it runs | What it decides |
+|---|---|---|
+| unit (seconds, no service) | the workspace of the agent before `graft land`; again in the CI, on the result | the change is right; the agent's run is a pre-check, the CI's run is the one the checkpoint covers |
+| integration (a database, containers, minutes) | the CI, on the commit the dry run named | the change is right once it is on the branch, which is the tree the branch will hold |
+| end to end, slow or flaky | `graft-verify` after the land, or a nightly job | a broken tip is found and reverted, rather than blocking every queue entry |
+
+Three things hold whichever suite runs where:
+
+- A test runs on the *result*, never on the change alone. Two changes that are
+  green apart can be red together, and only the commit a dry run names has both
+  in its tree.
+- A test that sees part of the tree is not evidence about the whole commit. The
+  CI takes the whole tree (`graft clone` without `--sparse`), and the verifier
+  refuses a `sparse` set unless `test.allow_sparse = true` says the partial tree
+  is what its checkpoint means.
+- The tests are code from the tree, written by agents. Run them in a container
+  with no network and no credentials, as [VERIFY.md](VERIFY.md) and
+  [AGENT-SECURITY.md](AGENT-SECURITY.md) describe.
+
 ## Verifying the result of a land
 
 A merge queue verifies the *result* of a land before it happens. The gate

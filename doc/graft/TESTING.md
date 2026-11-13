@@ -54,6 +54,7 @@ table, not only in a unit test of the parser.
 | A hook, a reference update | an integration test that pushes, lands or deletes against a real server and reads the outcome |
 | The wire format, the client table | a row of the conformance table |
 | A crash path, a retry | a fault injection test that kills the process or the connection |
+| A reload of a policy | a unit test of the store that holds it, and an end-to-end test that signals a real process and reads the change in what the server decides |
 
 ## What CI runs
 
