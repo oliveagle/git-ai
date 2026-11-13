@@ -7,6 +7,7 @@ var GitalyProtos = []string{
 	"analysis.proto",
 	"backup.proto",
 	"blob.proto",
+	"branch.proto",
 	"changeset.proto",
 	"cleanup.proto",
 	"commit.proto",

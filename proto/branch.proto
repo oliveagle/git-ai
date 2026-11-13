@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package gitaly;
+
+import "lint.proto";
+import "shared.proto";
+
+option go_package = "github.com/feder-cr/git-ai/proto/go/gitalypb";
+
+// BranchPolicyService is the branch management policy of the server, as a
+// service: it tells a CI whether a change may land on a branch, with the
+// rules the server enforces, so that the CI does not have to hold a copy of
+// the policy that may differ from the one in force (doc/graft/BRANCHES.md).
+service BranchPolicyService {
+
+  // GetBranchDecision asks whether a change may land on a branch, with the
+  // rules the server enforces and the state of the branch.
+  rpc GetBranchDecision(GetBranchDecisionRequest) returns (GetBranchDecisionResponse) {
+    option (op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  // ListBranchRules lists the branch rules the server enforces.
+  rpc ListBranchRules(ListBranchRulesRequest) returns (ListBranchRulesResponse) {
+    option (op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+}
+
+// BranchRule is the management policy of one branch: what may update it, and
+// what a change must carry to land on it.
+message BranchRule {
+  // name is the branch the rule governs, without the refs/heads/ prefix.
+  string name = 1;
+  // require_review demands a review of the change that lands on the branch,
+  // approved by the approval rules of the server.
+  bool require_review = 2;
+  // require_approvals is the number of current approvals the review must
+  // carry, on top of the approvals the approval rules ask for.
+  int32 require_approvals = 3;
+  // allow_stale_base accepts a review whose base is not the current tip of
+  // the branch.
+  bool allow_stale_base = 4;
+  // allow_direct_update accepts an update of the branch that is not a land,
+  // such as a push.
+  bool allow_direct_update = 5;
+  // require_verified demands that the verification checkpoint of the branch
+  // covers the tip the change builds on.
+  bool require_verified = 6;
+}
+
+// GetBranchDecisionRequest is a request for GetBranchDecision.
+message GetBranchDecisionRequest {
+  // repository is the repository of the branch.
+  Repository repository = 1 [(target_repository)=true];
+  // branch is the branch the change would land on, without the refs/heads/
+  // prefix.
+  string branch = 2;
+  // commits are the changes that would land: the commits the reviews are
+  // about. It is empty when the state of the branch alone is asked for.
+  repeated string commits = 3;
+  // direct asks about an update of the branch that is not a land, such as a
+  // push: the rule must allow it, and its commits are the ones it writes.
+  bool direct = 4;
+}
+
+// GetBranchDecisionResponse is a response for GetBranchDecision.
+message GetBranchDecisionResponse {
+  // allowed tells whether the change may land.
+  bool allowed = 1;
+  // code names the outcome, for a machine to read.
+  string code = 2;
+  // reason explains the outcome.
+  string reason = 3;
+  // managed tells whether the branch has a rule.
+  bool managed = 4;
+  // tip is the commit the branch points at.
+  string tip = 5;
+  // checkpoint is the commit the verification checkpoint of the branch points
+  // at, empty when the branch has none.
+  string checkpoint = 6;
+  // reviews is the number of open reviews of the branch.
+  uint32 reviews = 7;
+  // rule is the rule of the branch, empty when the branch is not managed.
+  BranchRule rule = 8;
+  // change is the commit the decision is about, empty when the decision is
+  // about the branch as a whole.
+  string change = 9;
+  // branch is the branch the decision is about, without the refs/heads/
+  // prefix.
+  string branch = 10;
+}
+
+// ListBranchRulesRequest is a request for ListBranchRules.
+message ListBranchRulesRequest {
+  // repository is the repository the rules are asked for.
+  Repository repository = 1 [(target_repository)=true];
+}
+
+// ListBranchRulesResponse is a response for ListBranchRules.
+message ListBranchRulesResponse {
+  // rules are the branch rules the server enforces.
+  repeated BranchRule rules = 1;
+}
