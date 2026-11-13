@@ -111,16 +111,18 @@ allow = true
 
 Send SIGUSR1 to the gitaly process (or to gitaly-wrapper, which forwards it):
 it reads its configuration file again and puts the new `[[graft.policy]]` in
-force. SIGHUP is not a reload: it stops the server, or upgrades it in place
-with the graceful-upgrade bootstrap.
+force, and the new `[[graft.branch]]` rules with it. SIGHUP is not a reload: it
+stops the server, or upgrades it in place with the graceful-upgrade bootstrap.
 
-- Only the policy is applied. Other changes of the file, `[[graft.agent]]`
-  included, are logged at WARN as needing a restart, and not applied.
+- Only the access policy and the branch rules are applied. Other changes of the
+  file, `[[graft.agent]]` and `[graft.review]` included, are logged at WARN as
+  needing a restart, and not applied.
 - A file that cannot be read, or whose policy is invalid (a bad glob, an empty
-  `refs` entry), is logged at ERROR and changes nothing: the policy in force
-  stays. Actors of the new policy that name no configured agent are logged at
-  WARN; they are not an error (an actor can be the user ID of a caller with
-  the shared token).
+  `refs` entry, a branch rule without a name or two rules for one branch), is
+  logged at ERROR and changes nothing: the policies in force stay, so a typo
+  never opens a managed branch. Actors of the new policy that name no
+  configured agent are logged at WARN; they are not an error (an actor can be
+  the user ID of a caller with the shared token).
 - An update in flight is decided by the policy in force when the
   reference-transaction hook runs, while git holds the references' locks: a
   tightening applies to it even if its earlier checks allowed it. A land batch
@@ -137,6 +139,12 @@ applied reload) and `graft_policy_info{sha256}` (1 for the hash of the
 policy in force). A denied agent update is logged at INFO with the
 `policy_generation` and `policy_sha256` that denied it; an allowed one at
 DEBUG.
+
+The branch rules have their own series: `graft_branch_policy_reloads_total{result}`
+(`applied`, `unchanged`, `rejected`) and `graft_branch_policy_generation` (1 at
+startup, one more for every reload that changed the rules). A reload that
+changed them is logged at INFO as `branch policy reloaded`, with the generation
+and the number of rules.
 
 Before a reload, `graft policy check FILE` validates the file's policy as the
 reload will (exit 2 when the policy is invalid) and prints its hash; with

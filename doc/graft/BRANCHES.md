@@ -43,6 +43,15 @@ require_verified = false
 Two rules for one branch are refused when the configuration is loaded, as are a
 rule without a name and a name that is not a branch name.
 
+The rules are read again on SIGUSR1, with the access policy, so a branch can be
+put under management, or taken out of it, without a restart: the next update
+and the next answer a CI reads are made with the new rules. A file whose rules
+the server cannot read (a rule without a name, two rules for one branch) is
+rejected as a whole and the rules in force stay, so that a typo never opens a
+managed branch. The approval rules of `[graft.review]`, which the gate judges a
+review with, still need a restart. See "Reloading the policy" in
+[CONFIGURATION.md](CONFIGURATION.md).
+
 ## What the server decides
 
 The reference-transaction hook decides every update of a managed branch, in its

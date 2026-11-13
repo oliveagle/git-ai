@@ -97,9 +97,10 @@ type GitLabHookManager struct {
 	// none, and the gate then refuses every land that asks for one.
 	branchGate BranchGateSource
 	// branchPolicy is the branch management policy the gate enforces. The
-	// server passes the policy it also gives the BranchPolicyService, so that
-	// the answer a CI reads and the refusal it meets are made with one policy.
-	branchPolicy *branchgate.Policy
+	// server passes the store it also gives the BranchPolicyService, so that
+	// the answer a CI reads and the refusal it meets are made with one policy,
+	// also across a reload of the rules.
+	branchPolicy *branchgate.Store
 	// startLandIntentsCompaction starts a compaction of land intents that a prepared
 	// transaction asked for, without the hook waiting for it. Nil runs it in a goroutine;
 	// tests set it.
@@ -135,13 +136,14 @@ func WithBranchGate(source BranchGateSource) ManagerOption {
 	}
 }
 
-// WithBranchPolicy sets the branch management policy the gate enforces. The
-// server passes the policy it also gives the BranchPolicyService, so that the
-// answer a CI reads and the refusal it meets cannot be made with two policies.
-// Without it the gate decides with the policy of the configuration.
-func WithBranchPolicy(policy *branchgate.Policy) ManagerOption {
+// WithBranchPolicy sets the store of the branch management policy the gate
+// enforces. The server passes the store it also gives the BranchPolicyService,
+// so that the answer a CI reads and the refusal it meets cannot be made with
+// two policies, also when the rules are reloaded. Without it the gate decides
+// with the policy of the configuration, in a store of its own.
+func WithBranchPolicy(store *branchgate.Store) ManagerOption {
 	return func(m *GitLabHookManager) {
-		m.branchPolicy = policy
+		m.branchPolicy = store
 	}
 }
 
@@ -229,7 +231,7 @@ func NewManager(
 		m.policy = policystore.New(cfg.Graft.Policy)
 	}
 	if m.branchPolicy == nil {
-		m.branchPolicy = branchgate.NewPolicy(cfg.Graft)
+		m.branchPolicy = branchgate.NewStore(cfg.Graft)
 	}
 
 	return m

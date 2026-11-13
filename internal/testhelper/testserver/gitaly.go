@@ -395,10 +395,10 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 		gsd.graftPolicy = policystore.New(cfg.Graft.Policy)
 	}
 	hookManagerOpts := []hook.ManagerOption{hook.WithPolicyStore(gsd.graftPolicy)}
-	// One branch management policy serves the hook manager and the
+	// One store of the branch management policy serves the hook manager and the
 	// BranchPolicyService, as in serve.go: the refusal an agent meets and the
-	// answer a CI reads are made with one policy.
-	branchPolicy := branchgate.NewPolicy(cfg.Graft)
+	// answer a CI reads are made with one policy. A test server never reloads it.
+	branchPolicy := branchgate.NewStore(cfg.Graft)
 	// The branch management policy reads the reviews of a repository and the
 	// verification checkpoint of a branch (internal/gitaly/hook). The factory
 	// reads references only, so it needs no catfile cache.

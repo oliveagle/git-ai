@@ -26,8 +26,10 @@ import (
 type server struct {
 	gitalypb.UnimplementedBranchPolicyServiceServer
 	deps *service.Dependencies
-	// policy is the policy the gate enforces, the one the hook decides with.
-	policy *branchgate.Policy
+	// policy is the store of the policy the gate enforces, the one the hook
+	// decides with. It is read for every decision, so that a reload of the
+	// rules is what the next answer is made with.
+	policy *branchgate.Store
 	// source reads the state of a branch: its reviews and its verification
 	// checkpoint. It is the source the hook decides with.
 	source hook.BranchGateSource
@@ -41,7 +43,7 @@ func NewServer(deps *service.Dependencies) gitalypb.BranchPolicyServiceServer {
 func newServer(deps *service.Dependencies) *server {
 	policy := deps.GraftBranchPolicy
 	if policy == nil {
-		policy = branchgate.NewPolicy(deps.GetCfg().Graft)
+		policy = branchgate.NewStore(deps.GetCfg().Graft)
 	}
 
 	return &server{
@@ -69,9 +71,10 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		return nil, structerr.NewInternal("reading the state of the branch %q: %w", branch, err)
 	}
 
+	policy := s.policy.Current()
 	decision := branchgate.Decide(branchgate.Input{
-		Rules:       s.policy.Rules,
-		ReviewRules: s.policy.ReviewRules,
+		Rules:       policy.Rules,
+		ReviewRules: policy.ReviewRules,
 		Branch:      branch,
 		Changes:     req.GetCommits(),
 		Tip:         tip,
@@ -101,8 +104,9 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 // ListBranchRules lists the branch rules the server enforces.
 func (s *server) ListBranchRules(ctx context.Context, req *gitalypb.ListBranchRulesRequest) (*gitalypb.ListBranchRulesResponse, error) {
 	resp := &gitalypb.ListBranchRulesResponse{}
-	for i := range s.policy.Rules {
-		resp.Rules = append(resp.Rules, protoRule(&s.policy.Rules[i]))
+	policy := s.policy.Current()
+	for i := range policy.Rules {
+		resp.Rules = append(resp.Rules, protoRule(&policy.Rules[i]))
 	}
 	return resp, nil
 }

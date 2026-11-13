@@ -298,9 +298,10 @@ Git hooks use private.
 
 - The branch management policy (`[[graft.branch]]`, see
   [BRANCHES](BRANCHES.md)) is decided in the reference-transaction hook, in
-  the prepared phase, so that a refusal aborts the update. The rules are read
-  when the server starts: a reload (SIGUSR1) reloads the access policy only,
-  so a change of the branch rules needs a restart.
+  the prepared phase, so that a refusal aborts the update. The rules reload
+  with the access policy on SIGUSR1 (see
+  [CONFIGURATION](CONFIGURATION.md#reloading-the-policy)); the approval rules
+  of `[graft.review]`, which the gate judges a review with, need a restart.
 - The gate binds the callers that authenticated with a per-agent token. The
   operator credential (the shared token) and the server's own operations are
   trusted, like for the access policy: the verifier may revert a commit that

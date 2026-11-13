@@ -76,11 +76,11 @@ type Dependencies struct {
 	GraftResolver *resolver.Shared
 	// GraftStorage is the storage core (doc/graft/STORAGE.md), nil when it is off.
 	GraftStorage *corestore.Core
-	// GraftBranchPolicy is the branch management policy the server enforces
-	// (doc/graft/BRANCHES.md). The BranchPolicyService answers a CI with it, and
-	// the hook enforces it, so that the two are one policy. Nil builds one from
-	// Cfg.
-	GraftBranchPolicy *branchgate.Policy
+	// GraftBranchPolicy is the store of the branch management policy the server
+	// enforces (doc/graft/BRANCHES.md). The BranchPolicyService answers a CI
+	// with it, and the hook enforces it, so that the two are one policy, also
+	// across a reload of the rules. Nil builds one from Cfg.
+	GraftBranchPolicy *branchgate.Store
 	// GraftStorageSyncer catches up the local repositories in authoritative mode. It is nil when
 	// the storage core is off.
 	GraftStorageSyncer corestore.Freshener

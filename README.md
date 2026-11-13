@@ -148,7 +148,7 @@ default (`gc = "auto"` or `graft storage gc`, see
 [STORAGE.md](doc/graft/STORAGE.md)). Interfaces may still change before 1.0.
 Known gaps are listed in [LIMITATIONS.md](doc/graft/LIMITATIONS.md).
 
-The access policy reloads on SIGUSR1 without a
+The access policy and the branch rules reload on SIGUSR1 without a
 restart, and `graft policy check` validates a policy file before a reload
 ([CONFIGURATION.md](doc/graft/CONFIGURATION.md#reloading-the-policy)).
 

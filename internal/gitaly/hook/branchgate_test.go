@@ -80,7 +80,7 @@ func branchGateManager(t *testing.T, graft config.Graft, source BranchGateSource
 	m := &GitLabHookManager{
 		cfg:          config.Cfg{Graft: graft},
 		logger:       testhelper.SharedLogger(t),
-		branchPolicy: branchgate.NewPolicy(graft),
+		branchPolicy: branchgate.NewStore(graft),
 	}
 	m.branchGate = source
 	return m

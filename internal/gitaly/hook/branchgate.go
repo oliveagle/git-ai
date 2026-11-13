@@ -48,7 +48,7 @@ type BranchGateSource interface {
 //
 // A branch without a rule is not managed: its updates are not touched.
 func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcmd.HooksPayload, env []string, changes []byte) error {
-	policy := m.branchPolicy
+	policy := m.branchPolicy.Current()
 	if policy.Empty() {
 		return nil
 	}

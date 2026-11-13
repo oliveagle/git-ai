@@ -600,7 +600,11 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	// SIGUSR1 reloads from the configuration file (doc/graft/PLAN12.md).
 	graftPolicy := policystore.New(cfg.Graft.Policy)
 	prometheus.MustRegister(graftPolicy)
-	stopPolicyReload := reloadPolicyOnSignal(logger, appCtx.Args().First(), loaded, graftPolicy, policySignals)
+	// The branch management policy is held the same way: the hook enforces it and the
+	// BranchPolicyService answers a CI with it, so a reload of the rules is one store too.
+	branchPolicy := branchgate.NewStore(cfg.Graft)
+	prometheus.MustRegister(branchPolicy)
+	stopPolicyReload := reloadPolicyOnSignal(logger, appCtx.Args().First(), loaded, graftPolicy, branchPolicy, policySignals)
 	defer stopPolicyReload()
 
 	gitlabClient, err := newGitlabAPIClient(logger, cfg, graftPolicy)
@@ -641,10 +645,9 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	prometheus.MustRegister(reviewroots.DefaultSweeper)
 
 	hookManagerOpts := []hook.ManagerOption{hook.WithEagerObserver(eagerObserver), hook.WithPolicyStore(graftPolicy)}
-	// One branch management policy serves the hook manager, which enforces it,
-	// and the BranchPolicyService, which answers the CI: the refusal an agent
-	// meets and the answer a CI reads are made with one policy.
-	branchPolicy := branchgate.NewPolicy(cfg.Graft)
+	// One store of the branch management policy serves the hook manager, which enforces it,
+	// and the BranchPolicyService, which answers the CI: the refusal an agent meets and the
+	// answer a CI reads are made with one policy, also across a reload of the rules.
 	// The branch management policy decides the updates of a managed branch with
 	// the reviews of the repository and the verification checkpoint of the
 	// branch.

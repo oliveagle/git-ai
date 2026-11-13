@@ -563,7 +563,7 @@ func (g Graft) Validate() error {
 		}
 	}
 
-	if err := g.validateBranches(); err != nil {
+	if err := g.ValidateBranches(); err != nil {
 		return err
 	}
 	if err := g.Land.Batch.validate(); err != nil {
@@ -585,11 +585,12 @@ func (g Graft) Validate() error {
 	return g.Land.Resolver.validate()
 }
 
-// validateBranches reports malformed branch rules at load time: a rule
-// without a name, a name that is not a branch name, a negative number of
-// approvals, or two rules for one branch (the first one would decide and the
-// second one would never be read).
-func (g Graft) validateBranches() error {
+// ValidateBranches reports malformed branch rules: a rule without a name, a
+// name that is not a branch name, a negative number of approvals, or two rules
+// for one branch (the first one would decide and the second one would never be
+// read). It is what Validate runs, and what a reload of the rules checks before
+// it puts them in force.
+func (g Graft) ValidateBranches() error {
 	seen := make(map[string]bool, len(g.Branches))
 	for i, rule := range g.Branches {
 		if rule.Name == "" {
