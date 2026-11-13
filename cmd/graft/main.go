@@ -102,6 +102,7 @@ func commandTable() map[string]command {
 		"repo":    repoCommand(),
 		"policy":  policyCommand(),
 		"gate":    gateCommand(),
+		"green":   greenCommand(),
 	}
 }
 
@@ -282,6 +283,8 @@ commands:
                          what it would deny among recent changesets (-repo, --limit, --json)
   gate check --branch B  ask the branch management policy of a configuration file whether a change may
                          land on a branch (--config FILE, --commit OID, --repo, --json)
+  green SUBCOMMAND       publish or read the verification checkpoint of a branch: set --branch B --commit OID,
+                         show --branch B (--repo, --json)
 
 environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
 
