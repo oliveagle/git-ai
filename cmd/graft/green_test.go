@@ -124,18 +124,17 @@ func TestGreenIsReadByTheGate(t *testing.T) {
 	})
 	tip := env.seedMain(t, map[string]string{"top.txt": "top\n"})
 
-	configPath := gateConfigFile(t, env.cfg)
 	target := []string{"-address", env.addr, "-storage", env.storage, "--repo", env.relPath}
 
 	// The branch has no checkpoint: the policy refuses a change on it.
-	code, _, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main", "--config", configPath}, target...)...)
+	code, _, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main"}, target...)...)
 	require.Equal(t, exitError, code, stderr)
 
 	// The CI publishes the checkpoint: the policy allows the change.
 	code, _, stderr = runCLI(t, append([]string{"green", "set", "--branch", "main", "--commit", tip.String()}, target...)...)
 	require.Equal(t, exitOK, code, stderr)
 
-	code, stdout, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main", "--config", configPath, "--json"}, target...)...)
+	code, stdout, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main", "--json"}, target...)...)
 	require.Equal(t, exitOK, code, stderr)
 	var res gateResult
 	require.NoError(t, json.Unmarshal([]byte(stdout), &res))
