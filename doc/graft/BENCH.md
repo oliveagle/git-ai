@@ -10,15 +10,50 @@ These are the results of the current code, newest first. Older results, which th
 changes since replaced, are under [History](#history-superseded) at the end.
 
 The headline of the [README](../../README.md#benchmark), 50 agents landing 5
-changes each on one branch with 20% planned conflicts, measured with
-`acceptance-phase4.sh` (two runs):
+changes each on one branch with 20% planned conflicts (seed 1), measured with
+`acceptance-phase4.sh` on one machine. Measurement of record: two runs on
+2026-10-20 on commit `bf95897` (the 0.3.0 tree), every start at load below 2.
+It has not been repeated for 0.4.0.
 
 | 50 agents, 250 changes | classic (batching off) | gitai (batching on) |
 |---|---|---|
-| changes landed | 100-101 | 200 |
-| attempts per landed change | 27 | 1.0 |
-| lands per minute | 240-272 | 1,862-2,544 |
-| p99 latency | 6.3-7.0 s | 1.5-1.8 s |
+| changes landed | 100-106 | 200 |
+| attempts per landed change | 26.5-28.7 | 1.0 |
+| lands per minute | 264-385 | 1,487-1,944 |
+| p99 latency | 4.4-5.2 s | 1.9-2.7 s |
+
+An earlier measurement of the same script, two runs on 2026-10-19 on the 0.2.0
+tree, was the README headline until the 0.3.0 release and is superseded by the
+table above. It gave classic 100-101 landed at 27 attempts each, 240-272 lands
+per minute and p99 6.3-7.0 s, and gitai 200 landed at 1.0 attempts, 1,862-2,544
+lands per minute and p99 1.5-1.8 s. The two sets differ in both columns, so
+part of the difference is the machine and its load, not only the code; the
+cause was not investigated, and only the later set is current.
+
+### Default bundled git 2.56.0 (2026-11-05)
+
+The default bundled git (`GIT_VERSION_PREV`, the `-prev` build that serves every non-MVCC
+repository unless the `git_master` feature flag is on) moved from 2.55.0-rc1 (`1ea786d`) to the
+release 2.56.0 (`a018953`). Window of record: arm A `edbedea` (git 2.55.0-rc1), arm B `edbedea` with
+the new pin (git 2.56.0, checked in the running server), one server, postgres, authoritative storage,
+batching on, `--mode land`, 50 agents x 20 changes on one branch, conflict rate 0.2, seed 1, the
+workload of the 0.4.1 release benchmark. Six series per arm in the order A B A B ..., each started
+with CPU pressure (PSI `some avg10`) below 5 and the CPU at least 90% idle over 5 s; every series
+was valid (the same gate held 60 s after it).
+
+| series | A p99 (ms) | B p99 (ms) | A lands/min | B lands/min |
+|---|---:|---:|---:|---:|
+| 1 | 4073 | 4781 | 932 | 893 |
+| 2 | 4963 | 4213 | 794 | 836 |
+| 3 | 3748 | 4691 | 906 | 827 |
+| 4 | 4518 | 3943 | 884 | 922 |
+| 5 | 3756 | 4442 | 968 | 900 |
+| 6 | 3989 | 3313 | 888 | 981 |
+
+Median p99 4031 ms (A) and 4328 ms (B), +7.4%, inside the gate declared before the run (B at most
+10% above A); means 4174 and 4230 ms (+1.3%). Throughput, admission wait (88 ms mean on both) and the
+Prepared phase (21 ms mean on both) did not move. The run-to-run spread of p99 (3.3 to 5.0 s) is
+larger than the difference between the arms.
 
 ### `UserCommitFiles` in fewer git processes (WP96)
 

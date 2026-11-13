@@ -262,7 +262,11 @@ func (s *Server) landResolving(ctx context.Context, in *gitalypb.UserLandRequest
 		}
 		timeout += verifyTimeout
 	}
-	resolveCtx, cancel := context.WithTimeout(ctx, timeout)
+	newDeadlineContext := context.WithTimeout
+	if s.landDeadlineContext != nil {
+		newDeadlineContext = s.landDeadlineContext
+	}
+	resolveCtx, cancel := newDeadlineContext(ctx, timeout)
 	defer cancel()
 
 	pre := newLandPreResolution()
@@ -274,8 +278,8 @@ func (s *Server) landResolving(ctx context.Context, in *gitalypb.UserLandRequest
 	}
 	rounds := s.resolveCfg.ResolveRoundsOrDefault()
 	used := 0
-	// The land keeps its ticket until it ends, whatever the ending: it lands, the deadline stops it, or
-	// it fails.
+	// The land keeps its ticket until it ends, whatever the ending: it lands (and then it gives it up
+	// before it prunes the proposals, landAfterLand), the deadline stops it, or it fails.
 	defer func() {
 		pre.ticket.release()
 		landResolutionRounds.Observe(float64(used))

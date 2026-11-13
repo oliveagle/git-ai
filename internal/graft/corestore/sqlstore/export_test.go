@@ -5,13 +5,15 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
 )
 
 // OpenV010 opens the database with only the schema of v0.1.0 (the first
 // migration), as a v0.1.0 binary left it: no checkpoints, no tombstones and no
 // owned-key trigger.
 func OpenV010(ctx context.Context, dsn string) (*Store, error) {
-	return open(ctx, dsn, 1)
+	return open(ctx, dsn, 1, DefaultPool)
 }
 
 // SetSnapshotWrittenHook installs fn as the hook that CreateCheckpoint of s
@@ -59,3 +61,21 @@ func IsDeadlock(err error) bool {
 
 // NotOwnedPackKeyMessage is the documented error of the owned-key trigger.
 const NotOwnedPackKeyMessage = notOwnedPackKeyMessage
+
+// SeedReference inserts a reference row directly, as a reference recorded before a validation existed.
+func (s *Store) SeedReference(ctx context.Context, repoID int64, name string, target corestore.Target) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO graft_refs (repo_id, name, target, seq) VALUES ($1, $2, $3, 0)", repoID, []byte(name), string(target))
+	return err
+}
+
+// FirstRefInRangeQuery is the range probe of a created reference.
+const FirstRefInRangeQuery = firstRefInRangeQuery
+
+// RefChildrenRange returns the range of the names below the reference name.
+var RefChildrenRange = refChildrenRange
+
+// RefInRangesQuery is the range query of the references a changeset creates.
+var RefInRangesQuery = refInRangesQuery
+
+// Bind rewrites the placeholders of a query for the dialect of s.
+func (s *Store) Bind(query string) string { return s.bind(query) }

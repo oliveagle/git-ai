@@ -28,9 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/codes"
-
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
@@ -46,6 +43,8 @@ import (
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/codes"
 )
 
 // CrashEnv names the test-only environment variable that makes the voter
@@ -98,15 +97,20 @@ type Voter struct {
 	// Committed or Aborted phase.
 	pending *pendingSet[committedEntry]
 	// packs holds the outcome of the Preparing phase of a transaction, until
-	// its Prepared or Aborted phase.
+	// its Prepared or Aborted phase, keyed by transactionKey.
 	packs   *pendingSet[preparedPack]
 	metrics *metrics
+	// beforeAcquire is called right before a transaction with an invocation takes
+	// its admission; tests set it to end the process at that point.
+	beforeAcquire func()
 }
 
 // committedEntry is a transaction committed to the database in Prepared.
 type committedEntry struct {
 	repoID int64
 	seq    uint64
+	// invocation is the process of the transaction, empty when it has none.
+	invocation string
 }
 
 // preparedPack is the outcome of the Preparing phase of a transaction.
@@ -184,7 +188,7 @@ func (v *Voter) Preparing(ctx context.Context, payload gitcmd.HooksPayload, chan
 	start := time.Now()
 	defer func() { v.metrics.preparing.Observe(time.Since(start).Seconds()) }()
 
-	key := pendingKey(payload.Repo, changes)
+	key := transactionKey(payload, changes)
 	// remember records the outcome, so that Prepared uses the pack or, in shadow
 	// mode, knows how much of the shadow timeout is left.
 	remember := func(p preparedPack) {
@@ -226,7 +230,7 @@ func (v *Voter) preparePack(ctx context.Context, payload gitcmd.HooksPayload, ch
 		return nil, fmt.Errorf("object format: %w", err)
 	}
 
-	updates, err := parseInput(changes, hash)
+	updates, err := parsePayloadInput(payload, changes, hash)
 	if err != nil {
 		// Prepared rejects or skips the input with the same error.
 		return nil, nil
@@ -276,7 +280,9 @@ func (v *Voter) preparePack(ctx context.Context, payload gitcmd.HooksPayload, ch
 //
 // Authoritative mode: a returned error aborts the git transaction; a
 // reference conflict is returned as a wrapped
-// updateref.MismatchingStateError, any storage failure as Unavailable.
+// updateref.MismatchingStateError, a file/directory conflict with a reference of
+// the database as a wrapped updateref.FileDirectoryConflictError, any storage
+// failure as Unavailable.
 // Shadow mode: it always returns nil.
 func (v *Voter) Prepared(ctx context.Context, payload gitcmd.HooksPayload, changes []byte, meta changelog.Meta) error {
 	if v == nil || !v.core.Enabled() {
@@ -290,7 +296,7 @@ func (v *Voter) Prepared(ctx context.Context, payload gitcmd.HooksPayload, chang
 	// so that it is never used for a later transaction.
 	var prepared *preparedPack
 	if payload.Repo != nil {
-		if p, ok := v.packs.take(pendingKey(payload.Repo, changes), time.Now()); ok {
+		if p, ok := v.packs.take(transactionKey(payload, changes), time.Now()); ok {
 			prepared = &p
 		}
 	}
@@ -348,6 +354,64 @@ func (v *Voter) shadowFailed(ctx context.Context, err error) {
 	v.logger.WithError(err).ErrorContext(ctx, "storage core: shadow write failed, the git write proceeds")
 }
 
+// CreatedRefConflict returns a reference of the database that git cannot hold
+// next to ref, which a push creates, and "" when there is none. It applies the
+// database's own refusal (MetaStore.CommitChangeset, *corestore.ErrRefNameConflict)
+// to one reference before git's transaction, from the update hook, so that
+// receive-pack refuses that reference alone and the other references of a
+// non-atomic push still land. It is not atomic with the commit, which checks
+// again. The caller decides whether the client may see the name it returns.
+//
+// A repository the database does not track, or whose import is not complete,
+// has nothing to conflict with. A failed read is returned as Unavailable.
+//
+// Shadow mode never refuses a git write: git's references are the truth there,
+// and the database may be behind them. A conflict, or a failed read, is logged and
+// counted as a shadow error, and "" is returned. The commit of the changeset
+// then refuses to record the name (forced or not), so the database never holds a
+// pair, and verification reports what it misses.
+func (v *Voter) CreatedRefConflict(ctx context.Context, repo *gitalypb.Repository, ref string) (string, error) {
+	if v == nil || !v.core.Enabled() || repo == nil {
+		return "", nil
+	}
+
+	existing, err := v.createdRefConflict(ctx, repo, ref)
+	if !v.core.Authoritative() {
+		switch {
+		case err != nil:
+			v.shadowFailed(ctx, fmt.Errorf("check the name of a created reference: %w", err))
+		case existing != "":
+			v.metrics.shadowErrors.Inc()
+			v.logger.WithFields(log.Fields{"reference": ref, "conflicts_with": existing}).WarnContext(ctx,
+				"storage core: shadow write creates a reference git cannot hold next to one of the database, the git write proceeds")
+		}
+		return "", nil
+	}
+	if err != nil {
+		return "", v.unavailable(err)
+	}
+	return existing, nil
+}
+
+func (v *Voter) createdRefConflict(ctx context.Context, repo *gitalypb.Repository, ref string) (string, error) {
+	record, err := v.core.Meta.GetRepository(ctx, corestore.KeyOf(repo))
+	if errors.Is(err, corestore.ErrRepositoryNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if record.HeadSeq == 0 {
+		return "", nil
+	}
+
+	existing, found, err := v.core.Meta.ConflictingRef(ctx, record.ID, ref)
+	if err != nil || !found {
+		return "", err
+	}
+	return existing, nil
+}
+
 // prepare is the binding write path of doc/graft/PLAN6.md. In shadow mode the
 // changeset is forced: it is recorded even when a reference does not match.
 // prepared is the outcome of the Preparing phase of the transaction, nil when
@@ -372,7 +436,7 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 		return fmt.Errorf("storage core: object format: %w", err)
 	}
 
-	updates, err := parseInput(changes, hash)
+	updates, err := parsePayloadInput(payload, changes, hash)
 	if err != nil {
 		return fmt.Errorf("storage core: malformed reference transaction input: %w", err)
 	}
@@ -409,6 +473,9 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 	// record (doc/graft/PLAN7.md, PACK OWNERSHIP RULE 4).
 	readAt := time.Now()
 	record, err := v.core.Meta.GetRepository(ctx, corestore.KeyOf(payload.Repo))
+	if err == nil {
+		v.observePreparedStep(updates, stepRecord, time.Since(readAt))
+	}
 	if errors.Is(err, corestore.ErrRepositoryNotFound) {
 		if shadow {
 			v.metrics.untracked.Inc()
@@ -446,8 +513,21 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 		return structerr.NewFailedPrecondition("storage core: repository import is not complete; run ImportRepository again")
 	}
 
-	refUpdates, err := v.expectations(ctx, repo, updates)
+	// The local_read step covers the read of the local values and the check of the
+	// old values against them (rejectedByGit), in expectations.
+	localRead := time.Now()
+	refUpdates, err := v.expectations(ctx, repo, hash, updates, payload.IsHookRequested(gitcmd.PreReceiveHook))
+	if err == nil {
+		v.observePreparedStep(updates, stepLocalRead, time.Since(localRead))
+	}
 	if err != nil {
+		var (
+			exists   updateref.ReferenceAlreadyExistsError
+			mismatch updateref.MismatchingStateError
+		)
+		if errors.As(err, &exists) || errors.As(err, &mismatch) {
+			result = resultConflict
+		}
 		return err
 	}
 
@@ -459,9 +539,14 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 	if prepared != nil && prepared.ok && prepared.repoID == record.ID && prepared.usable(time.Now()) {
 		pack = prepared.pack
 	} else {
+		built := time.Now()
 		pack, err = v.buildAndUpload(ctx, repo, payload.Repo.GetStorageName(), record, readAt, updates, false)
 		if err != nil {
 			return v.unavailable(err)
+		}
+		// Like the Preparing steps, a transaction without new tips builds no pack.
+		if len(newTips(updates)) > 0 {
+			v.observePreparedStep(updates, stepPack, time.Since(built))
 		}
 	}
 
@@ -494,12 +579,27 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 	}
 	defer cancel()
 
+	committing := time.Now()
 	res, err := v.core.Meta.CommitChangeset(commitCtx, in)
+	if err == nil {
+		v.observePreparedStep(updates, stepCommit, time.Since(committing))
+	}
 
 	var conflict *corestore.ErrRefConflict
 	if errors.As(err, &conflict) {
 		result = resultConflict
 		return fmt.Errorf("storage core: %w", mismatchError(conflict, hash))
+	}
+	// git checked the name against the local references only, which can be behind
+	// the database: this is the file/directory conflict git would have reported
+	// had it seen the other node's reference.
+	var nameConflict *corestore.ErrRefNameConflict
+	if errors.As(err, &nameConflict) {
+		result = resultConflict
+		return fmt.Errorf("storage core: %w", updateref.FileDirectoryConflictError{
+			ConflictingReferenceName: nameConflict.Name,
+			ExistingReferenceName:    nameConflict.Existing,
+		})
 	}
 	if errors.Is(err, corestore.ErrRepositoryNotFound) {
 		if shadow {
@@ -529,7 +629,7 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 
 	if res.NoOp {
 		// git still writes the values the database already holds.
-		if err := v.deferDurability(ctx, payload, changes, shadow); err != nil {
+		if err := v.observedDeferDurability(ctx, payload, changes, shadow, updates); err != nil {
 			return v.unavailable(err)
 		}
 		result = resultNoOp
@@ -543,14 +643,20 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 	// The entry is remembered before the fault point, so that the Aborted phase
 	// of a transaction that fails after the database commit is recognized.
 	v.pending.add(pendingKey(payload.Repo, changes), committedEntry{
-		repoID: record.ID,
-		seq:    res.Seq,
+		repoID:     record.ID,
+		seq:        res.Seq,
+		invocation: payload.Changelog.Invocation,
 	}, time.Now())
+	// A process that ended during this phase (git was killed) reports nothing more, and its end
+	// did not find this entry.
+	if invocation := payload.Changelog.Invocation; invocation != "" && !gitcmd.InvocationLive(invocation) {
+		v.forgetCommitted(invocation)
+	}
 
 	// After the entry, so that a failure here counts as a local failure in the
 	// Aborted phase: the database holds the changeset, catch-up repairs the
 	// local repository.
-	if err := v.deferDurability(ctx, payload, changes, shadow); err != nil {
+	if err := v.observedDeferDurability(ctx, payload, changes, shadow, updates); err != nil {
 		return v.unavailable(err)
 	}
 
@@ -572,7 +678,18 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 // the table of doc/graft/PLAN6.md (RULE 5). The local references are read in
 // one git process: git holds their locks in the Prepared phase, so they still
 // show the old values.
-func (v *Voter) expectations(ctx context.Context, repo *localrepo.Repo, updates []inputUpdate) ([]corestore.RefUpdate, error) {
+//
+// oldValueAlwaysSent tells that the writer always gives git an old value:
+// receive-pack and UpdaterWithHooks, the only writers that request the pre-receive
+// hook. git checked every such old value against the local reference under the
+// lock, which it still holds, so a local value that differs from it means git
+// rejected the update: receive-pack without --atomic lets one update fail and still
+// feeds it to this hook, without marking it (rejectedByGit). The database may hold
+// that old value nonetheless (the local copy is behind it), so such an update must
+// never be recorded, and a zero old value must never be taken for a forced update.
+// The whole transaction is refused, because the voter does not know the other
+// rejected updates of the input.
+func (v *Voter) expectations(ctx context.Context, repo *localrepo.Repo, hash git.ObjectHash, updates []inputUpdate, oldValueAlwaysSent bool) ([]corestore.RefUpdate, error) {
 	names := make([]string, len(updates))
 	for i, u := range updates {
 		names[i] = u.name
@@ -612,6 +729,12 @@ func (v *Voter) expectations(ctx context.Context, repo *localrepo.Repo, updates 
 
 	refUpdates := make([]corestore.RefUpdate, 0, len(updates))
 	for _, u := range updates {
+		if oldValueAlwaysSent {
+			if err := rejectedByGit(u, local, hash); err != nil {
+				return nil, fmt.Errorf("storage core: %w", err)
+			}
+		}
+
 		ru := corestore.RefUpdate{Name: u.name, New: u.new}
 		if u.oldZero {
 			// Git reports the zero value both for "must not exist" and for a forced
@@ -629,6 +752,33 @@ func (v *Voter) expectations(ctx context.Context, repo *localrepo.Repo, updates 
 	}
 
 	return refUpdates, nil
+}
+
+// rejectedByGit returns the error of an update with an old value that git checked
+// under the reference lock and that the local reference (local, read under that
+// lock) does not have: git rejected it. A zero old value means the reference must
+// not exist (updateref.ReferenceAlreadyExistsError when it does); any other old
+// value must be the local value (updateref.MismatchingStateError otherwise, with
+// the zero object ID for an absent reference). It returns nil for an update git
+// accepted.
+func rejectedByGit(u inputUpdate, local map[string]corestore.Target, hash git.ObjectHash) error {
+	actual, exists := local[u.name]
+	if u.oldZero {
+		if exists {
+			return updateref.ReferenceAlreadyExistsError{ReferenceName: u.name}
+		}
+		return nil
+	}
+	if exists && actual == u.old {
+		return nil
+	}
+
+	zero := hash.ZeroOID.String()
+	return updateref.MismatchingStateError{
+		ReferenceName:    u.name,
+		ExpectedObjectID: targetOrZero(u.old, zero),
+		ActualObjectID:   targetOrZero(actual, zero),
+	}
 }
 
 // isSymbolicRef reports whether name is a symbolic reference, also when its
@@ -793,6 +943,45 @@ func (v *Voter) observeStep(updates []inputUpdate, step string, d time.Duration)
 	v.metrics.preparingSteps.WithLabelValues(transactionKind(updates), step).Observe(d.Seconds())
 }
 
+// The steps of the Prepared phase, while git holds the reference locks, that
+// graft_storage_prepared_step_seconds observes (doc/graft/STORAGE.md), besides
+// stepRecord (the read of the repository record) and stepPack (here the pack
+// built and uploaded when the Preparing phase did not prepare it).
+const (
+	// stepLocalRead is the read of the local references that the expected
+	// values need (expectations).
+	stepLocalRead = "local_read"
+	// stepCommit is the database commit of the changeset (CommitChangeset).
+	stepCommit = "commit"
+	// stepDurability is the durable dirty marker of deferred reference
+	// durability (deferDurability).
+	stepDurability = "durability"
+)
+
+// observePreparedStep observes d in step of graft_storage_prepared_step_seconds,
+// for the kind of the transaction of updates. Like observeStep, only
+// authoritative mode observes the steps, and only steps that succeeded.
+func (v *Voter) observePreparedStep(updates []inputUpdate, step string, d time.Duration) {
+	if !v.core.Authoritative() {
+		return
+	}
+	v.metrics.preparedSteps.WithLabelValues(transactionKind(updates), step).Observe(d.Seconds())
+}
+
+// observedDeferDurability is deferDurability, observed as stepDurability when
+// the durability is deferred (otherwise deferDurability does nothing).
+func (v *Voter) observedDeferDurability(ctx context.Context, payload gitcmd.HooksPayload, changes []byte, shadow bool, updates []inputUpdate) error {
+	if shadow || !v.DeferredReferenceDurability() {
+		return nil
+	}
+	start := time.Now()
+	if err := v.deferDurability(ctx, payload, changes, shadow); err != nil {
+		return err
+	}
+	v.observePreparedStep(updates, stepDurability, time.Since(start))
+	return nil
+}
+
 // fault calls FaultHook and exits the process when CrashEnv selects the point.
 func (v *Voter) fault(point string) error {
 	if FaultHook != nil {
@@ -835,7 +1024,7 @@ func (v *Voter) Committed(ctx context.Context, payload gitcmd.HooksPayload, chan
 
 	// git finished the transaction, its auto-compaction included, and released
 	// the reference lock.
-	v.core.RefAdmission.Release(repoPath, localrefs.Key(key))
+	v.core.RefAdmission.Release(repoPath, localrefs.Key(transactionKey(payload, changes)))
 
 	if !ok || v.applier == nil {
 		return
@@ -890,9 +1079,22 @@ func (v *Voter) DeferReferenceWrites(ctx context.Context, repo *gitalypb.Reposit
 }
 
 // admit waits for the admission of the transaction to the reference lock of
-// its repository (authoritative mode). Committed or Aborted releases it. It
-// never fails the transaction: without an admission git waits for its lock as
-// before.
+// its repository (authoritative mode). It never fails the transaction: without
+// an admission git waits for its lock as before.
+//
+// Committed or Aborted releases the admission, but git reports neither for a
+// transaction whose prepare fails in git update-ref (a stale old value, a
+// reference that is gone, a lock that stayed busy), which dies without aborting
+// it, for an atomic push that fails the same way in git receive-pack, which reports
+// the failure and exits normally, nor for a killed process. So the admission belongs
+// to the process of the transaction, known by its invocation: it ends with the
+// process at the latest, and it stands for no other process, also one with the same
+// hook input.
+//
+// A process that ended while its hook was still on its way (git was killed) holds
+// nothing: the hook leaves the queue, or is not admitted at all, and the writers
+// behind it go on. A hook call without an invocation (a direct caller of the hook
+// RPC) has no process to watch: its admission ends at the hold bound.
 func (v *Voter) admit(ctx context.Context, payload gitcmd.HooksPayload, changes []byte) {
 	if !v.core.Authoritative() || v.core.RefAdmission == nil {
 		return
@@ -903,7 +1105,116 @@ func (v *Voter) admit(ctx context.Context, payload gitcmd.HooksPayload, changes 
 		v.logger.WithError(err).WarnContext(ctx, "storage core: resolving the repository path for the admission, the transaction goes on without it")
 		return
 	}
-	v.core.RefAdmission.Acquire(ctx, repoPath, localrefs.Key(pendingKey(payload.Repo, changes)), localrefs.WriterHook)
+
+	key := localrefs.Key(transactionKey(payload, changes))
+	invocation := payload.Changelog.Invocation
+	if invocation == "" {
+		v.core.RefAdmission.Acquire(ctx, repoPath, key, localrefs.WriterHook)
+		return
+	}
+
+	// A process that ends while its writer waits takes the writer out of the queue.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if !gitcmd.OnInvocationExit(invocation, func() {
+		cancel()
+		v.forgetTransaction(key, invocation)
+		v.releaseUnreported(repoPath, key, invocation)
+	}) {
+		v.forgetTransaction(key, invocation)
+		return
+	}
+
+	if v.beforeAcquire != nil {
+		v.beforeAcquire()
+	}
+
+	// An end of the process that came before the writer held the admission released
+	// nothing. Such an end has made the invocation not live, and a later one finds
+	// the admission.
+	if v.core.RefAdmission.Acquire(ctx, repoPath, key, localrefs.WriterHook) && !gitcmd.InvocationLive(invocation) {
+		v.releaseUnreported(repoPath, key, invocation)
+	}
+}
+
+// TransactionStarts is called first thing in the Preparing phase of a transaction,
+// before anything that can skip the rest of that phase (a vote, the access policy).
+// In its process the transaction replaces the earlier one (see transactionKey), of
+// which git reported no end if anything of it is left (git fetch --prune goes on
+// after a prune whose prepare failed): its admission is released, so that writers
+// do not wait on it during the work of this transaction, nor this one behind itself;
+// and its pack is dropped, as it does not hold the objects of this transaction.
+func (v *Voter) TransactionStarts(ctx context.Context, payload gitcmd.HooksPayload) {
+	if v == nil || !v.core.Enabled() || payload.Repo == nil || payload.Changelog.Invocation == "" {
+		return
+	}
+
+	key := transactionKey(payload, nil)
+	v.packs.take(key, time.Now())
+
+	if !v.core.Authoritative() || v.core.RefAdmission == nil {
+		return
+	}
+
+	repoPath, err := v.repoPath(ctx, payload)
+	if err != nil {
+		v.logger.WithError(err).WarnContext(ctx, "storage core: resolving the repository path at the start of a transaction, an earlier admission ends with its process")
+		return
+	}
+	v.releaseUnreported(repoPath, localrefs.Key(key), payload.Changelog.Invocation)
+}
+
+// forgetTransaction drops what the voter keeps between the phases of a transaction whose process
+// ended: no later phase comes for it. An uploaded pack stays in the bucket as an orphan, like the pack
+// of any failed write.
+func (v *Voter) forgetTransaction(key localrefs.Key, invocation string) {
+	v.packs.take(key, time.Now())
+	v.forgetCommitted(invocation)
+}
+
+// forgetCommitted drops the transactions of a process that ended which the database committed and of
+// which git reported no end. git may or may not have committed them: the catch-up repairs the local
+// repository if it did not. An entry of the same hook input from another process is that process's.
+func (v *Voter) forgetCommitted(invocation string) {
+	for _, entry := range v.pending.removeIf(func(e committedEntry) bool { return e.invocation == invocation }) {
+		v.logger.WithFields(log.Fields{
+			"repo_id":    entry.repoID,
+			"seq":        entry.seq,
+			"invocation": invocation,
+		}).Warn("storage core: git ended without reporting a transaction that the database committed, the next catch-up repairs the local repository if it is behind")
+	}
+}
+
+// releaseUnreported releases the admission of a transaction that ended without a
+// report from git, if it still holds it, and says so.
+func (v *Voter) releaseUnreported(repoPath string, key localrefs.Key, invocation string) {
+	if v.core.RefAdmission.ReleaseUnreported(repoPath, key) {
+		v.logger.WithFields(log.Fields{
+			"repository": repoPath,
+			"invocation": invocation,
+		}).Info("storage core: git ended a reference transaction without reporting Committed or Aborted, its admission is released")
+	}
+}
+
+// transactionKey identifies a transaction between the phases of the hook, for what
+// belongs to one transaction of one process (its admission and the pack of its
+// Preparing phase): one key per process of the repository, from the invocation.
+// All the phases of a transaction carry its invocation, also when they name other
+// references than Preparing did (git reports a symbolic reference by its target in
+// Committed). This rests on a process running one transaction at a time, which holds
+// on reftable only: the files backend nests a packed-refs transaction when it deletes
+// a packed reference. Authoritative mode serves reftable repositories only (the
+// REFTABLE RULE in prepare); shadow mode, which keeps packs but no admission, loses
+// at most the pack of the outer transaction, which Prepared then builds itself.
+//
+// Without an invocation it is the pending key, which all the transactions with the
+// same hook input share.
+func transactionKey(payload gitcmd.HooksPayload, changes []byte) [32]byte {
+	if payload.Changelog.Invocation == "" {
+		return pendingKey(payload.Repo, changes)
+	}
+	return pendingKey(payload.Repo, []byte("invocation\x00"+payload.Changelog.Invocation))
 }
 
 // deferDurability lets git write the references of a transaction that the
@@ -950,14 +1261,14 @@ func (v *Voter) Aborted(ctx context.Context, payload gitcmd.HooksPayload, change
 		if repoPath, err := v.repoPath(ctx, payload); err != nil {
 			v.logger.WithError(err).WarnContext(ctx, "storage core: resolving the repository path after an abort, the admission ends at its bound")
 		} else {
-			v.core.RefAdmission.Release(repoPath, localrefs.Key(key))
+			v.core.RefAdmission.Release(repoPath, localrefs.Key(transactionKey(payload, changes)))
 		}
 	}
 
 	// A transaction aborted before its Prepared phase (git did not get the
 	// locks) leaves the pack of its Preparing phase unused: an orphan in the
 	// bucket, like the pack of any failed write.
-	v.packs.take(key, time.Now())
+	v.packs.take(transactionKey(payload, changes), time.Now())
 
 	if !v.pending.has(key, time.Now()) {
 		return
@@ -991,7 +1302,7 @@ func (v *Voter) committedLocally(ctx context.Context, payload gitcmd.HooksPayloa
 	if err != nil {
 		return false
 	}
-	updates, err := parseInput(changes, hash)
+	updates, err := parsePayloadInput(payload, changes, hash)
 	if err != nil || len(updates) == 0 {
 		return false
 	}
@@ -1036,10 +1347,15 @@ func (v *Voter) Collect(metrics chan<- prometheus.Metric) {
 	}
 }
 
+// parsePayloadInput parses the hook input of the transaction of payload's repository.
+func parsePayloadInput(payload gitcmd.HooksPayload, changes []byte, hash git.ObjectHash) ([]inputUpdate, error) {
+	return parseInput(changes, hash, storage.IsPoolRepository(payload.Repo))
+}
+
 // parseInput parses the hook input "<old> SP <new> SP <ref>" lines. Empty lines
 // are ignored. Values are object IDs of the hash or symbolic "ref:<target>"
 // values.
-func parseInput(changes []byte, hash git.ObjectHash) ([]inputUpdate, error) {
+func parseInput(changes []byte, hash git.ObjectHash, inObjectPool bool) ([]inputUpdate, error) {
 	zero := string(hash.ZeroOID)
 
 	var updates []inputUpdate
@@ -1071,6 +1387,16 @@ func parseInput(changes []byte, hash git.ObjectHash) ([]inputUpdate, error) {
 				return nil, fmt.Errorf("new value of %q: %w", name, err)
 			}
 			u.new = corestore.Target(newValue)
+
+			// A deletion is exempt, so that an existing long reference can be cleaned up.
+			if err := git.ValidateRepositoryReferenceNameLength(name, inObjectPool); err != nil {
+				return nil, err
+			}
+			if u.new.IsSymbolic() {
+				if err := git.ValidateReferenceNameLength(u.new.SymbolicName()); err != nil {
+					return nil, fmt.Errorf("symbolic reference target: %w", err)
+				}
+			}
 		}
 
 		updates = append(updates, u)
@@ -1230,6 +1556,23 @@ func (p *pendingSet[T]) has(key [32]byte, now time.Time) bool {
 	return ok && now.Sub(el.Value.(*pendingEntry[T]).added) < pendingTTL
 }
 
+// removeIf removes the entries whose value matches, and returns their values.
+func (p *pendingSet[T]) removeIf(match func(T) bool) []T {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var removed []T
+	for el := p.order.Front(); el != nil; {
+		next := el.Next()
+		if value := el.Value.(*pendingEntry[T]).value; match(value) {
+			p.removeLocked(el)
+			removed = append(removed, value)
+		}
+		el = next
+	}
+	return removed
+}
+
 // len returns the number of entries, expired ones included.
 func (p *pendingSet[T]) len() int {
 	p.mu.Lock()
@@ -1257,6 +1600,9 @@ type metrics struct {
 	// steps (observeStep).
 	preparingSteps *prometheus.HistogramVec
 	prepared       prometheus.Histogram
+	// preparedSteps splits the Prepared phase of authoritative writes into its
+	// steps (observePreparedStep).
+	preparedSteps *prometheus.HistogramVec
 }
 
 func newMetrics() *metrics {
@@ -1307,6 +1653,16 @@ func newMetrics() *metrics {
 			Help:    "Time spent in the Prepared phase of the storage core write path, while git holds the reference locks.",
 			Buckets: prometheus.DefBuckets,
 		}),
+		preparedSteps: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name: "graft_storage_prepared_step_seconds",
+			Help: "Time of each step of the Prepared phase of authoritative writes, while git holds the reference " +
+				"locks: record (the read of the repository record), local_read (the local references the expected " +
+				"values need), pack (walk, pack and upload of the pack of a transaction with new tips, when the " +
+				"Preparing phase did not prepare it), commit (the database commit of the changeset) and durability " +
+				"(the dirty marker of deferred reference durability), each observed when it succeeded; kind is " +
+				"create for a transaction that only creates references, update otherwise.",
+			Buckets: []float64{.0005, .001, .002, .003, .005, .0075, .01, .015, .02, .03, .05, .075, .1, .25, .5, 1, 2.5},
+		}, []string{"kind", "step"}),
 	}
 }
 
@@ -1322,5 +1678,6 @@ func (m *metrics) collectors() []prometheus.Collector {
 		m.preparing,
 		m.preparingSteps,
 		m.prepared,
+		m.preparedSteps,
 	}
 }

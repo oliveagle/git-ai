@@ -341,7 +341,9 @@ the database references reach is there. A failure of
 either check is reported as a connectivity error; a bucket problem starts with
 `storage core objects:`. In authoritative mode it catches the local copy up
 first, so a divergence means a real inconsistency. In shadow mode it compares
-git with what the database recorded.
+git with what the database recorded. A catch-up that fails because the database
+holds references git cannot hold together is reported as that, with the way out
+(see [Failures](#failures)).
 
 If the bucket check fails (objects of a git write that the storage core did not
 record, left out of the packs of the writes on top of it by a version before
@@ -584,9 +586,127 @@ or re-import the repository from scratch (see
   aborted after the database commit.
 - **A node with an empty disk.** Its first request for a repository hydrates
   it.
+- **A push with an update git rejected for its old value.** Without `--atomic`,
+  git lets one update of a push fail and still shows it to the
+  reference-transaction hook, without marking it. Two cases: a create of a
+  branch another client just created (the old value is zero, the reference
+  exists), and an update or deletion whose old value is not the node's local
+  value. The second case can find the database holding that old value, when
+  another node moved the reference and moved it back and this node's copy is
+  between the two (an ABA that the client did not see), so the database's
+  compare-and-swap would accept an update the client is told was rejected. The
+  database must record neither, so the storage core refuses the transaction
+  that holds the update. The storage core tells this by comparing every old
+  value of a push with the local value it reads while git holds the reference
+  lock, which git checked the update against. What lands depends on git, which
+  runs a non-atomic push in two transactions, the deletions first, then the
+  other updates, each with its own reference-transaction hook and commit:
+  - a rejected deletion fails the first transaction: nothing of the push lands;
+  - a rejected create or update fails the second: the deletions git accepted
+    have landed already, in git and in the database, and the other references
+    of the push do not land, unlike a plain git server.
+  Either way receive-pack dies: the client sees `fatal: in 'prepared' phase,
+  update aborted by the reference-transaction hook` (over SSH; over smart HTTP
+  only that the remote end hung up), no status per reference, and the
+  post-receive hook does not run, also not for the deletions that landed. Check
+  which references moved and push the others again. A push whose transaction
+  the database refuses for another reason (a compare-and-swap lost to another
+  node, a name conflict) behaves the same way. In shadow mode the write proceeds
+  unrecorded, and counts in `graft_storage_shadow_errors_total`. Shadow mode on
+  a files-backend repository also counts one such error for the packed-refs half
+  of a deletion of a packed reference (`0 0 <ref>` while the reference still
+  exists): noise only, the loose half records the deletion.
+- **Two nodes create conflicting names.** git cannot hold `refs/heads/a` and
+  `refs/heads/a/b` together, and each node's git only sees its own copy. The
+  database refuses, in its commit, a changeset that would leave such a pair
+  (also forced, so also in shadow mode), so the repository stays something
+  every node can apply. A database that holds a pair already is repaired as
+  the next item says. What a client sees in authoritative mode (shadow mode,
+  below, never refuses a git write):
+  - **A push** (SSH or smart HTTP, with or without `--atomic`): the update
+    hook, which git runs for each reference before its transaction, refuses a
+    new reference that conflicts with a reference of the database. The client
+    gets `remote: refusing refs/heads/a/b: git cannot hold it next to
+    refs/heads/a; push the other references without it` and `! [remote
+    rejected] refs/heads/a/b (hook declined)` where a plain git server says
+    `(refname conflict)`. Without `--atomic` the other references of the push
+    land as usual. A name the pusher may not see is not named: an agent reads
+    `a reference hidden from you` instead (in practice receive-pack already
+    refuses such names with `deny updating a hidden ref`). Names are shown
+    with control, format and bidirectional characters escaped (`\u202e`).
+  - **A push that creates both names of a pair**, such as `refs/heads/a` and
+    `refs/heads/a/b` in one push without `--atomic`, is refused as a whole.
+    The update hook cannot see the conflict, since each
+    name conflicts only with the other. git refuses one of the two names, but
+    still hands both to the reference-transaction hook (a known git behaviour
+    this release does not work around), and the database refuses that
+    changeset. receive-pack then dies: nothing of the push lands, except its
+    deletions, which git commits first in a transaction of their own (see the
+    previous item). Over SSH the
+    client sees the `refusing ...` line as a plain line, and `fatal: in
+    'prepared' phase, update aborted by the reference-transaction hook`. Over
+    smart HTTP git sends the output of that hook to no client, so the client
+    only sees `fatal: the remote end hung up unexpectedly`. Push the names
+    separately; one of them git cannot hold in any case. The same happens when
+    another node commits the conflicting name between this push's update hook
+    and its commit.
+  - Where the server drives the reference transaction, the code of git's own
+    refusal: `FailedPrecondition` from `UserCreateBranch` and `UserCommitFiles`,
+    for example. Through a git process that the server runs without a push,
+    `Internal` (`UpdateReferences`), as for git's own such conflict.
+  - If the update hook cannot read the database, it refuses the reference
+    (`hook declined`), as any write needs the database in this mode.
+
+  **Shadow mode never refuses a git write because of the database**, which may
+  be behind git there. A push behaves as on a plain git server: git refuses a
+  name only when it conflicts with the node's own copy. The update hook logs a
+  name that conflicts with a reference of the database and counts it in
+  `graft_storage_shadow_errors_total`, and so does a failed read. The database
+  still refuses to record a changeset that would leave a pair (it is forced,
+  but this check holds), so it records none of the references of such a push,
+  and none of a non-atomic push in which git refused a conflicting name (git
+  hands the hook the refused name too). `graft storage verify` reports the
+  references the database misses; the next write of each records it.
+
+  Cost: an update or deletion of an existing reference reads nothing more. The
+  commit of a changeset that creates references adds one primary key lookup of
+  their parent names and one primary key range query of the names below them,
+  each per 500 created names, in the commit's transaction. **Known limit:** a
+  push's update hook adds, for each reference it creates, a read of the
+  repository's row, one primary key lookup of the parent names and one range
+  probe, each in a read transaction of its own: measured at about 0.04 ms on
+  SQLite and 2.0–2.5 ms on Postgres per created reference
+  (`BenchmarkRefNameCheck`, local Postgres in Docker), so a push that creates
+  1,000 references spends about 2–3 s more in its update hooks on Postgres, more
+  over a network.
 - **A repository removed on another node.** The local copy has a watermark
   whose key the database no longer has; it is moved into the storage's
   temporary directory, and the repository is reported missing on that node too.
+- **A database that already holds such a pair.** Only a version before this
+  refusal can have written one. Every catch-up and hydration of the repository
+  fails with `Internal` on every node (`cannot process 'refs/heads/a' and
+  'refs/heads/a/b' at the same time`, or `conflicting reference updates in the
+  same transaction` on a hydration), so the repository serves nothing until one
+  side is gone. `graft storage verify` names the pairs and their values. Nothing
+  repairs this by itself, because either side may be the one that matters:
+
+  1. Choose the reference to delete, and note its value, which `verify` prints.
+  2. Run `graft storage delete-conflicting-ref REFERENCE EXPECTED_TARGET`. It
+     refuses a reference that is not part of a pair or has another value, and
+     records an ordinary changeset that the nodes apply when they catch up. Both
+     checks run in the transaction of that changeset: once one side of a pair
+     is gone, a request for the other side is refused, so two operators who
+     delete the two sides at once delete only one. It also fails while the
+     reference is the root of an open review.
+  3. Create the deleted reference again under another name at the value you
+     noted, if you still want it. Do this before the next checkpoint: the pack
+     that holds its objects stays until a checkpoint that does not reach them
+     covers it and garbage collection runs at least `gc_grace` after that
+     checkpoint.
+
+  It needs authoritative mode. In shadow mode no node catches up from the
+  database and git's copy is what the database must learn, so repair a shadow
+  database as the bucket check above says, by importing again.
 
 - **Local reference writes and unclean shutdowns (authoritative mode).** In
   authoritative mode the database commit is the durable point of a reference
@@ -717,6 +837,7 @@ without a single divergence.
 | `graft_storage_preparing_seconds` | Time of the write path in the Preparing phase, before git locks the references (pack build and upload). |
 | `graft_storage_preparing_step_seconds{kind,step}` | The steps of the Preparing phase in authoritative mode: `record` (the read of the repository record), `walk` (the objects reachable from the new tips and not from a local reference, until their list ends; observed for every transaction with new tips), `pack` (writing and hashing a non-empty pack) and `upload` (to the bucket). `kind` is `create` for a transaction that only creates references (a commit onto a new branch), `update` otherwise (a land). |
 | `graft_storage_prepared_seconds` | Time of the write path in the Prepared phase, while git holds the reference locks (expected values and database commit; also the pack when the Preparing phase did not prepare it). |
+| `graft_storage_prepared_step_seconds{kind,step}` | The steps of the Prepared phase in authoritative mode, while git holds the reference locks: `record` (the read of the repository record), `local_read` (the local references the expected values need), `pack` (only for a transaction with new tips whose Preparing phase did not prepare its pack; unlike the Preparing phase's `pack`, it covers the walk, the packing and the upload), `commit` (the database commit of the changeset) and `durability` (the dirty marker, only when reference durability is deferred). Like the Preparing steps, a step is observed only when it succeeded. The steps do not sum to `graft_storage_prepared_seconds`: the reference backend check, the commit deadline of the pack, the bookkeeping of the committed transaction and the error paths are outside them, so their sum is a lower bound of the phase. `kind` as for the Preparing steps. Buckets from 0.5 ms, fine between 1 and 100 ms. |
 | `graft_storage_pack_bytes_total` | Bytes of packs uploaded. |
 | `graft_storage_shadow_divergences_total` | Shadow mode changesets recorded despite a mismatch. |
 | `graft_storage_shadow_errors_total` | Shadow mode failures; the git write proceeded. |
@@ -742,7 +863,8 @@ without a single divergence.
 | `graft_storage_ref_admission_wait_seconds{writer}` | Wait of a local reference writer (`hook`, `syncer`) for its turn at the repository's reference lock. |
 | `graft_storage_ref_admission_waiting` | Writers waiting for their turn, all repositories. |
 | `graft_storage_ref_admission_bypassed_total{writer}` | Writers that went on to git's lock without their turn after `reftable.lockTimeout` (10 s). |
-| `graft_storage_ref_admission_expired_total` | Turns ended by the 10 s bound instead of their release (a git process that died between its phases). |
+| `graft_storage_ref_admission_expired_total` | Turns ended by the 10 s bound instead of their release (a live git process that stayed between its phases, or a hook call without a tracked process). |
+| `graft_storage_ref_admission_released_unreported_total` | Turns released because the git process of the transaction ended, or went on to its next transaction, without reporting Committed or Aborted: a prepare that failed in git (a stale old value, for example, in `update-ref` or a push), or a killed process. Each is also logged at INFO. |
 | `graft_storage_ref_dirty_repositories` | Repositories with reference writes not yet made durable. |
 | `graft_storage_ref_dirty_marked_total`, `graft_storage_ref_dirty_cleared_total` | Dirty markers written, and removed (the writes are durable, or the repository was moved aside, and no git process can still write it). |
 | `graft_storage_ref_writes_inflight` | git processes of this node that write references without fsync and have not exited; their repositories keep their markers. |
