@@ -1599,7 +1599,7 @@ func SetupRuntimeDirectory(cfg Cfg, processID int) (Cfg, error) {
 
 		if _, err := os.Stat(runtimeDir); err != nil && !os.IsNotExist(err) {
 			return Cfg{}, fmt.Errorf("statting runtime directory: %w", err)
-		} else if err != nil {
+		} else if err == nil {
 			// If the directory exists already then it must be from an old invocation of
 			// Gitaly. Because we use the PID as path component we know that the old
 			// instance cannot exist anymore though, so it's safe to remove this

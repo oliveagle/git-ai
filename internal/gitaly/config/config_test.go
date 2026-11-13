@@ -1891,6 +1891,25 @@ func TestSetupRuntimeDirectory(t *testing.T) {
 			require.Equal(t, filepath.Join(dir, fmt.Sprintf("gitaly-%d", os.Getpid())), cfg.RuntimeDir)
 			require.DirExists(t, cfg.RuntimeDir)
 		})
+
+		// A container gives every start of the server the same pid, so the
+		// directory of the previous process survives a hard kill or a
+		// `docker rm -f` and must be reused, not refused.
+		t.Run("stale runtime directory of an earlier process with the same pid", func(t *testing.T) {
+			dir := testhelper.TempDir(t)
+			cfg := Cfg{RuntimeDir: dir}
+
+			stale := GetGitalyProcessTempDir(dir, os.Getpid())
+			require.NoError(t, os.MkdirAll(stale, mode.Directory))
+			require.NoError(t, os.WriteFile(filepath.Join(stale, "leftover"), nil, mode.File))
+
+			var err error
+			cfg, err = SetupRuntimeDirectory(cfg, os.Getpid())
+			require.NoError(t, err)
+
+			require.Equal(t, stale, cfg.RuntimeDir)
+			require.NoFileExists(t, filepath.Join(stale, "leftover"))
+		})
 	})
 
 	t.Run("validation", func(t *testing.T) {
