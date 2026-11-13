@@ -310,9 +310,17 @@ Git hooks use private.
   the enforcement cannot disagree, but the server does not run the check for
   the CI.
 - The gate does not run the tests. With `require_verified` it asks whether the
-  verification checkpoint of the branch covers its tip, which is what
-  graft-verify records; a server without a verifier has no checkpoint, and
-  every land of such a branch is refused.
+  verification checkpoint of the branch covers the update: the tip it builds
+  on, or the commit the land produces when the caller names it. What the
+  checkpoint means is what the verifier recorded (graft-verify, or a CI with
+  `graft green set`); a server without a verifier has no checkpoint, and every
+  land of such a branch is refused.
+- A dry-run land names the commit a land would produce, and the checkpoint may
+  cover that commit. The name holds only while the request and the tip hold: a
+  land whose tip moved produces another commit, which the checkpoint does not
+  cover, and the branch policy then refuses it. A dry run does not resolve
+  conflicts, and its objects stay in the repository unreferenced until the GC
+  collects them.
 - The review of a change must be based on the tip of the branch, unless the
   rule allows a stale base. A change that was reviewed against an older tip
   needs a new review, even when the branch only moved forward.

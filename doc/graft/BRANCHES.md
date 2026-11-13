@@ -37,7 +37,7 @@ require_verified = false
 | `require_approvals` | `0` | The number of current approvals the review must carry, on top of the approvals the approval rules ask for. |
 | `allow_stale_base` | `false` | Accept a review whose base is not the current tip of the branch. Without it a change based on an older tip does not land, so that a review always covers what the branch holds. |
 | `allow_direct_update` | `false` | Accept an update of the branch that is not a land, such as a push. Without it **only a land may update the branch**. |
-| `require_verified` | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by [graft-verify](VERIFY.md)) must point at the tip the land builds on. |
+| `require_verified` | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by [graft-verify](VERIFY.md)) must point at the tip the land builds on, or at the commit the land produces (see [Verifying the result of a land](#verifying-the-result-of-a-land)). |
 
 Two rules for one branch are refused when the configuration is loaded, as are a
 rule without a name and a name that is not a branch name.
@@ -60,7 +60,8 @@ The decision of one update:
    the branch unless the rule allows a stale base. A batched land needs one
    review per change it folds in.
 5. When the rule asks for it, the **verification checkpoint** of the branch must
-   cover the tip the land builds on.
+   cover the update: the tip the land builds on, or the commit the land
+   produces.
 
 ### Who the gate binds
 
@@ -88,7 +89,7 @@ then the CI's required status check, not the server's.
 | `stale_review` | The review of the change is not based on the tip of the branch. |
 | `not_approved` | The review of the change is not approved. |
 | `not_enough_approvals` | The review of the change has fewer approvals than the rule asks for. |
-| `not_verified` | The verification checkpoint of the branch does not cover its tip. |
+| `not_verified` | The verification checkpoint of the branch covers neither its tip nor the commit the update produces. |
 
 ## The CI commands
 
@@ -170,6 +171,47 @@ things:
 The checkpoint covers the tip the land builds on, so a stale checkpoint
 refuses the merge instead of letting it through, and the checkpoint of the
 new tip is published by the next run of the CI or of `graft-verify`.
+
+That is the post-merge model: land, verify the branch, revert what broke it
+(`graft-verify`, [VERIFY.md](VERIFY.md)). It has one gap, a change that is green
+alone and red together with the tip, and it paces the branch: after every land
+the checkpoint is behind the new tip, so the next land waits for the next run.
+The next section closes both.
+
+## Verifying the result of a land
+
+A merge queue verifies the *result* of a land before it happens. The gate
+accepts a checkpoint that covers the commit the update produces, not only the
+tip it builds on, and the server tells the CI what that commit is:
+
+1. A land with `dry_run` (`sdk.LandOptions.DryRun`, `UserLandRequest.dry_run`)
+   returns the commit the land would produce, with the objects it wrote readable
+   and nothing of the branch changed. Pass the `Timestamp` the land will use,
+   and the same `User`: the commit is a rewrite of the change, and its committer
+   date is part of its object ID.
+2. The CI checks that commit out and runs the verification on it. Its tree is
+   the tree the branch will hold after the land, which is where a change that is
+   green alone and red on the tip shows up.
+3. It publishes the commit it verified: `graft green set --branch main --commit
+   <result>`.
+4. It asks the gate with the result: `graft gate check --branch main --commit
+   <change> --result <result>` (`result` in
+   `BranchPolicyService.GetBranchDecision`). Without `--result` the answer is
+   about the tip, and it refuses: a status check made from the tip alone is
+   conservative, never wrong.
+5. It lands the same request. The land produces exactly the commit the CI
+   verified, so the branch is green the moment it is written, and the next
+   change of the queue is verified against it.
+
+If the branch moves between the dry run and the land, the land produces another
+commit: the checkpoint covers neither it nor the tip, and the land is refused.
+That is the intended answer — the queue runs again on the new tip.
+
+A dry run writes the objects of the commit it names into the repository, and no
+reference points at them: the regular GC collects them if the land never
+comes. It does not resolve conflicts (a result that depends on a resolution is
+the resolution), and it is not a land: the branch policy decides updates, and a
+dry run makes none.
 
 ## What it does not do
 

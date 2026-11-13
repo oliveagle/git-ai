@@ -49,6 +49,14 @@ same checkpoint with `graft green set --branch <branch> --commit <oid>`
 it with a compare-and-swap, so a CI and a verifier never overwrite each
 other.
 
+`graft-verify` verifies the tip of the branch, after a land. A CI that wants to
+verify a change before it lands — a merge queue — asks the server what the land
+would produce (`UserLand` with `dry_run`, `sdk.LandOptions.DryRun`), verifies
+that commit, and publishes it as the checkpoint: the branch policy accepts a
+checkpoint that covers the commit a land produces, so the branch is green the
+moment the land is written and nothing has to be reverted. See "Verifying the
+result of a land" in [BRANCHES.md](BRANCHES.md).
+
 The outcome object has the fields `branch`, `tip`, `passed`, `timed_out`,
 `green`, `green_moved`, `skipped`, `output`, `bisect_error` and `cursor`. It
 does not say whether a revert was made. A revert shows on the branch as a new
