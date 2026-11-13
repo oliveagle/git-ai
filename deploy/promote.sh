@@ -25,6 +25,8 @@ export STAGING_DIR="$(lane_dir staging)"
 export PROD_DIR="$(lane_dir prod)"
 export VERSION="$version"
 export MAX_AGE_HOURS="${MAX_AGE_HOURS:-24}"
+export BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/git-ai}"
+export LANE_PG_DB="$PROD_PG_DB"
 
 log "checking the gate for $version"
 if ! gate_output="$(ssh_script "$DEPLOY_DIR/host-scripts/gate-check.sh" STAGING_DIR VERSION MAX_AGE_HOURS)"; then
@@ -48,6 +50,13 @@ if [ -n "$tested_sha" ] && [ "${copied_sha:0:16}" != "${tested_sha:0:16}" ]; the
 fi
 log "tested bundle copied, sha256 ${copied_sha:0:16}"
 
+# The release's migrations run against the live database, so the database is
+# dumped first and the promotion cites the dump.
+log "backing up the production database"
+backup_path="$(ssh_script "$DEPLOY_DIR/host-scripts/backup-db.sh" \
+  LANE_PG_DB VERSION BACKUP_DIR PG_CONTAINER PG_IN_CONTAINER_PORT | tail -1)"
+log "database dumped to $backup_path"
+
 log "deploying $version to the production lane"
 BUNDLE_ALREADY_ON_HOST=1 DEPLOY_VERSION="$version" \
   "$DEPLOY_DIR/deploy-lane.sh" prod "$PROD_DIR/releases/incoming/$bundle_name"
@@ -63,6 +72,7 @@ ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
   "promoted_at": "$ts",
   "gate_report": "$gate_report",
   "bundle_sha256": "$copied_sha",
+  "database_dump": "$backup_path",
   "deployed_by": "deploy/promote.sh"
 }
 JSON

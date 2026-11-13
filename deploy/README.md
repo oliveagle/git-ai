@@ -171,12 +171,20 @@ On `oleNas01`: docker (the user is in the `docker` group, there is no sudo),
 `~/.supervisord` running with the `configs.d` include, Pigsty's
 `pigsty-postgres` container and the `rustfs` container.
 
+## The database
+
+A promotion dumps the production database before it installs anything
+(`host-scripts/backup-db.sh`, through the PostgreSQL container), keeps the
+newest ten dumps per release in `~/backups/git-ai/`, and names the dump in
+`reports/promote-<version>-<ts>.json`. That is a per-promotion safety net, not
+a backup schedule: nothing dumps `gitai` between promotions.
+
 ## Known gaps
 
-- **The `gitai` database has no backup.** The NAS's daily `pg_backup.sh` dumps
-  the `research` database only; the storage core's changesets, refs and
-  changelog live in `gitai` (and the packs in RustFS) and are not dumped
-  anywhere. A staging lane makes this more urgent, not less.
+- **Nothing backs up `gitai` on a schedule.** The NAS's daily `pg_backup.sh`
+  dumps the `research` database only; the storage core's changesets, refs and
+  changelog live in `gitai` (and the packs in RustFS), so only a promotion
+  leaves a dump behind.
 - **The object store account is shared** by both lanes (see above).
 - **`graft-cache` logs are not rotated**; they are appended under the lane's
   `logs/`.
