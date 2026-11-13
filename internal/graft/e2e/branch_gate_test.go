@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -338,4 +341,122 @@ func TestBranchGateAnswersWhatItEnforces(t *testing.T) {
 	require.Equal(t, "main", rules[0].GetName())
 	require.True(t, rules[0].GetRequireReview())
 	require.False(t, rules[0].GetAllowDirectUpdate())
+}
+
+// TestBranchGateVerifiesTheResultOfALand checks the loop a merge queue runs on
+// a branch that only takes verified lands: the server says what the land would
+// produce, the CI verifies that commit and publishes it as the checkpoint of
+// the branch, and the land then produces exactly that commit, so the branch is
+// green the moment it is written.
+func TestBranchGateVerifiesTheResultOfALand(t *testing.T) {
+	t.Parallel()
+
+	s := startWithBranchRule(t, config.GraftBranchRule{Name: "main", RequireVerified: true})
+	base := writeMain(t, s, map[string]string{"README.md": "main\n"})
+
+	builder := s.repoAs(t, exampleTokens["builder"])
+	commit, err := commitFile(s.ctx, builder, "builder", "feature", base, "main.go", "package main\n")
+	require.NoError(t, err)
+
+	// The branch moves on while the change is in review, so the land has to
+	// replay the change onto the new tip: the commit it produces is not the one
+	// the CI was given to verify.
+	tip := writeMain(t, s, map[string]string{"README.md": "main\n", "NOTES.md": "notes\n"}, base)
+
+	land := sdk.LandOptions{
+		Branch:    "main",
+		Commit:    commit,
+		User:      sdk.User{Name: clientDisplayName, Email: "builder@example.com"},
+		Timestamp: time.Unix(1700000000, 0),
+	}
+
+	// The CI asks the server what the land would produce. Nothing of the branch
+	// changes, and the commit it names is readable: the CI checks it out.
+	dry := land
+	dry.DryRun = true
+	produced, err := builder.Land(s.ctx, dry)
+	require.NoError(t, err)
+	require.True(t, produced.DryRun)
+	require.NotEmpty(t, produced.LandedCommitID)
+	require.NotEqual(t, commit, produced.LandedCommitID, "the land rewrites the change onto the tip")
+	require.Equal(t, tip, s.git(t, "rev-parse", "refs/heads/main"))
+	require.Equal(t, "package main", s.git(t, "cat-file", "-p", produced.LandedCommitID+":main.go"))
+
+	// Nothing is verified yet: the gate refuses the change and names the commit
+	// that would have to be verified, which is the answer a CI prints.
+	answer, err := builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed())
+	require.Equal(t, sdk.BranchNotVerified, answer.GetCode())
+	require.Contains(t, answer.GetReason(), produced.LandedCommitID)
+
+	// The land itself is refused for the same reason.
+	_, err = builder.Land(s.ctx, land)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "verification checkpoint")
+	require.Equal(t, tip, s.git(t, "rev-parse", "refs/heads/main"))
+
+	// The CI verified that commit and published it as the checkpoint of the
+	// branch: the operator writes the checkpoint, an agent cannot (see
+	// TestBranchGateKeepsTheCheckpointFromAgents).
+	s.git(t, "update-ref", "refs/graft/green/main", produced.LandedCommitID)
+
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+
+	// The land produces exactly the commit the CI verified, so the branch is
+	// green when the land is written.
+	landed, err := builder.Land(s.ctx, land)
+	require.NoError(t, err)
+	require.False(t, landed.DryRun, "the land is not a dry run")
+	require.Equal(t, produced.LandedCommitID, landed.LandedCommitID)
+	require.Equal(t, produced.LandedCommitID, s.git(t, "rev-parse", "refs/heads/main"))
+	require.Equal(t, produced.LandedCommitID, s.git(t, "rev-parse", "refs/graft/green/main"))
+
+	// The branch is green now: the checkpoint covers its tip, and the next land
+	// waits for the next verification.
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main"})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.Equal(t, produced.LandedCommitID, answer.GetTip())
+}
+
+// TestBranchGateKeepsTheCheckpointFromAgents checks that the checkpoint of a
+// branch is published by an operator and only read by agents. A checkpoint
+// that the party being gated can move says nothing about what was verified.
+func TestBranchGateKeepsTheCheckpointFromAgents(t *testing.T) {
+	t.Parallel()
+
+	s := startWithBranchRule(t, config.GraftBranchRule{Name: "main", RequireVerified: true})
+	base := writeMain(t, s, map[string]string{"README.md": "main\n"})
+
+	builder := s.repoAs(t, exampleTokens["builder"])
+
+	// An agent token may not move the checkpoint of the branch.
+	err := builder.UpdateReference(s.ctx, "refs/graft/green/main", "", base)
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	// The branch has no checkpoint, so no land is verified.
+	answer, err := builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main"})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed())
+	require.Equal(t, sdk.BranchNotVerified, answer.GetCode())
+	require.Empty(t, answer.GetCheckpoint())
+
+	// The operator publishes it, and the gate reads what the operator wrote.
+	s.git(t, "update-ref", "refs/graft/green/main", base)
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main"})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.Equal(t, base, answer.GetCheckpoint())
 }
