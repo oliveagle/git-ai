@@ -14,6 +14,7 @@ import (
 
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/changelog"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -77,8 +78,9 @@ func branchGateManager(t *testing.T, graft config.Graft, source BranchGateSource
 	t.Helper()
 
 	m := &GitLabHookManager{
-		cfg:    config.Cfg{Graft: graft},
-		logger: testhelper.SharedLogger(t),
+		cfg:          config.Cfg{Graft: graft},
+		logger:       testhelper.SharedLogger(t),
+		branchPolicy: branchgate.NewPolicy(graft),
 	}
 	m.branchGate = source
 	return m

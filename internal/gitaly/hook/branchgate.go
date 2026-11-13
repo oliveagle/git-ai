@@ -43,12 +43,13 @@ type BranchGateSource interface {
 // the access policy does: the operator credential (the shared token) and the
 // server's own operations are trusted, so that the verifier may revert a
 // commit that broke the branch. A CI that lands with the operator credential
-// asks the same question with graft gate check, which reads the rules of the
-// server's configuration (cmd/graft).
+// asks the same question with graft gate check, which the BranchPolicyService
+// answers with this very policy (internal/gitaly/service/branchpolicy).
 //
 // A branch without a rule is not managed: its updates are not touched.
 func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcmd.HooksPayload, env []string, changes []byte) error {
-	if len(m.cfg.Graft.Branches) == 0 {
+	policy := m.branchPolicy
+	if policy.Empty() {
 		return nil
 	}
 
@@ -71,11 +72,11 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 		if !ok {
 			continue
 		}
-		if branchgate.Rule(m.cfg.Graft.Branches, branch) == nil {
+		if policy.Rule(branch) == nil {
 			continue
 		}
 
-		decision, err := m.decideBranchUpdate(ctx, payload, meta, branch, update)
+		decision, err := m.decideBranchUpdate(ctx, policy, payload, meta, branch, update)
 		if err != nil {
 			return err
 		}
@@ -99,7 +100,7 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 
 // decideBranchUpdate decides one update of a managed branch with the rules of
 // the server.
-func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, payload gitcmd.HooksPayload, meta gitcmd.ChangelogMeta, branch string, update changelog.Update) (branchgate.Decision, error) {
+func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *branchgate.Policy, payload gitcmd.HooksPayload, meta gitcmd.ChangelogMeta, branch string, update changelog.Update) (branchgate.Decision, error) {
 	deletion := changelog.IsZeroOID(update.NewOID)
 	creation := changelog.IsZeroOID(update.OldOID)
 
@@ -132,8 +133,8 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, payload gitc
 	}
 
 	return branchgate.Decide(branchgate.Input{
-		Rules:       m.cfg.Graft.Branches,
-		ReviewRules: m.cfg.Graft.Review.RulesOrDefault(),
+		Rules:       policy.Rules,
+		ReviewRules: policy.ReviewRules,
 		Branch:      branch,
 		Changes:     changes,
 		Tip:         update.OldOID,

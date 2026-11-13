@@ -6,6 +6,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/analysis"
 	gitalybackup "github.com/feder-cr/git-ai/internal/gitaly/service/backup"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/blob"
+	"github.com/feder-cr/git-ai/internal/gitaly/service/branchpolicy"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/changeset"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/cleanup"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/commit"
@@ -158,6 +159,7 @@ func RegisterAll(srv *grpc.Server, deps *service.Dependencies) {
 	gitalypb.RegisterSearchServiceServer(srv, search.NewServer(deps))
 	gitalypb.RegisterReviewServiceServer(srv, review.NewServer(deps))
 	gitalypb.RegisterStorageCoreServiceServer(srv, storagecore.NewServer(deps))
+	gitalypb.RegisterBranchPolicyServiceServer(srv, branchpolicy.NewServer(deps))
 
 	healthpb.RegisterHealthServer(srv, auth.UnauthenticatedHealthService{HealthServer: health.NewServer()})
 	reflection.Register(srv)

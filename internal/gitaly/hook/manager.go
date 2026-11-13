@@ -11,6 +11,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/eager"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/helper"
@@ -95,6 +96,10 @@ type GitLabHookManager struct {
 	// reviews and its verification checkpoint. It is nil when the server has
 	// none, and the gate then refuses every land that asks for one.
 	branchGate BranchGateSource
+	// branchPolicy is the branch management policy the gate enforces. The
+	// server passes the policy it also gives the BranchPolicyService, so that
+	// the answer a CI reads and the refusal it meets are made with one policy.
+	branchPolicy *branchgate.Policy
 	// startLandIntentsCompaction starts a compaction of land intents that a prepared
 	// transaction asked for, without the hook waiting for it. Nil runs it in a goroutine;
 	// tests set it.
@@ -127,6 +132,16 @@ func WithPolicyStore(store *policystore.Store) ManagerOption {
 func WithBranchGate(source BranchGateSource) ManagerOption {
 	return func(m *GitLabHookManager) {
 		m.branchGate = source
+	}
+}
+
+// WithBranchPolicy sets the branch management policy the gate enforces. The
+// server passes the policy it also gives the BranchPolicyService, so that the
+// answer a CI reads and the refusal it meets cannot be made with two policies.
+// Without it the gate decides with the policy of the configuration.
+func WithBranchPolicy(policy *branchgate.Policy) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.branchPolicy = policy
 	}
 }
 
@@ -212,6 +227,9 @@ func NewManager(
 	}
 	if m.policy == nil {
 		m.policy = policystore.New(cfg.Graft.Policy)
+	}
+	if m.branchPolicy == nil {
+		m.branchPolicy = branchgate.NewPolicy(cfg.Graft)
 	}
 
 	return m

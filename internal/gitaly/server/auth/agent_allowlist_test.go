@@ -76,6 +76,7 @@ func expectedAgentRPC(fullMethod string) bool {
 		gitalypb.DerivedDataService_ServiceDesc.ServiceName,
 		gitalypb.SearchService_ServiceDesc.ServiceName,
 		gitalypb.ReviewService_ServiceDesc.ServiceName,
+		gitalypb.BranchPolicyService_ServiceDesc.ServiceName,
 	} {
 		if strings.HasPrefix(fullMethod, "/"+service+"/") {
 			return true
@@ -467,6 +468,10 @@ var operatorOnlySources = map[string][]string{
 		"gitaly.RepositoryService/ObjectFormat",
 		"gitaly.RefService/RefExists",
 	},
+	// The verification checkpoint of a branch is the trust anchor of the branch
+	// management policy: only an operator may move it (`graft green set`,
+	// doc/graft/BRANCHES.md).
+	"sdk/refs.go": {"gitaly.RefService/UpdateReferences"},
 }
 
 // operatorScopeCovers reports whether fullMethod is the method, or a method of the

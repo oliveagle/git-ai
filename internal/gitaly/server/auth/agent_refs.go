@@ -58,6 +58,12 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 
 	"gitaly.Branch.name": isRef,
 
+	"gitaly.BranchRule.allow_direct_update": notRef,
+	"gitaly.BranchRule.allow_stale_base":    notRef,
+	"gitaly.BranchRule.name":                isBranchName,
+	"gitaly.BranchRule.require_review":      notRef,
+	"gitaly.BranchRule.require_verified":    notRef,
+
 	"gitaly.ChangedPaths.commit_id":   isRef,
 	"gitaly.ChangedPaths.new_blob_id": notRef,
 	"gitaly.ChangedPaths.old_blob_id": notRef,
@@ -157,6 +163,19 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 	"gitaly.FindTagRequest.tag_name": notRef,
 
 	"gitaly.GetBlobRequest.oid": isRef,
+
+	"gitaly.GetBranchDecisionRequest.branch":  isBranchName,
+	"gitaly.GetBranchDecisionRequest.commits": isRef,
+	"gitaly.GetBranchDecisionRequest.direct":  notRef,
+
+	"gitaly.GetBranchDecisionResponse.allowed":    notRef,
+	"gitaly.GetBranchDecisionResponse.branch":     isBranchName,
+	"gitaly.GetBranchDecisionResponse.change":     isRef,
+	"gitaly.GetBranchDecisionResponse.checkpoint": isRef,
+	"gitaly.GetBranchDecisionResponse.code":       notRef,
+	"gitaly.GetBranchDecisionResponse.managed":    notRef,
+	"gitaly.GetBranchDecisionResponse.reason":     notRef,
+	"gitaly.GetBranchDecisionResponse.tip":        isRef,
 
 	"gitaly.GetBlobResponse.data": notRef,
 	"gitaly.GetBlobResponse.oid":  isRef,

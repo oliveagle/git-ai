@@ -124,6 +124,9 @@ var agentNeverAllowedMethods = map[string]struct{}{
 //     RPC is left out.
 //   - ServerService.ServerInfo and RepositoryService.RepositoryExists, which
 //     graft-cache uses to authorize a caller for a repository.
+//   - BranchPolicyService (`graft gate check`): every RPC. It reads the branch
+//     rules the server enforces and the decision the hook would make on an
+//     update of a branch. It writes nothing.
 //
 // Health checks are not in the list: they are answered without authentication.
 //
@@ -156,6 +159,7 @@ func buildBuiltinAgentRPCs() map[string]struct{} {
 	addService(&gitalypb.DerivedDataService_ServiceDesc, false)
 	addService(&gitalypb.SearchService_ServiceDesc, false)
 	addService(&gitalypb.ReviewService_ServiceDesc, false)
+	addService(&gitalypb.BranchPolicyService_ServiceDesc, true)
 
 	addService(&gitalypb.CommitService_ServiceDesc, true)
 	addService(&gitalypb.RefService_ServiceDesc, true)
