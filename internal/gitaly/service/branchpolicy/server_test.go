@@ -123,7 +123,21 @@ func (h *harness) decide(branch string, commits ...string) *gitalypb.GetBranchDe
 	return resp
 }
 
-// requireDecision requires the outcome of the decision to be the code.
+// decideAbout asks the service about a change and the commit its land would
+// produce, the way a merge queue does after a dry run.
+func (h *harness) decideAbout(branch, commit, result string) *gitalypb.GetBranchDecisionResponse {
+	h.t.Helper()
+
+	resp, err := h.policy.GetBranchDecision(h.ctx, &gitalypb.GetBranchDecisionRequest{
+		Repository: h.repo,
+		Branch:     branch,
+		Commits:    []string{commit},
+		Result:     result,
+	})
+	require.NoError(h.t, err)
+	return resp
+}
+
 func requireDecision(t testing.TB, resp *gitalypb.GetBranchDecisionResponse, code string) {
 	t.Helper()
 
@@ -269,12 +283,42 @@ func TestGetBranchDecision_Missing(t *testing.T) {
 	}
 }
 
-// TestListBranchRules checks that the policy the server enforces is readable.
+// TestGetBranchDecision_VerifiedResult checks the rule of a merge queue over
+// the API: the checkpoint must cover the commit the land produces, so a green
+// tip does not stand in for the result of the update, and a caller that does
+// not name the result is told so.
+func TestGetBranchDecision_VerifiedResult(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, config.GraftBranchRule{Name: "main", RequireVerifiedResult: true})
+	tip := h.write("", "main", map[string]string{"a.txt": "a\n"})
+
+	// The branch is green at its tip: that is not a statement about the result
+	// of a land on top of it.
+	h.checkpoint("main", tip)
+	change := h.write(tip, "", map[string]string{"a.txt": "a\n", "b.txt": "b\n"})
+	result := h.write(tip, "", map[string]string{"a.txt": "a\n", "b.txt": "b\n", "c.txt": "c\n"})
+
+	resp := h.decideAbout("main", change.String(), result.String())
+	requireDecision(t, resp, "not_verified")
+	require.Contains(t, resp.GetReason(), tip.String())
+	require.Contains(t, resp.GetReason(), result.String())
+
+	// A caller that does not name the result cannot be answered.
+	requireDecision(t, h.decide("main", change.String()), "result_unknown")
+
+	// The checkpoint covers the commit the land produces.
+	h.checkpoint("main", result)
+	resp = h.decideAbout("main", change.String(), result.String())
+	requireDecision(t, resp, "allowed")
+	require.Equal(t, result.String(), resp.GetCheckpoint())
+}
+
 func TestListBranchRules(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t,
-		config.GraftBranchRule{Name: "main", RequireReview: true, RequireApprovals: 2, RequireVerified: true},
+		config.GraftBranchRule{Name: "main", RequireReview: true, RequireApprovals: 2, RequireVerified: true, RequireVerifiedResult: true},
 		config.GraftBranchRule{Name: "release/*", AllowDirectUpdate: true, AllowStaleBase: true},
 	)
 
@@ -282,10 +326,11 @@ func TestListBranchRules(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []*gitalypb.BranchRule{
 		{
-			Name:             "main",
-			RequireReview:    true,
-			RequireApprovals: 2,
-			RequireVerified:  true,
+			Name:                  "main",
+			RequireReview:         true,
+			RequireApprovals:      2,
+			RequireVerified:       true,
+			RequireVerifiedResult: true,
 		},
 		{
 			Name:              "release/*",

@@ -41,6 +41,11 @@ branch, and prints the rules the server enforces.
   checkpoint of the branch may cover that commit instead of its tip: that is a
   merge queue, which asks what the land would produce, tests that commit,
   publishes it with graft green set, and lands exactly it.
+- A branch whose rule asks for a verified result (require_verified_result, the
+  rule of a merge queue) takes only a land whose own result the checkpoint
+  covers, so --result is required there: without it the answer is
+  result_unknown, and with a checkpoint on anything but that commit it is
+  not_verified.
 - --direct asks about an update that is not a land, such as a push.
 
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
@@ -69,6 +74,9 @@ type gateRule struct {
 	AllowDirectUpdate bool `json:"allow_direct_update"`
 	// RequireVerified demands a checkpoint that covers the tip.
 	RequireVerified bool `json:"require_verified"`
+	// RequireVerifiedResult demands a checkpoint that covers the commit the
+	// update produces: the rule of a merge queue.
+	RequireVerifiedResult bool `json:"require_verified_result"`
 }
 
 // gateResult is the JSON output of graft gate check.
@@ -294,6 +302,9 @@ func ruleOf(rule *sdk.BranchRule) *gateRule {
 		AllowStaleBase:    rule.GetAllowStaleBase(),
 		AllowDirectUpdate: rule.GetAllowDirectUpdate(),
 		RequireVerified:   rule.GetRequireVerified(),
+		// The stricter rule of a merge queue, so that a reader of the rules
+		// sees what the server will refuse.
+		RequireVerifiedResult: rule.GetRequireVerifiedResult(),
 	}
 }
 
@@ -314,7 +325,9 @@ func describeGateRule(rule *gateRule) string {
 	if rule.AllowStaleBase {
 		parts = append(parts, "a review based on an older tip is accepted")
 	}
-	if rule.RequireVerified {
+	if rule.RequireVerifiedResult {
+		parts = append(parts, "the verification checkpoint must cover the commit the land produces")
+	} else if rule.RequireVerified {
 		parts = append(parts, "the verification checkpoint must cover the tip")
 	}
 	return strings.Join(parts, "; ")

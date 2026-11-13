@@ -29,6 +29,7 @@ require_approvals = 1
 allow_stale_base = false
 allow_direct_update = false
 require_verified = false
+require_verified_result = false
 ```
 
 | Key | Default | What it says |
@@ -39,6 +40,7 @@ require_verified = false
 | `allow_stale_base` | `false` | Accept a review whose base is not the current tip of the branch. Without it a change based on an older tip does not land, so that a review always covers what the branch holds. |
 | `allow_direct_update` | `false` | Accept an update of the branch that is not a land, such as a push. Without it **only a land may update the branch**. |
 | `require_verified` | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by [graft-verify](VERIFY.md)) must point at the tip the land builds on, or at the commit the land produces (see [Verifying the result of a land](#verifying-the-result-of-a-land)). |
+| `require_verified_result` | `false` | The checkpoint must cover the commit the update produces, and nothing else: the branch takes no land on the strength of a green tip. This is the rule of a merge queue — the CI asks what the land would produce, tests that commit, publishes it with `graft green set` — and it implies `require_verified`. A caller that does not name the result (the hook always does, `graft gate check --result` does) is refused with `result_unknown`. |
 
 Two rules for one branch are refused when the configuration is loaded, as are a
 rule without a name and a name that is not a branch name.
@@ -71,7 +73,10 @@ The decision of one update:
    review per change it folds in.
 5. When the rule asks for it, the **verification checkpoint** of the branch must
    cover the update: the tip the land builds on, or the commit the land
-   produces.
+   produces. A branch whose rule asks for a **verified result**
+   (`require_verified_result`) accepts only the second: the update must be the
+   commit the checkpoint names, so the branch never moves on the strength of a
+   tip that was green before this change.
 
 ### Who the gate binds
 
@@ -80,6 +85,15 @@ the access policy of `[[graft.policy]]` does. The operator credential (the
 shared token) and the server's own operations are trusted: the verifier may
 revert a commit that broke the branch, and the CI may land with the shared
 token. See [AGENT-SECURITY.md](AGENT-SECURITY.md) for the trust model.
+
+A **batched land** is one of the updates the gate binds. The land lanes
+publish the combined update in the name of the batch, not of the agents whose
+changes it carries, so the gate reads the changes it folds in as the agents'
+lands and decides it with their reviews and with the commit the batch writes.
+A batch of two or more changes therefore never carries a checkpoint on its
+result — no queue named the commit it writes — and is refused; its changes then
+land alone, and the ones the policy allows land. A branch that demands a
+verified result lands one change at a time, which is what a queue does anyway.
 
 A CI that lands with the operator credential asks the same question with
 `graft gate check`, and refuses the land when the answer is no. The gate is
@@ -99,7 +113,8 @@ then the CI's required status check, not the server's.
 | `stale_review` | The review of the change is not based on the tip of the branch. |
 | `not_approved` | The review of the change is not approved. |
 | `not_enough_approvals` | The review of the change has fewer approvals than the rule asks for. |
-| `not_verified` | The verification checkpoint of the branch covers neither its tip nor the commit the update produces. |
+| `not_verified` | The verification checkpoint of the branch covers neither its tip nor the commit the update produces. On a branch with `require_verified_result`, the checkpoint is not the commit the update produces. |
+| `result_unknown` | The rule of the branch asks for a verified result and the caller did not name the commit the update produces. The state of the tip does not matter: the rule refuses the question, not only a land, so a status of such a branch is read with `graft green show`, not with a decision that names no result. |
 
 ## The CI commands
 
@@ -268,6 +283,13 @@ tip it builds on, and the server tells the CI what that commit is:
    verified, so the branch is green the moment it is written, and the next
    change of the queue is verified against it.
 
+A branch whose rule asks for a verified result (`require_verified_result`)
+demands this loop rather than recommending it: the checkpoint must name the
+commit the update produces, so a land on the strength of a green tip is refused
+with `not_verified`, and a caller that does not name the result at all is
+refused with `result_unknown`. The queue is then the only way onto the branch
+that the server itself accepts, whichever identity asks.
+
 A CI written as a script runs the same loop with the command line, in the
 workspace of the change:
 
@@ -314,6 +336,11 @@ dry run makes none.
   branch is green covers the branch, and whether a review of the change is
   approved. Running the tests is the job of the CI, or of
   [graft-verify](VERIFY.md).
+- The gate cannot tell what a checkpoint means: whether the suite was the whole
+  one, ran on the whole tree, or ran at all. It can refuse a checkpoint that
+  does not cover the update exactly, which is what `require_verified_result`
+  does; what the checkpoint stands for is the contract between the CI and the
+  branch, and `graft green set` is the operator's signature on it.
 - The gate does not bind the operator credential on the server. A CI that
   lands with the shared token must run `graft gate check` itself.
 - The gate does not merge. It decides; the land does the work.

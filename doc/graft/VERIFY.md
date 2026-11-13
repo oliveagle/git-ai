@@ -57,6 +57,12 @@ checkpoint that covers the commit a land produces, so the branch is green the
 moment the land is written and nothing has to be reverted. See "Verifying the
 result of a land" in [BRANCHES.md](BRANCHES.md).
 
+A branch whose rule sets `require_verified_result` takes only that: the
+checkpoint must cover the commit the land produces, and a checkpoint on the tip
+does not authorize the next land (`not_verified`). Every change of such a branch
+goes through the queue; `graft-verify` is then for what the queue cannot see —
+a revert, a rerun after a flake, a nightly suite — not for letting a change in.
+
 The outcome object has the fields `branch`, `tip`, `passed`, `timed_out`,
 `green`, `green_moved`, `skipped`, `output`, `bisect_error` and `cursor`. It
 does not say whether a revert was made. A revert shows on the branch as a new

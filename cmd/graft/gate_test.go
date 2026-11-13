@@ -212,3 +212,54 @@ func TestGateCheckVerifiedResult(t *testing.T) {
 	require.True(t, allowed.Allowed, "reason: %s", allowed.Reason)
 	require.Equal(t, produced.String(), allowed.Result)
 }
+
+// TestGateCheckRequiresTheResult checks the rule of a merge queue over the
+// command line: a branch that takes only a verified result refuses a check
+// that does not name the commit the land would produce, refuses one whose
+// checkpoint covers the tip alone, and takes the change once the checkpoint
+// covers that commit.
+func TestGateCheckRequiresTheResult(t *testing.T) {
+	env := startServer(t, func(c *config.Cfg) {
+		c.Graft.Branches = []config.GraftBranchRule{{Name: "main", RequireVerifiedResult: true}}
+	})
+	tip := env.seedMain(t, map[string]string{"top.txt": "top\n"})
+
+	// The branch is green at its tip: a verifier ran on it. The rule does not
+	// take that for the result of the next land.
+	gittest.Exec(t, env.cfg, "-C", env.repoPath, "update-ref", "refs/graft/green/main", tip.String())
+
+	produced := gittest.WriteCommit(t, env.cfg, env.repoPath,
+		gittest.WithParents(tip),
+		gittest.WithTree(env.writeTree(t, map[string]string{"top.txt": "top\n", "next.txt": "next\n"})),
+	)
+	target := []string{"-address", env.addr, "-storage", env.storage, "--repo", env.relPath}
+
+	// Without --result the rule cannot be answered, and the command says so
+	// instead of guessing.
+	code, stdout, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main", "--json"}, target...)...)
+	require.Equal(t, exitError, code, stderr)
+	var unknown gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &unknown))
+	require.False(t, unknown.Allowed)
+	require.Equal(t, "result_unknown", unknown.Code)
+	require.Contains(t, unknown.Reason, "name the commit the update produces")
+	require.NotNil(t, unknown.Rule)
+	require.True(t, unknown.Rule.RequireVerifiedResult, "the rule that decided is printed with the answer")
+
+	// The checkpoint covers the tip, not the commit the land produces.
+	code, stdout, stderr = runCLI(t, append([]string{"gate", "check", "--branch", "main", "--result", produced.String(), "--json"}, target...)...)
+	require.Equal(t, exitError, code, stderr)
+	var behind gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &behind))
+	require.Equal(t, "not_verified", behind.Code)
+	require.Contains(t, behind.Reason, produced.String())
+
+	// The CI published the result it verified: the check allows the land.
+	gittest.Exec(t, env.cfg, "-C", env.repoPath, "update-ref", "refs/graft/green/main", produced.String())
+	code, stdout, stderr = runCLI(t, append([]string{"gate", "check", "--branch", "main", "--result", produced.String(), "--json"}, target...)...)
+	require.Equal(t, exitOK, code, stderr)
+	var allowed gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &allowed))
+	require.True(t, allowed.Allowed, "reason: %s", allowed.Reason)
+	require.Equal(t, produced.String(), allowed.Checkpoint)
+}

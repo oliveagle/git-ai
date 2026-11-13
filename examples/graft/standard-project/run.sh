@@ -15,7 +15,7 @@
 #      stopped by the queue, and the agent cannot land it around the queue:
 #      main is the ref of the CI;
 #   4. an emergency update by the operator leaves the checkpoint behind the tip,
-#      and the next land is refused until the verifier has covered the tip;
+#      so the branch is not green until the verifier has covered it;
 #   5. the verifier tests the new tip, and the queue lands the reviewed change.
 set -euo pipefail
 
@@ -211,22 +211,24 @@ else
   note "the integration suite failed on the tree of the result: no checkpoint, no land"
 fi
 
-log "3a. around the queue: what the gate can and cannot see"
+log "3a. the same change, around the queue"
+
 (
   cd "$work/shop"
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   result=$(as_agent builder "$bin/graft" land --dry-run --timestamp "$timestamp")
-  note "the gate, asked by the agent about that result:"
+  note "the gate, asked by the agent about the commit that land would produce:"
   as_agent builder "$bin/graft" gate check --branch main --result "$result" || true
   note "the land itself, as builder:"
   as_agent builder "$bin/graft" land --timestamp "$timestamp" || true
   as_agent builder "$bin/graft" land --abort
   as_agent builder "$bin/graft" revert
 )
-note "the gate reads the checkpoint and the review, not the exit status of a test run:"
-note "it says the branch is green because the checkpoint covers the tip. That a change"
-note "is red on the tip is the queue's question, and main may only be updated by the"
-note "CI, so an agent cannot land around the queue that asked it."
+note "the gate reads the checkpoint, not the exit status of a test run: the"
+note "checkpoint covers the tip, and the rule asks for the commit the land"
+note "produces, so the answer is not_verified. main is the ref of the CI as well,"
+note "so the land is refused before the branch could move on a tip that was green"
+note "before this change."
 
 log "3b. an emergency update by the operator leaves the checkpoint behind"
 (
@@ -237,7 +239,7 @@ log "3b. an emergency update by the operator leaves the checkpoint behind"
 )
 as_operator "$bin/graft" green show --branch main --repo shop.git || true
 
-log "3c. a reviewed change, asked of the gate while the tip is not covered"
+log "3c. a reviewed change, ready for the queue on the covered tip"
 cat > "$work/shop/internal/price/round.go" <<'GO'
 package price
 
@@ -276,10 +278,6 @@ GO
   as_agent builder "$bin/graft" review create --branch main --title "price: round a total to a step"
   id=$(as_agent reviewer "$bin/graft" review list --branch main | cut -f1 | sed -n 1p)
   as_agent reviewer "$bin/graft" review approve "$id" --body "the rounding is right"
-  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  result=$(as_agent builder "$bin/graft" land --dry-run --timestamp "$timestamp")
-  note "the gate, with the checkpoint behind the tip:"
-  as_agent builder "$bin/graft" gate check --branch main --result "$result" || true
 )
 
 log "4. post-merge: the verifier tests the tip and moves the checkpoint"

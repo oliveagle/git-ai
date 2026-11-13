@@ -168,6 +168,7 @@ refusal aborts the update. See [BRANCHES.md](BRANCHES.md).
 | `allow_stale_base` | bool | `false` | Accept a review whose base is not the current tip of the branch. Without it a change that is based on an older tip of the branch does not land. |
 | `allow_direct_update` | bool | `false` | Accept an update of the branch that is not a land, such as a push. Without it only a land may update the branch. |
 | `require_verified` | bool | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by graft-verify) must point at the tip the land builds on. |
+| `require_verified_result` | bool | `false` | The checkpoint must point at the commit the update produces, not at the tip it builds on: the branch takes a land only after the result of that very land was tested, which is the rule of a merge queue. It implies `require_verified`. A caller that does not name the result is refused with `result_unknown`; the hook always names it, and `graft gate check` names it with `--result`. |
 
 The gate binds the callers that authenticated with a per-agent token, like the
 access policy does. The operator credential and the server's own operations are

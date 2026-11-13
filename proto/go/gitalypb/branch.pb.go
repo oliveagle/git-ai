@@ -42,8 +42,14 @@ type BranchRule struct {
 	// require_verified demands that the verification checkpoint of the branch
 	// covers the tip the change builds on.
 	RequireVerified bool `protobuf:"varint,6,opt,name=require_verified,json=requireVerified,proto3" json:"require_verified,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// require_verified_result demands that the verification checkpoint cover the
+	// commit the update produces, not only the tip it builds on: the change
+	// lands only after the result of that very land was tested. It implies
+	// require_verified, and it refuses an update whose result the caller does
+	// not name (the hook names it, and so does a dry-run land).
+	RequireVerifiedResult bool `protobuf:"varint,7,opt,name=require_verified_result,json=requireVerifiedResult,proto3" json:"require_verified_result,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *BranchRule) Reset() {
@@ -114,6 +120,13 @@ func (x *BranchRule) GetAllowDirectUpdate() bool {
 func (x *BranchRule) GetRequireVerified() bool {
 	if x != nil {
 		return x.RequireVerified
+	}
+	return false
+}
+
+func (x *BranchRule) GetRequireVerifiedResult() bool {
+	if x != nil {
+		return x.RequireVerifiedResult
 	}
 	return false
 }
@@ -433,7 +446,7 @@ var File_branch_proto protoreflect.FileDescriptor
 const file_branch_proto_rawDesc = "" +
 	"\n" +
 	"\fbranch.proto\x12\x06gitaly\x1a\n" +
-	"lint.proto\x1a\fshared.proto\"\xf9\x01\n" +
+	"lint.proto\x1a\fshared.proto\"\xb1\x02\n" +
 	"\n" +
 	"BranchRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
@@ -441,7 +454,8 @@ const file_branch_proto_rawDesc = "" +
 	"\x11require_approvals\x18\x03 \x01(\x05R\x10requireApprovals\x12(\n" +
 	"\x10allow_stale_base\x18\x04 \x01(\bR\x0eallowStaleBase\x12.\n" +
 	"\x13allow_direct_update\x18\x05 \x01(\bR\x11allowDirectUpdate\x12)\n" +
-	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\"\xb6\x01\n" +
+	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\x126\n" +
+	"\x17require_verified_result\x18\a \x01(\bR\x15requireVerifiedResult\"\xb6\x01\n" +
 	"\x18GetBranchDecisionRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +

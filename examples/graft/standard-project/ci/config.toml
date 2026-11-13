@@ -57,11 +57,13 @@ allow = true
 
 # The branch policy: what the CI's land of main must carry. A review approved by
 # the approval rules of the project, and a verification checkpoint that covers
-# the tip the land builds on or the commit it produces. Both are published by
-# the queue: the review by the reviewer, the checkpoint by the CI.
+# the commit the land produces — not only the tip it builds on — so a change
+# lands only after the tree it writes was tested. The review is published by
+# the reviewer, the checkpoint by the queue.
 [[graft.branch]]
 name = "main"
 require_review = true
 allow_stale_base = false
 allow_direct_update = false
 require_verified = true
+require_verified_result = true

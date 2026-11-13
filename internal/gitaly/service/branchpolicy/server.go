@@ -157,5 +157,8 @@ func protoRule(rule *config.GraftBranchRule) *gitalypb.BranchRule {
 		AllowStaleBase:    rule.AllowStaleBase,
 		AllowDirectUpdate: rule.AllowDirectUpdate,
 		RequireVerified:   rule.RequireVerified,
+		// The proto carries the stricter rule of a merge queue too, so a CI
+		// reads the rules the server enforces, not a subset of them.
+		RequireVerifiedResult: rule.RequireVerifiedResult,
 	}
 }

@@ -312,10 +312,11 @@ Git hooks use private.
   the CI.
 - The gate does not run the tests. With `require_verified` it asks whether the
   verification checkpoint of the branch covers the update: the tip it builds
-  on, or the commit the land produces when the caller names it. What the
-  checkpoint means is what the verifier recorded (graft-verify, or a CI with
-  `graft green set`); a server without a verifier has no checkpoint, and every
-  land of such a branch is refused.
+  on, or the commit the land produces when the caller names it. With
+  `require_verified_result` it asks only the second, so a land cannot stand on a
+  tip that was green before it. What the checkpoint means is what the verifier
+  recorded (graft-verify, or a CI with `graft green set`); a server without a
+  verifier has no checkpoint, and every land of such a branch is refused.
 - A dry-run land names the commit a land would produce, and the checkpoint may
   cover that commit. The name holds only while the request and the tip hold: a
   land whose tip moved produces another commit, which the checkpoint does not
@@ -326,12 +327,17 @@ Git hooks use private.
   materializes the tree of the commit, which is what a merge queue tests, and
   `update` and a land without a branch name are errors. A land that names a
   branch attaches the workspace to it.
-- A verified result and batched landing do not compose. A batched land writes
-  one commit for the whole batch, which depends on the changes that happen to
-  share it, so the commit a dry run names is not the one the batch writes. On a
-  branch that demands a verified checkpoint, either verify the tip after the
-  land (the post-merge model, [VERIFY](VERIFY.md)) or turn batching off
-  (`[graft.land.batch] disabled = true`).
+- A verified result and batched landing compose only one change at a time. A
+  batched land writes one commit for the whole batch, which depends on the
+  changes that happen to share it, so the commit a dry run names is not the one
+  the batch writes. The gate decides the combined update like any other land,
+  with the reviews of its members and with the commit it writes, so on a branch
+  that demands a verified checkpoint a batch of two or more is refused and its
+  changes land alone: the one whose result the checkpoint covers lands, and the
+  others wait for a queue that verifies the commit each of them produces on the
+  tip that landing left. Batching therefore buys a branch that demands a
+  verified result nothing but a refused attempt; `[graft.land.batch] disabled =
+  true` turns it off for the whole server.
 - The review of a change must be based on the tip of the branch, unless the
   rule allows a stale base. A change that was reviewed against an older tip
   needs a new review, even when the branch only moved forward.

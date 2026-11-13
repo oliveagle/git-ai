@@ -876,6 +876,13 @@ type GraftBranchRule struct {
 	// graft-verify) must point at the tip the land builds on. Without it a
 	// change may land on a branch whose last verification failed.
 	RequireVerified bool `json:"require_verified" toml:"require_verified,omitempty"`
+	// RequireVerifiedResult demands more than RequireVerified: the
+	// checkpoint must cover the commit the update produces, not only the
+	// tip it builds on, so a change lands only after the result of that very
+	// land was tested. It is the rule of a merge queue, and it implies
+	// RequireVerified. An update whose result the caller does not name (a
+	// dry-run land, and the hook, name it) is refused.
+	RequireVerifiedResult bool `json:"require_verified_result" toml:"require_verified_result,omitempty"`
 }
 
 // GraftAgent is one agent credential.

@@ -50,6 +50,10 @@ const (
 	// BranchNotVerified is the code of a branch whose verification checkpoint
 	// does not cover its tip.
 	BranchNotVerified = "not_verified"
+	// BranchResultUnknown is the code of a branch whose rule asks for a
+	// verified result and a caller that did not name the commit the update
+	// produces.
+	BranchResultUnknown = "result_unknown"
 )
 
 // BranchDecisionOptions asks whether changes may land on a branch.

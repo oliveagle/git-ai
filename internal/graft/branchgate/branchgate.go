@@ -45,6 +45,9 @@ const (
 	// CodeNotVerified is the code of a branch whose verification checkpoint
 	// does not cover its tip.
 	CodeNotVerified = "not_verified"
+	// CodeResultUnknown is the code of a rule that demands the checkpoint cover
+	// the commit the update produces, and a caller that did not name it.
+	CodeResultUnknown = "result_unknown"
 )
 
 // Input is the state one decision is made with.
@@ -119,7 +122,10 @@ func Rule(rules []config.GraftBranchRule, branch string) *config.GraftBranchRule
 // every change it lands, approved by the approval rules of the server, based
 // on the tip of the branch, unless the rule allows a stale base. When the
 // rule asks for it, the verification checkpoint of the branch must cover the
-// update: the tip it builds on, or the commit it produces (verified).
+// update: the tip it builds on, or the commit it produces (verified). A rule
+// that asks for a verified result (RequireVerifiedResult) accepts only the
+// checkpoint on the commit the update produces, which is the rule of a merge
+// queue, and refuses a caller that does not name that commit.
 func Decide(in Input) Decision {
 	rule := Rule(in.Rules, in.Branch)
 	if rule == nil {
@@ -156,7 +162,27 @@ func Decide(in Input) Decision {
 		}
 	}
 
-	if rule.RequireVerified && !verified(in) {
+	if rule.RequireVerifiedResult {
+		// The rule of a merge queue: the branch takes a land only when the
+		// checkpoint covers the commit this very update produces, so that what
+		// the branch holds was tested as it will be written, not only as the
+		// tip it was built on.
+		if in.Result == "" {
+			return deny(rule, "", CodeResultUnknown,
+				"the branch %q takes only a verified result: name the commit the update produces (the result of a dry-run land) so that the checkpoint can be checked against it",
+				in.Branch)
+		}
+		if in.Checkpoint != in.Result {
+			if in.Checkpoint == "" {
+				return deny(rule, "", CodeNotVerified,
+					"the branch %q has no verification checkpoint, and its rule requires one on %s, the commit the update produces",
+					in.Branch, in.Result)
+			}
+			return deny(rule, "", CodeNotVerified,
+				"the checkpoint of the branch %q is %s, not %s, the commit the update produces: the rule requires the checkpoint on the result of this land",
+				in.Branch, in.Checkpoint, in.Result)
+		}
+	} else if rule.RequireVerified && !verified(in) {
 		if in.Result == "" {
 			return deny(rule, "", CodeNotVerified, "the verification checkpoint of the branch %q does not cover its tip %s", in.Branch, in.Tip)
 		}

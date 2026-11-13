@@ -306,6 +306,69 @@ func TestDecide_verification(t *testing.T) {
 	require.Contains(t, decision.Reason, "result")
 }
 
+// TestDecide_verificationOfTheResult checks the rule of a merge queue: the
+// branch takes a land only when the checkpoint covers the commit that land
+// produces, and a green tip does not stand in for it.
+func TestDecide_verificationOfTheResult(t *testing.T) {
+	t.Parallel()
+
+	// The stricter rule alone is the rule: it implies RequireVerified, so a
+	// policy that sets only it is not silently weaker than it reads.
+	rule := config.GraftBranchRule{Name: "main", RequireVerifiedResult: true}
+
+	// A checkpoint on the tip says the branch is green, not that the result of
+	// this land was tested: the gap the rule closes.
+	decision := Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Result:     "result",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotVerified, decision.Code)
+	require.Contains(t, decision.Reason, "tip")
+	require.Contains(t, decision.Reason, "result")
+
+	// The checkpoint covers the commit the land produces.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Result:     "result",
+		Changes:    []string{"commit"},
+		Checkpoint: "result",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+
+	// A branch with no checkpoint at all says so.
+	decision = Decide(Input{
+		Rules:   []config.GraftBranchRule{rule},
+		Branch:  "main",
+		Tip:     "tip",
+		Result:  "result",
+		Changes: []string{"commit"},
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotVerified, decision.Code)
+	require.Contains(t, decision.Reason, "no verification checkpoint")
+
+	// A caller that does not name the result cannot be answered: the hook
+	// always names it, and a CI names it with the commit a dry run returned.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeResultUnknown, decision.Code)
+	require.Contains(t, decision.Reason, "name the commit the update produces")
+}
+
 func TestDecide_everyChangeOfALand(t *testing.T) {
 	t.Parallel()
 

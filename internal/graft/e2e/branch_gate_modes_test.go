@@ -43,7 +43,7 @@ func requireBranchGateHoldsInMode(t *testing.T, dialect sqlstore.Dialect, mode c
 		{Refs: []string{"refs/heads/**"}, Allow: true},
 		{Refs: []string{"refs/keep-around/**"}, Allow: true},
 	}
-	ex.graft.Branches = []config.GraftBranchRule{{Name: "main", RequireReview: true, RequireVerified: true}}
+	ex.graft.Branches = []config.GraftBranchRule{{Name: "main", RequireReview: true, RequireVerified: true, RequireVerifiedResult: true}}
 
 	cluster := newStorageCluster(t, dialect, mode, ex.graft)
 	node := cluster.addNode(t)
@@ -87,12 +87,13 @@ func requireBranchGateHoldsInMode(t *testing.T, dialect sqlstore.Dialect, mode c
 	_, err = planner.ApproveReview(node.ctx, review.GetId(), "looks good")
 	require.NoError(t, err)
 
-	// The review is approved, and the change is still refused: the verification
-	// checkpoint of the branch covers neither its tip nor the result.
+	// The review is approved, and the change is still refused: the caller does
+	// not name the commit the land would produce, and the rule demands a
+	// checkpoint on that commit.
 	answer, err = builder.BranchDecision(node.ctx, sdk.BranchDecisionOptions{Branch: "main", Commits: []string{commit}})
 	require.NoError(t, err)
 	require.False(t, answer.GetAllowed(), "mode %s: %s", mode, answer.GetReason())
-	require.Equal(t, sdk.BranchNotVerified, answer.GetCode())
+	require.Equal(t, sdk.BranchResultUnknown, answer.GetCode())
 	require.Equal(t, 1, int(answer.GetReviews()))
 
 	// The server names the commit the land would produce, and moves nothing.
@@ -147,10 +148,17 @@ func requireBranchGateHoldsInMode(t *testing.T, dialect sqlstore.Dialect, mode c
 	require.Equal(t, landed.LandedCommitID, node.git(t, relPath, "rev-parse", "refs/heads/main"))
 
 	// The checkpoint covers the new tip: the branch is green the moment the land
-	// is written, and the next change waits for its own verification.
+	// is written. The question still names no result, and the rule refuses one
+	// that does not, however green the tip is; the state it reports is the green
+	// one, so a caller that names the tip as the result reads the allow.
 	answer, err = builder.BranchDecision(node.ctx, sdk.BranchDecisionOptions{Branch: "main"})
 	require.NoError(t, err)
-	require.True(t, answer.GetAllowed(), "mode %s, reason: %s", mode, answer.GetReason())
+	require.False(t, answer.GetAllowed(), "mode %s: %s", mode, answer.GetReason())
+	require.Equal(t, sdk.BranchResultUnknown, answer.GetCode())
 	require.Equal(t, landed.LandedCommitID, answer.GetTip())
 	require.Equal(t, landed.LandedCommitID, answer.GetCheckpoint())
+
+	answer, err = builder.BranchDecision(node.ctx, sdk.BranchDecisionOptions{Branch: "main", Result: landed.LandedCommitID})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "mode %s, reason: %s", mode, answer.GetReason())
 }

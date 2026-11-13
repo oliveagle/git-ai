@@ -50,6 +50,12 @@ message BranchRule {
   // require_verified demands that the verification checkpoint of the branch
   // covers the tip the change builds on.
   bool require_verified = 6;
+  // require_verified_result demands that the verification checkpoint cover the
+  // commit the update produces, not only the tip it builds on: the change
+  // lands only after the result of that very land was tested. It implies
+  // require_verified, and it refuses an update whose result the caller does
+  // not name (the hook names it, and so does a dry-run land).
+  bool require_verified_result = 7;
 }
 
 // GetBranchDecisionRequest is a request for GetBranchDecision.

@@ -69,16 +69,21 @@ and `--commit "$C"` on the gate check and the land
 - `[[graft.branch]]` refuses every update of main that is not a land
   (`allow_direct_update = false`), so a push is out;
 - and refuses a land without an approved review and without a checkpoint that
-  covers the tip it builds on or the commit it produces (`require_review`,
-  `require_verified`).
+  covers the commit the land produces (`require_review`,
+  `require_verified_result`), not only the tip it builds on.
+
+`require_verified_result` is what makes the queue the only way in rather than a
+strong habit: a checkpoint on the tip says the branch *was* green, and this rule
+does not take that for the result of the next land. A land whose result nobody
+published is refused with `not_verified`, and a caller that does not name the
+result at all with `result_unknown` — so the server, not the CI's discipline,
+decides whether the result was tested.
 
 The gate reads the review and the checkpoint, not the exit status of a test run.
 A change that is green on its own and red on the tip is the queue's question:
-the queue is the only thing that tests the result, and the CI is the only
-identity that may land, so the queue cannot be skipped. When a tip is not
-covered (an emergency update by the operator, a verifier that has not run yet)
-the next land answers `not_verified` until `graft-verify` or the queue publishes
-the checkpoint for it.
+the queue is the only thing that tests the result. When the checkpoint is behind
+the tip (an emergency update by the operator) the branch is not green until
+`graft-verify` covers the new tip again.
 
 ## Running it
 
@@ -95,10 +100,12 @@ It needs Go and make on `PATH`, plus the built `gitaly`, `graft` and
 2. a change that breaks the unit suite, stopped in the workspace before the
    server is asked anything;
 3. a change that passes the unit suite and breaks the integration suite
-   (a renamed field of the HTTP answer), stopped by the queue at step 4, and a
-   land of it around the queue refused by the access policy;
+   (a renamed field of the HTTP answer), stopped by the queue at step 4, and the
+   gate refusing a land of it around the queue (`not_verified`: the checkpoint
+   covers the tip, not the commit the land produces) before the access policy
+   refuses the land itself;
 4. an emergency update by the operator that leaves the checkpoint behind the
-   tip, and the next land refused with `not_verified`;
+   tip: the branch answers "not green" until step 5 covers it;
 5. `graft-verify -once` testing the new tip, moving the checkpoint, and the
    queue landing the reviewed change on the covered tip.
 
