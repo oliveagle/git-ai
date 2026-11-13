@@ -341,6 +341,14 @@ Git hooks use private.
 - The review of a change must be based on the tip of the branch, unless the
   rule allows a stale base. A change that was reviewed against an older tip
   needs a new review, even when the branch only moved forward.
+- A change that conflicts and needs a resolution cannot satisfy a branch that
+  demands a verified result: a dry run resolves nothing (a land that would
+  resolve is refused with `invalid_argument`), so the commit a resolving land
+  writes is one no queue named, and the gate refuses it. Make the resolution
+  part of the change — rebase the change onto the tip, resolve it, commit the
+  resolution — and let the queue verify the result. The resolver is for a
+  branch that takes the post-merge model ([VERIFY](VERIFY.md)) or for an
+  operator's land, not for a land a checkpoint has to cover.
 - The checkpoint is read from the local repository of the node that decides
   the update. In a cluster of nodes the checkpoint of a branch is the one of
   the node that runs the hook, which is the node that holds the repository.
