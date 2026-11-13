@@ -26,6 +26,7 @@ the example stays a working configuration.
 |---|---|---|---|
 | `standalone` | bool | `false` | Run without GitLab. No GitLab secret or URL is required, GitLab is never contacted, and access checks and hook callbacks are answered by the standalone client from `[[graft.policy]]`. Request defaults are applied on the external server. |
 | `policy` | array of tables | empty | Ordered access rules, see below. |
+| `branch` | array of tables | empty | Branch management rules, see below and [BRANCHES.md](BRANCHES.md). |
 | `agent` | array of tables | empty | Per-agent credentials, see below. With at least one agent, every request must present an agent token or the shared `auth.token`. |
 | `agent_rpcs` | array of strings | empty | Extra full gRPC method names (for example `/gitaly.RepositoryService/RepositorySize`) that agents may call on top of the built-in allowlist. Startup fails on an unregistered method or on a method that agents may never call. See [AGENT-SECURITY.md](AGENT-SECURITY.md). |
 | `land` | table | | `[graft.land.batch]`: batching of concurrent lands, and `[graft.land.resolver]`: the conflict resolver of `UserLand`, see below. |
@@ -143,6 +144,30 @@ reload will (exit 2 when the policy is invalid) and prints its hash; with
 would deny, and exits 1 when there are any. It checks the policy only: the reload also validates the rest of
 the file, against the server's own paths and settings, and rejects a file that
 fails there.
+
+### `[[graft.branch]]`
+
+The branch management policy: what may update a branch, and what a change must
+carry to land on it. A branch without a rule is not managed. The rules are
+decided by the reference-transaction hook, in its prepared phase, so that a
+refusal aborts the update. See [BRANCHES.md](BRANCHES.md).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | required | The branch the rule governs, without the `refs/heads/` prefix. Two rules for one branch are refused when the configuration is loaded, as is a name that is not a branch name. |
+| `require_review` | bool | `false` | A change that lands on the branch must have a review of it, on that branch, approved by the approval rules of `[graft.review]`. |
+| `require_approvals` | int | `0` | The number of current approvals the review must carry, on top of the approvals the approval rules ask for. |
+| `allow_stale_base` | bool | `false` | Accept a review whose base is not the current tip of the branch. Without it a change that is based on an older tip of the branch does not land. |
+| `allow_direct_update` | bool | `false` | Accept an update of the branch that is not a land, such as a push. Without it only a land may update the branch. |
+| `require_verified` | bool | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by graft-verify) must point at the tip the land builds on. |
+
+The gate binds the callers that authenticated with a per-agent token, like the
+access policy does. The operator credential and the server's own operations are
+trusted, so a CI that lands with the shared token asks the same question with
+`graft gate check --branch B --config FILE`, which reads the rules of this
+file and the state of the branch from the server (exit 0 when the change may
+land, 1 when the policy refuses it, 2 when the file or the command line is
+wrong).
 
 ### `[[graft.agent]]`
 

@@ -43,6 +43,12 @@ into leaking it (a prompt injection planted in the repository). See
 it in CI. Exit status 0 means the batch passed or was skipped, 2 means the
 test failed on the tip, and 1 means an error, including a configuration error.
 
+A CI that runs its own tests instead of running `graft-verify` publishes the
+same checkpoint with `graft green set --branch <branch> --commit <oid>`
+(see [BRANCHES.md](BRANCHES.md)). It moves the same reference, and both move
+it with a compare-and-swap, so a CI and a verifier never overwrite each
+other.
+
 The outcome object has the fields `branch`, `tip`, `passed`, `timed_out`,
 `green`, `green_moved`, `skipped`, `output`, `bisect_error` and `cursor`. It
 does not say whether a revert was made. A revert shows on the branch as a new

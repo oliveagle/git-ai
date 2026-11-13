@@ -294,6 +294,29 @@ Git hooks use private.
 - `graft land --strategy merge` and `ff_only` are available in the CLI. The
   CLI's default strategy is rebase.
 
+### Branch management
+
+- The branch management policy (`[[graft.branch]]`, see
+  [BRANCHES](BRANCHES.md)) is decided in the reference-transaction hook, in
+  the prepared phase, so that a refusal aborts the update. The rules are read
+  when the server starts: a reload (SIGUSR1) reloads the access policy only,
+  so a change of the branch rules needs a restart.
+- The gate binds the callers that authenticated with a per-agent token. The
+  operator credential (the shared token) and the server's own operations are
+  trusted, like for the access policy: the verifier may revert a commit that
+  broke the branch. A CI that lands with the shared token is not decided by
+  the server, and has to run `graft gate check` itself.
+- The gate does not run the tests. With `require_verified` it asks whether the
+  verification checkpoint of the branch covers its tip, which is what
+  graft-verify records; a server without a verifier has no checkpoint, and
+  every land of such a branch is refused.
+- The review of a change must be based on the tip of the branch, unless the
+  rule allows a stale base. A change that was reviewed against an older tip
+  needs a new review, even when the branch only moved forward.
+- The checkpoint is read from the local repository of the node that decides
+  the update. In a cluster of nodes the checkpoint of a branch is the one of
+  the node that runs the hook, which is the node that holds the repository.
+
 ### ObjectService and caching
 
 - `GetObjects` takes at most `max_objects` object IDs per request. The SDK
