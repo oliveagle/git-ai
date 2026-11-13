@@ -65,6 +65,11 @@ message GetBranchDecisionRequest {
   // direct asks about an update of the branch that is not a land, such as a
   // push: the rule must allow it, and its commits are the ones it writes.
   bool direct = 4;
+  // result is the commit the update would produce, when the caller knows it:
+  // the commit a dry-run land returned. The verification checkpoint may cover
+  // that commit rather than the tip of the branch, which is how a merge queue
+  // verifies its result before it lands it.
+  string result = 5;
 }
 
 // GetBranchDecisionResponse is a response for GetBranchDecision.

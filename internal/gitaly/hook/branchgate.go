@@ -120,16 +120,14 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 	}
 
 	var reviews []*gitalypb.Review
-	verified := false
+	var checkpoint string
 	if m.branchGate != nil {
 		state, err := m.branchGate.BranchState(ctx, payload.Repo, branch)
 		if err != nil {
 			return branchgate.Decision{}, fmt.Errorf("reading the state of the branch %q: %w", branch, err)
 		}
 		reviews = state.Reviews
-		// The checkpoint covers the branch when it points at the tip the
-		// update builds on: the branch is green.
-		verified = state.Checkpoint != "" && state.Checkpoint == update.OldOID
+		checkpoint = state.Checkpoint
 	}
 
 	return branchgate.Decide(branchgate.Input{
@@ -138,10 +136,13 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 		Branch:      branch,
 		Changes:     changes,
 		Tip:         update.OldOID,
-		Reviews:     reviews,
-		Verified:    verified,
-		Direct:      !land,
-		Creation:    creation,
-		Deletion:    deletion,
+		// The update produces the commit git is about to write, so the gate
+		// knows it: a checkpoint on that commit is a verified result.
+		Result:     update.NewOID,
+		Reviews:    reviews,
+		Checkpoint: checkpoint,
+		Direct:     !land,
+		Creation:   creation,
+		Deletion:   deletion,
 	}), nil
 }

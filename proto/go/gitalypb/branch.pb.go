@@ -131,7 +131,12 @@ type GetBranchDecisionRequest struct {
 	Commits []string `protobuf:"bytes,3,rep,name=commits,proto3" json:"commits,omitempty"`
 	// direct asks about an update of the branch that is not a land, such as a
 	// push: the rule must allow it, and its commits are the ones it writes.
-	Direct        bool `protobuf:"varint,4,opt,name=direct,proto3" json:"direct,omitempty"`
+	Direct bool `protobuf:"varint,4,opt,name=direct,proto3" json:"direct,omitempty"`
+	// result is the commit the update would produce, when the caller knows it:
+	// the commit a dry-run land returned. The verification checkpoint may cover
+	// that commit rather than the tip of the branch, which is how a merge queue
+	// verifies its result before it lands it.
+	Result        string `protobuf:"bytes,5,opt,name=result,proto3" json:"result,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -192,6 +197,13 @@ func (x *GetBranchDecisionRequest) GetDirect() bool {
 		return x.Direct
 	}
 	return false
+}
+
+func (x *GetBranchDecisionRequest) GetResult() string {
+	if x != nil {
+		return x.Result
+	}
+	return ""
 }
 
 // GetBranchDecisionResponse is a response for GetBranchDecision.
@@ -429,14 +441,15 @@ const file_branch_proto_rawDesc = "" +
 	"\x11require_approvals\x18\x03 \x01(\x05R\x10requireApprovals\x12(\n" +
 	"\x10allow_stale_base\x18\x04 \x01(\bR\x0eallowStaleBase\x12.\n" +
 	"\x13allow_direct_update\x18\x05 \x01(\bR\x11allowDirectUpdate\x12)\n" +
-	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\"\x9e\x01\n" +
+	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\"\xb6\x01\n" +
 	"\x18GetBranchDecisionRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
 	"repository\x12\x16\n" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x18\n" +
 	"\acommits\x18\x03 \x03(\tR\acommits\x12\x16\n" +
-	"\x06direct\x18\x04 \x01(\bR\x06direct\"\x9f\x02\n" +
+	"\x06direct\x18\x04 \x01(\bR\x06direct\x12\x16\n" +
+	"\x06result\x18\x05 \x01(\tR\x06result\"\x9f\x02\n" +
 	"\x19GetBranchDecisionResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x16\n" +

@@ -76,10 +76,12 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		Changes:     req.GetCommits(),
 		Tip:         tip,
 		Reviews:     state.Reviews,
-		// The checkpoint covers the branch when it points at its tip: the
-		// branch is green, and a land of the change builds on that tip.
-		Verified: state.Checkpoint != "" && state.Checkpoint == tip,
-		Direct:   req.GetDirect(),
+		// The checkpoint covers the update when it points at the tip the
+		// change builds on, or at the commit the land would produce when the
+		// caller knows it (a dry-run land it verified).
+		Checkpoint: state.Checkpoint,
+		Result:     req.GetResult(),
+		Direct:     req.GetDirect(),
 	})
 
 	return &gitalypb.GetBranchDecisionResponse{

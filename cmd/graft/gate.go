@@ -14,7 +14,7 @@ import (
 )
 
 // gateSynopsis is the command line of graft gate.
-const gateSynopsis = "usage: graft gate check --branch BRANCH [--commit OID] [--direct] [--repo REPO] [--json]\n" +
+const gateSynopsis = "usage: graft gate check --branch BRANCH [--commit OID] [--result OID] [--direct] [--repo REPO] [--json]\n" +
 	"       graft gate rules [--repo REPO] [--json]"
 
 // gateUsage lists the subcommands of graft gate.
@@ -36,6 +36,11 @@ branch, and prints the rules the server enforces.
 - gate check asks about a change: --commit C is the change that would land, the
   commit the review is about. Without it the pending commit of the workspace is
   used, and without a workspace the state of the branch alone is checked.
+- --result M is the commit the land would produce, as a dry-run land returned
+  it (UserLand with dry_run, sdk.LandOptions.DryRun). The verification
+  checkpoint of the branch may cover that commit instead of its tip: that is a
+  merge queue, which asks what the land would produce, tests that commit,
+  publishes it with graft green set, and lands exactly it.
 - --direct asks about an update that is not a land, such as a push.
 
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
@@ -45,6 +50,7 @@ reason is printed), 2 when the command line is wrong.`
 type gateFlags struct {
 	branch string
 	commit string
+	result string
 	direct bool
 	repo   string
 }
@@ -76,6 +82,8 @@ type gateResult struct {
 	Commit string `json:"commit,omitempty"`
 	// Direct tells whether the check is about an update that is not a land.
 	Direct bool `json:"direct,omitempty"`
+	// Result is the commit the land would produce, when the caller knows it.
+	Result string `json:"result,omitempty"`
 	// Tip is the commit the branch points at.
 	Tip string `json:"tip"`
 	// Checkpoint is the commit the verification checkpoint of the branch points
@@ -111,6 +119,7 @@ func gateCommand() command {
 			}
 			fs.StringVar(&f.branch, "branch", "", "branch the change would land on")
 			fs.StringVar(&f.commit, "commit", "", "commit that would land on the branch (default: the pending commit of the workspace)")
+			fs.StringVar(&f.result, "result", "", "commit the land would produce, as a dry-run land returned it: the checkpoint may cover it")
 			fs.BoolVar(&f.direct, "direct", false, "ask about an update that is not a land, such as a push")
 			fs.StringVar(&f.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
 			fs.BoolVar(&o.jsonOut, "json", false, "print the decision as one JSON object")
@@ -164,6 +173,7 @@ func gateCheck(ctx context.Context, out io.Writer, o *options, f *gateFlags) err
 	if commit != "" {
 		opts.Commits = []string{commit}
 	}
+	opts.Result = f.result
 
 	answer, err := repo.BranchDecision(ctx, opts)
 	if err != nil {
@@ -175,6 +185,7 @@ func gateCheck(ctx context.Context, out io.Writer, o *options, f *gateFlags) err
 		Managed:    answer.GetManaged(),
 		Commit:     commit,
 		Direct:     f.direct,
+		Result:     f.result,
 		Tip:        answer.GetTip(),
 		Checkpoint: answer.GetCheckpoint(),
 		Reviews:    int(answer.GetReviews()),

@@ -62,6 +62,11 @@ type BranchDecisionOptions struct {
 	Commits []string
 	// Direct asks about an update that is not a land, such as a push.
 	Direct bool
+	// Result is the commit the update would produce, when the caller knows it:
+	// the commit a dry-run land returned (LandOptions.DryRun). The
+	// verification checkpoint may cover that commit instead of the tip of the
+	// branch, which is how a merge queue verifies its result before it lands.
+	Result string
 }
 
 // BranchDecision asks the server whether the changes may land on the branch,
@@ -80,6 +85,7 @@ func (r *Repo) BranchDecision(ctx context.Context, opts BranchDecisionOptions) (
 		Branch:     branch,
 		Commits:    opts.Commits,
 		Direct:     opts.Direct,
+		Result:     opts.Result,
 	})
 }
 

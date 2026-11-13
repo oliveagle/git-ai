@@ -258,24 +258,52 @@ func TestDecide_verification(t *testing.T) {
 	rule := config.GraftBranchRule{Name: "main", RequireVerified: true}
 
 	decision := Decide(Input{
-		Rules:    []config.GraftBranchRule{rule},
-		Branch:   "main",
-		Tip:      "tip",
-		Changes:  []string{"commit"},
-		Verified: false,
+		Rules:   []config.GraftBranchRule{rule},
+		Branch:  "main",
+		Tip:     "tip",
+		Changes: []string{"commit"},
 	})
 	require.False(t, decision.Allowed)
 	require.Equal(t, CodeNotVerified, decision.Code)
 
+	// The checkpoint covers the tip the update builds on: the branch is green.
 	decision = Decide(Input{
-		Rules:    []config.GraftBranchRule{rule},
-		Branch:   "main",
-		Tip:      "tip",
-		Changes:  []string{"commit"},
-		Verified: true,
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
 	})
 	require.True(t, decision.Allowed)
 	require.Equal(t, CodeAllowed, decision.Code)
+
+	// The checkpoint covers the commit the update produces: a CI verified the
+	// result of this very update before landing it.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Result:     "result",
+		Changes:    []string{"commit"},
+		Checkpoint: "result",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+
+	// A checkpoint on another commit covers neither, and the reason names the
+	// two commits the update could have been verified at.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Result:     "result",
+		Changes:    []string{"commit"},
+		Checkpoint: "elsewhere",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotVerified, decision.Code)
+	require.Contains(t, decision.Reason, "tip")
+	require.Contains(t, decision.Reason, "result")
 }
 
 func TestDecide_everyChangeOfALand(t *testing.T) {

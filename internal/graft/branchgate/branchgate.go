@@ -64,9 +64,15 @@ type Input struct {
 	Tip string
 	// Reviews are the reviews of the branch.
 	Reviews []*gitalypb.Review
-	// Verified tells whether the verification checkpoint of the branch covers
-	// the tip of the branch.
-	Verified bool
+	// Checkpoint is the commit the verification checkpoint of the branch
+	// points at (refs/graft/green/<branch>), empty when the branch has none.
+	// It is the commit whose tree passed the verification of the branch.
+	Checkpoint string
+	// Result is the commit the update produces, empty when the caller does not
+	// know it. The hook knows it: git hands the reference transaction the new
+	// object ID. A CI knows it when it asked the server for the result of the
+	// land with a dry-run and verified that commit before landing.
+	Result string
 	// Direct tells whether the update is a direct update of the branch, such
 	// as a push, rather than a land.
 	Direct bool
@@ -113,7 +119,7 @@ func Rule(rules []config.GraftBranchRule, branch string) *config.GraftBranchRule
 // every change it lands, approved by the approval rules of the server, based
 // on the tip of the branch, unless the rule allows a stale base. When the
 // rule asks for it, the verification checkpoint of the branch must cover the
-// tip the land builds on.
+// update: the tip it builds on, or the commit it produces (verified).
 func Decide(in Input) Decision {
 	rule := Rule(in.Rules, in.Branch)
 	if rule == nil {
@@ -150,11 +156,35 @@ func Decide(in Input) Decision {
 		}
 	}
 
-	if rule.RequireVerified && !in.Verified {
-		return deny(rule, "", CodeNotVerified, "the verification checkpoint of the branch %q does not cover its tip %s", in.Branch, in.Tip)
+	if rule.RequireVerified && !verified(in) {
+		if in.Result == "" {
+			return deny(rule, "", CodeNotVerified, "the verification checkpoint of the branch %q does not cover its tip %s", in.Branch, in.Tip)
+		}
+		return deny(rule, "", CodeNotVerified,
+			"the verification checkpoint of the branch %q covers neither its tip %s nor the commit %s the update produces",
+			in.Branch, in.Tip, in.Result)
 	}
 
 	return allow(rule, "", "")
+}
+
+// verified reports whether the verification checkpoint of the branch covers the
+// update: the tip it builds on, or the commit it produces.
+//
+// A checkpoint on the produced commit is the statement of a CI that ran the
+// verification on the result of this very update, which is what a merge queue
+// does: it asks the server what the land would produce, tests that commit, and
+// publishes it as the checkpoint before the land. The branch is then green by
+// construction once the update is written, so the update is as verified as one
+// that lands on a green tip.
+func verified(in Input) bool {
+	if in.Checkpoint == "" {
+		return false
+	}
+	if in.Checkpoint == in.Tip {
+		return true
+	}
+	return in.Result != "" && in.Checkpoint == in.Result
 }
 
 // decideChange decides whether one change may land on the branch.

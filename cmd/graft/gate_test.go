@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
@@ -171,4 +172,43 @@ func TestGateCheckUsage(t *testing.T) {
 			require.Contains(t, stderr, tc.want)
 		})
 	}
+}
+
+// TestGateCheckVerifiedResult drives the flag a merge queue uses: the
+// checkpoint of the branch may cover the commit the land would produce, and the
+// answer says which commit it was made about.
+func TestGateCheckVerifiedResult(t *testing.T) {
+	env := startServer(t, func(c *config.Cfg) {
+		c.Graft.Branches = []config.GraftBranchRule{{Name: "main", RequireVerified: true}}
+	})
+	tip := env.seedMain(t, map[string]string{"top.txt": "top\n"})
+
+	// The commit a land of the next change would produce, which the CI verified
+	// before landing it.
+	produced := gittest.WriteCommit(t, env.cfg, env.repoPath,
+		gittest.WithParents(tip),
+		gittest.WithTree(env.writeTree(t, map[string]string{"top.txt": "top\n", "next.txt": "next\n"})),
+	)
+	gittest.Exec(t, env.cfg, "-C", env.repoPath, "update-ref", "refs/graft/green/main", produced.String())
+
+	target := []string{"-address", env.addr, "-storage", env.storage, "--repo", env.relPath}
+
+	// The checkpoint does not cover the tip of the branch, and the check does
+	// not know what the update would produce: it refuses, saying so.
+	code, stdout, stderr := runCLI(t, append([]string{"gate", "check", "--branch", "main", "--json"}, target...)...)
+	require.Equal(t, exitError, code, stderr)
+	var refused gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &refused))
+	require.False(t, refused.Allowed)
+	require.Equal(t, "not_verified", refused.Code)
+	require.Equal(t, produced.String(), refused.Checkpoint)
+
+	// With the commit the land would produce, the answer is the one the land
+	// meets: the checkpoint covers it.
+	code, stdout, stderr = runCLI(t, append([]string{"gate", "check", "--branch", "main", "--result", produced.String(), "--json"}, target...)...)
+	require.Equal(t, exitOK, code, stderr)
+	var allowed gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &allowed))
+	require.True(t, allowed.Allowed, "reason: %s", allowed.Reason)
+	require.Equal(t, produced.String(), allowed.Result)
 }
