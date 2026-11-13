@@ -7,67 +7,75 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
 // gateSynopsis is the command line of graft gate.
-const gateSynopsis = "usage: graft gate check --branch BRANCH --config FILE [--commit OID] [--repo REPO] [--json]"
+const gateSynopsis = "usage: graft gate check --branch BRANCH [--commit OID] [--direct] [--repo REPO] [--json]\n" +
+	"       graft gate rules [--repo REPO] [--json]"
 
 // gateUsage lists the subcommands of graft gate.
-const gateUsage = "gate requires a subcommand: check (" + gateSynopsis + ")"
+const gateUsage = "gate requires a subcommand: check or rules (" + gateSynopsis + ")"
 
-// gateHelp explains graft gate check below its synopsis.
-const gateHelp = `Checks whether the branch management policy of the server ([[graft.branch]]) allows a
-change to land on a branch, the way the server decides it when an agent lands:
-a land is refused when the policy refuses it.
+// gateHelp explains graft gate below its synopsis.
+const gateHelp = `Asks the branch management policy of the server whether a change may land on a
+branch, and prints the rules the server enforces.
 
-- The rules are read from the configuration file of the server (--config), so
-  that the check asks with the rules the server enforces. The file is read as a
-  server reads it and validated as a reload validates it: a file the server
-  would reject exits 2.
-- The state of the branch is read from the server: the tip of the branch, the
-  open reviews of the branch and its verification checkpoint (the green
-  reference of graft-verify). An agent token cannot read the checkpoint: it is
-  then reported as absent.
-- With --commit C the change C is checked, as a land of it on the branch.
-  Without it, only the state of the branch is checked: the checkpoint and the
-  rule that governs the direct updates of the branch.
+- The rules are the ones the server enforces ([[graft.branch]], see
+  BRANCHES.md), read from the server, so that the check cannot be made with a
+  copy of the policy that differs from the one in force. graft gate rules
+  prints them.
+- The state the answer is made with is the state the server decides with: the
+  tip of the branch, its open reviews and its verification checkpoint. The
+  answer is therefore the one the reference-transaction hook makes when the
+  change lands, and a CI can use the exit status as the status check of a
+  merge request. graft green set publishes the checkpoint.
+- gate check asks about a change: --commit C is the change that would land, the
+  commit the review is about. Without it the pending commit of the workspace is
+  used, and without a workspace the state of the branch alone is checked.
+- --direct asks about an update that is not a land, such as a push.
 
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
-reason is printed), 2 when the command line or the configuration file is
-wrong.`
+reason is printed), 2 when the command line is wrong.`
 
-// gateGreenRefPrefix is the namespace of the verification checkpoints of the
-// branches, the green references of graft-verify.
-const gateGreenRefPrefix = "refs/graft/green/"
-
-// gateReviewLimit is the number of reviews the check reads: enough for every
-// open review of a repository, which the server bounds.
-const gateReviewLimit = 1000
-
-// gateFlags holds the flags of graft gate check.
+// gateFlags holds the flags of graft gate.
 type gateFlags struct {
 	branch string
 	commit string
-	config string
+	direct bool
 	repo   string
+}
+
+// gateRule is one branch rule, as the command prints it.
+type gateRule struct {
+	// Name is the branch the rule governs, without refs/heads/.
+	Name string `json:"name"`
+	// RequireReview demands a review of the change that lands on the branch.
+	RequireReview bool `json:"require_review"`
+	// RequireApprovals is the number of approvals the review must carry.
+	RequireApprovals int32 `json:"require_approvals"`
+	// AllowStaleBase accepts a review based on an older tip.
+	AllowStaleBase bool `json:"allow_stale_base"`
+	// AllowDirectUpdate accepts an update that is not a land.
+	AllowDirectUpdate bool `json:"allow_direct_update"`
+	// RequireVerified demands a checkpoint that covers the tip.
+	RequireVerified bool `json:"require_verified"`
 }
 
 // gateResult is the JSON output of graft gate check.
 type gateResult struct {
+	// Branch is the branch the change would land on.
 	Branch string `json:"branch"`
 	// Managed tells whether the branch has a rule.
 	Managed bool `json:"managed"`
 	// Commit is the commit that would land, empty when the check is about the
 	// state of the branch alone.
 	Commit string `json:"commit,omitempty"`
+	// Direct tells whether the check is about an update that is not a land.
+	Direct bool `json:"direct,omitempty"`
 	// Tip is the commit the branch points at.
 	Tip string `json:"tip"`
 	// Checkpoint is the commit the verification checkpoint of the branch points
@@ -81,10 +89,18 @@ type gateResult struct {
 	Code string `json:"code"`
 	// Reason explains the outcome.
 	Reason string `json:"reason,omitempty"`
+	// Rule is the rule of the branch, empty when the branch is not managed.
+	Rule *gateRule `json:"rule,omitempty"`
 }
 
-// gateCommand returns the gate command, the check of the branch management
-// policy before a land.
+// gateRulesResult is the JSON output of graft gate rules.
+type gateRulesResult struct {
+	// Rules are the branch rules the server enforces.
+	Rules []gateRule `json:"rules"`
+}
+
+// gateCommand returns the gate command, the branch management policy of the
+// server as a check.
 func gateCommand() command {
 	f := &gateFlags{}
 	return command{
@@ -95,7 +111,7 @@ func gateCommand() command {
 			}
 			fs.StringVar(&f.branch, "branch", "", "branch the change would land on")
 			fs.StringVar(&f.commit, "commit", "", "commit that would land on the branch (default: the pending commit of the workspace)")
-			fs.StringVar(&f.config, "config", "", "configuration file of the server, which holds the branch rules")
+			fs.BoolVar(&f.direct, "direct", false, "ask about an update that is not a land, such as a push")
 			fs.StringVar(&f.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
 			fs.BoolVar(&o.jsonOut, "json", false, "print the decision as one JSON object")
 		},
@@ -105,55 +121,67 @@ func gateCommand() command {
 	}
 }
 
-// cmdGate dispatches a gate subcommand. Arguments are checked before the
+// cmdGate dispatches a gate subcommand. The command line is checked before the
 // server is contacted.
 func cmdGate(ctx context.Context, out io.Writer, o *options, f *gateFlags, args []string) error {
 	if len(args) == 0 {
 		return usagef("%s", gateUsage)
 	}
-	if args[0] != "check" {
-		return usagef("unknown gate subcommand %q: %s", args[0], gateUsage)
-	}
 	if len(args) != 1 {
 		return usagef("%s", gateSynopsis)
 	}
-	if f.branch == "" {
-		return usagef("gate check requires --branch B")
-	}
-	if f.config == "" {
-		return usagef("gate check requires --config FILE: the branch rules are read from the configuration of the server")
-	}
 
-	graft, err := loadPolicy(f.config)
-	if err != nil {
-		// A reload would reject the file: the exit status of a usage error.
-		return usagef("%s: %v", f.config, err)
+	switch args[0] {
+	case "check":
+		if f.branch == "" {
+			return usagef("gate check requires --branch B")
+		}
+		return gateCheck(ctx, out, o, f)
+	case "rules":
+		return gateRules(ctx, out, o, f)
+	default:
+		return usagef("unknown gate subcommand %q: %s", args[0], gateUsage)
 	}
+}
 
-	t, root, err := gateTarget(o, f)
+// gateCheck asks the server whether the change may land, and prints the
+// answer.
+func gateCheck(ctx context.Context, out io.Writer, o *options, f *gateFlags) error {
+	repo, backend, root, err := gateRepo(ctx, o, f)
 	if err != nil {
 		return err
-	}
-	backend, err := backendFactory(ctx, t)
-	if err != nil {
-		return err
-	}
-	sb, ok := backend.(*sdkBackend)
-	if !ok {
-		return errors.New("gate: the backend cannot check a branch")
 	}
 
 	commit := f.commit
-	if commit == "" && root != "" {
+	if commit == "" && !f.direct && root != "" {
 		commit, err = gatePendingCommit(root, backend)
 		if err != nil {
 			return err
 		}
 	}
 
-	res, err := gateCheck(ctx, sb.repo, graft, f.branch, commit)
+	opts := sdk.BranchDecisionOptions{Branch: f.branch, Direct: f.direct}
+	if commit != "" {
+		opts.Commits = []string{commit}
+	}
+
+	answer, err := repo.BranchDecision(ctx, opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("asking the branch policy of the server: %w", err)
+	}
+
+	res := gateResult{
+		Branch:     answer.GetBranch(),
+		Managed:    answer.GetManaged(),
+		Commit:     commit,
+		Direct:     f.direct,
+		Tip:        answer.GetTip(),
+		Checkpoint: answer.GetCheckpoint(),
+		Reviews:    int(answer.GetReviews()),
+		Allowed:    answer.GetAllowed(),
+		Code:       answer.GetCode(),
+		Reason:     answer.GetReason(),
+		Rule:       ruleOf(answer.GetRule()),
 	}
 
 	if o.jsonOut {
@@ -172,13 +200,57 @@ func cmdGate(ctx context.Context, out io.Writer, o *options, f *gateFlags, args 
 	return nil
 }
 
-// gateTarget returns the server and repository of the gate command, and the
-// workspace root. They come from the workspace when there is one. Without a
-// workspace they come from -address, -storage and -repo, and the root is empty.
-// Inside a workspace the repository is the one of the workspace, so -repo must
-// name that repository or be left out.
-func gateTarget(o *options, f *gateFlags) (target, string, error) {
-	return resolveTarget(o, f.repo, "gate")
+// gateRules prints the branch rules the server enforces.
+func gateRules(ctx context.Context, out io.Writer, o *options, f *gateFlags) error {
+	repo, _, _, err := gateRepo(ctx, o, f)
+	if err != nil {
+		return err
+	}
+
+	rules, err := repo.BranchRules(ctx)
+	if err != nil {
+		return fmt.Errorf("reading the branch rules of the server: %w", err)
+	}
+
+	res := gateRulesResult{}
+	for _, rule := range rules {
+		res.Rules = append(res.Rules, *ruleOf(rule))
+	}
+
+	if o.jsonOut {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
+	}
+
+	if len(res.Rules) == 0 {
+		fmt.Fprintln(out, "the server manages no branch: every branch is updated as any other reference")
+		return nil
+	}
+	for i := range res.Rules {
+		fmt.Fprintf(out, "%s: %s\n", res.Rules[i].Name, describeGateRule(&res.Rules[i]))
+	}
+	return nil
+}
+
+// gateRepo returns the repository the gate command works on, the backend of
+// the workspace and the root of the workspace (empty when there is none).
+func gateRepo(ctx context.Context, o *options, f *gateFlags) (*sdk.Repo, workspace.Backend, string, error) {
+	t, root, err := resolveTarget(o, f.repo, "gate")
+	if err != nil {
+		return nil, nil, "", err
+	}
+	backend, err := backendFactory(ctx, t)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	// The widening is safe: the command line checks that gate runs on the SDK
+	// backend when it is registered.
+	sb, ok := backend.(*sdkBackend)
+	if !ok {
+		return nil, nil, "", errors.New("gate: the backend cannot check a branch")
+	}
+	return sb.repo, backend, root, nil
 }
 
 // gatePendingCommit returns the commit the workspace has pending: the change
@@ -198,66 +270,54 @@ func gatePendingCommit(root string, backend workspace.Backend) (string, error) {
 	return pending.Commit, nil
 }
 
-// gateCheck decides whether the change may land on the branch, with the rules
-// of the server and the state read from it.
-func gateCheck(ctx context.Context, repo *sdk.Repo, graft config.Graft, branch, commit string) (gateResult, error) {
-	res := gateResult{Branch: branch, Commit: commit}
-
-	tip, err := repo.ResolveRevision(ctx, "refs/heads/"+branch)
-	if err != nil {
-		// A branch that does not exist has no tip: the decision refuses the
-		// change, and says why.
-		if status.Code(err) != codes.NotFound {
-			return res, fmt.Errorf("reading the tip of the branch %q: %w", branch, err)
-		}
-	} else {
-		res.Tip = tip
+// ruleOf returns the rule as the command prints it, nil when the branch is not
+// managed.
+func ruleOf(rule *sdk.BranchRule) *gateRule {
+	if rule == nil {
+		return nil
 	}
-
-	reviews, err := repo.ListReviews(ctx, sdk.ListReviewsOptions{TargetBranch: branch, Limit: gateReviewLimit})
-	if err != nil {
-		return res, fmt.Errorf("reading the reviews of the branch %q: %w", branch, err)
+	return &gateRule{
+		Name:              rule.GetName(),
+		RequireReview:     rule.GetRequireReview(),
+		RequireApprovals:  rule.GetRequireApprovals(),
+		AllowStaleBase:    rule.GetAllowStaleBase(),
+		AllowDirectUpdate: rule.GetAllowDirectUpdate(),
+		RequireVerified:   rule.GetRequireVerified(),
 	}
-	res.Reviews = len(reviews)
-
-	checkpoint, err := repo.ResolveRevision(ctx, gateGreenRefPrefix+branch)
-	if err != nil {
-		// The branch has no checkpoint, or the token may not read it.
-		if code := status.Code(err); code != codes.NotFound && code != codes.PermissionDenied {
-			return res, fmt.Errorf("reading the checkpoint of the branch %q: %w", branch, err)
-		}
-	} else {
-		res.Checkpoint = checkpoint
-	}
-
-	var changes []string
-	if commit != "" {
-		changes = []string{commit}
-	}
-
-	decision := branchgate.Decide(branchgate.Input{
-		Rules:       graft.Branches,
-		ReviewRules: graft.Review.RulesOrDefault(),
-		Branch:      branch,
-		Changes:     changes,
-		Tip:         tip,
-		Reviews:     reviews,
-		// The checkpoint covers the branch when it points at its tip: the
-		// branch is green.
-		Verified: res.Checkpoint != "" && res.Checkpoint == tip,
-	})
-
-	res.Managed = decision.Rule != nil
-	res.Allowed = decision.Allowed
-	res.Code = decision.Code
-	res.Reason = decision.Reason
-	return res, nil
 }
 
-// printGateCheck prints the result of graft gate check for a reader.
+// describeGateRule describes a rule for a reader.
+func describeGateRule(rule *gateRule) string {
+	var parts []string
+	if rule.AllowDirectUpdate {
+		parts = append(parts, "a push may update it")
+	} else {
+		parts = append(parts, "only a land may update it")
+	}
+	if rule.RequireReview {
+		parts = append(parts, "a review is required")
+	}
+	if rule.RequireApprovals > 0 {
+		parts = append(parts, fmt.Sprintf("%d approval(s) are required", rule.RequireApprovals))
+	}
+	if rule.AllowStaleBase {
+		parts = append(parts, "a review based on an older tip is accepted")
+	}
+	if rule.RequireVerified {
+		parts = append(parts, "the verification checkpoint must cover the tip")
+	}
+	return strings.Join(parts, "; ")
+}
+
+// printGateCheck prints the answer of graft gate check for a reader.
 func printGateCheck(out io.Writer, res gateResult) {
 	subject := "the branch " + res.Branch
-	if res.Commit != "" {
+	switch {
+	case res.Direct && res.Commit != "":
+		subject = "the direct update of " + res.Branch + " to " + res.Commit
+	case res.Direct:
+		subject = "a direct update of " + res.Branch
+	case res.Commit != "":
 		subject = "the change " + res.Commit
 	}
 
@@ -266,10 +326,15 @@ func printGateCheck(out io.Writer, res gateResult) {
 		return
 	}
 
+	verb := "land on"
+	if res.Direct {
+		verb = "update"
+	}
+
 	if res.Allowed {
-		fmt.Fprintf(out, "%s may land on %s\n", subject, res.Branch)
+		fmt.Fprintf(out, "%s may %s %s\n", subject, verb, res.Branch)
 		return
 	}
 
-	fmt.Fprintf(out, "%s may not land on %s: %s\n", subject, res.Branch, res.Reason)
+	fmt.Fprintf(out, "%s may not %s %s: %s\n", subject, verb, res.Branch, res.Reason)
 }

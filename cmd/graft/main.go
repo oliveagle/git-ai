@@ -281,8 +281,9 @@ commands:
                          --initial-commit [--branch NAME], --json)
   policy check FILE      validate the access policy of a configuration file before a reload, and list
                          what it would deny among recent changesets (-repo, --limit, --json)
-  gate check --branch B  ask the branch management policy of a configuration file whether a change may
-                         land on a branch (--config FILE, --commit OID, --repo, --json)
+  gate check --branch B  ask the branch management policy of the server whether a change may land on a
+                         branch (--commit OID, --direct, --repo, --json); gate rules lists the rules the
+                         server enforces (--repo, --json)
   green SUBCOMMAND       publish or read the verification checkpoint of a branch: set --branch B --commit OID,
                          show --branch B (--repo, --json)
 
