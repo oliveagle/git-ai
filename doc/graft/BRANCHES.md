@@ -203,6 +203,23 @@ tip it builds on, and the server tells the CI what that commit is:
    verified, so the branch is green the moment it is written, and the next
    change of the queue is verified against it.
 
+A CI written as a script runs the same loop with the command line, in the
+workspace of the change:
+
+```
+T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+M=$(graft land --dry-run --timestamp "$T")   # the commit the land would produce
+<run the tests on M: check it out, build it, test it>
+graft green set --branch main --commit "$M"
+graft gate check --branch main --result "$M"
+graft land --timestamp "$T"
+```
+
+`graft land --dry-run` prints the object ID alone, so the script can take it.
+`--timestamp` is required there, and the same date is passed to the land: the
+committer date is part of the identity of the commit, and a land with another
+one writes another commit, which the checkpoint would not cover.
+
 If the branch moves between the dry run and the land, the land produces another
 commit: the checkpoint covers neither it nor the tip, and the land is refused.
 That is the intended answer — the queue runs again on the new tip.

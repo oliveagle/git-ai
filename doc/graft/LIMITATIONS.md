@@ -321,6 +321,12 @@ Git hooks use private.
   cover, and the branch policy then refuses it. A dry run does not resolve
   conflicts, and its objects stay in the repository unreferenced until the GC
   collects them.
+- A verified result and batched landing do not compose. A batched land writes
+  one commit for the whole batch, which depends on the changes that happen to
+  share it, so the commit a dry run names is not the one the batch writes. On a
+  branch that demands a verified checkpoint, either verify the tip after the
+  land (the post-merge model, [VERIFY](VERIFY.md)) or turn batching off
+  (`[graft.land.batch] disabled = true`).
 - The review of a change must be based on the tip of the branch, unless the
   rule allows a stale base. A change that was reviewed against an older tip
   needs a new review, even when the branch only moved forward.
