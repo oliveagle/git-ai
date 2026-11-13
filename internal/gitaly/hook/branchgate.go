@@ -34,6 +34,24 @@ type BranchGateSource interface {
 	BranchState(ctx context.Context, repo *gitalypb.Repository, branch string) (BranchGateState, error)
 }
 
+// BranchGateDenial is the refusal of an update by the branch management policy.
+// It carries the decision, so that the caller can tell a policy decision from a
+// failure, and tell which rule refused the update: the land lanes land the
+// members of a batch alone when the combined update is refused, so that the
+// policy judges each of them on its own.
+type BranchGateDenial struct {
+	// Branch is the branch whose rule refused the update.
+	Branch string
+	// Code is the code of the decision (branchgate.CodeNotVerified, say).
+	Code string
+	// Reason explains the refusal for a human.
+	Reason string
+}
+
+func (e BranchGateDenial) Error() string {
+	return e.Reason
+}
+
 // enforceBranchGate decides the updates of the transaction with the branch
 // management policy of the server ([[graft.branch]]). It runs in the prepared
 // phase, while the references are locked and before git writes them, so that
@@ -64,7 +82,15 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 	}
 
 	if !meta.Agent || meta.Actor == "" {
-		return nil
+		// The operator credential (the shared token) and the server's own
+		// operations are trusted, so the gate binds the updates an agent asked
+		// for. A batched land is one of them: the land lanes publish the
+		// combined update in the name of the batch, not of the agents whose
+		// changes it carries, so the identities of the lands it folds in are
+		// what tells the gate that agents' changes are being written.
+		if len(meta.Lands) < 2 {
+			return nil
+		}
 	}
 
 	for _, update := range changelog.ParseUpdates(changes) {
@@ -93,7 +119,11 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 		if !decision.Allowed {
 			fields["reason"] = decision.Reason
 			m.logger.WithFields(fields).InfoContext(ctx, "agent branch update denied")
-			return structerr.NewPermissionDenied("%s", decision.Reason)
+			return structerr.NewPermissionDenied("%w", BranchGateDenial{
+				Branch: branch,
+				Code:   decision.Code,
+				Reason: decision.Reason,
+			})
 		}
 		m.logger.WithFields(fields).DebugContext(ctx, "agent branch update allowed")
 	}

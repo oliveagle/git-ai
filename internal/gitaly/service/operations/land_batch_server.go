@@ -326,7 +326,7 @@ func (st *serverLandBatchStepper) Update(ctx context.Context, reference git.Refe
 		User:       landBatchIdentity,
 	}
 
-	return st.updateKind(st.server.updateLandedReference(ctx, in, st.quarantineDir, st.repo, reference, oldOID, newTip, rewritten, landsOf(members)))
+	return st.updateKind(st.server.updateLandedReference(ctx, in, st.quarantineDir, st.repo, reference, oldOID, newTip, rewritten, landsOf(members)), len(members))
 }
 
 // UpdateSolo publishes a batch of one member as a land: the update runs with the identity of the member
@@ -347,7 +347,7 @@ func (st *serverLandBatchStepper) UpdateSolo(ctx context.Context, req *landBatch
 	ctx = requestIdentityContext(ctx, req)
 	ctx = changelog.WithBatch(changelog.WithOperation(ctx, changelogOperationLand), []changelog.Member{member})
 
-	return st.updateKind(st.server.updateLandedReference(ctx, req.in, st.quarantineDir, st.repo, reference, oldOID, newTip, rewritten, landsOf([]changelog.Member{member})))
+	return st.updateKind(st.server.updateLandedReference(ctx, req.in, st.quarantineDir, st.repo, reference, oldOID, newTip, rewritten, landsOf([]changelog.Member{member})), 1)
 }
 
 // landsOf returns the identities of the changes that members land (doc/graft/PLAN11.md): each
@@ -364,8 +364,10 @@ func landsOf(members []changelog.Member) []changelog.Land {
 // of the gRPC method of the requests, so the operation is set for the update of a batch of one.
 const changelogOperationLand = "land"
 
-// updateKind classifies the error of the compare-and-swap of a batch or of a batch of one.
-func (st *serverLandBatchStepper) updateKind(err error) (landUpdateKind, error) {
+// updateKind classifies the error of the compare-and-swap of a batch or of a batch of one. members is
+// the number of changes the update carries, which says whether a refusal belongs to the combined
+// update or to its only member.
+func (st *serverLandBatchStepper) updateKind(err error, members int) (landUpdateKind, error) {
 	if err == nil {
 		return landUpdated, nil
 	}
@@ -381,6 +383,14 @@ func (st *serverLandBatchStepper) updateKind(err error) (landUpdateKind, error) 
 	// request then lands alone, judged by the policy in force.
 	var policyChanged hook.PolicyChangedError
 	if errors.As(err, &customHookErr) || errors.As(err, &notAllowedErr) || errors.As(err, &policyChanged) {
+		return landUpdateRejected, err
+	}
+
+	// The branch management policy refused the combined update: the refusal belongs to one of the
+	// members, which the combined update does not say, so each request lands alone and is judged by
+	// the policy on its own. A refusal of the only member of the update is its own answer.
+	var branchDenial hook.BranchGateDenial
+	if members > 1 && errors.As(err, &branchDenial) {
 		return landUpdateRejected, err
 	}
 
