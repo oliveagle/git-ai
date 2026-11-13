@@ -69,6 +69,18 @@ type LandOptions struct {
 	// RetryUnavailable is how Land retries a call that the server answers
 	// with Unavailable (see UnavailableRetry). It is on by default.
 	RetryUnavailable UnavailableRetry
+	// DryRun asks for the commit the land would produce without landing it:
+	// the server computes the change on the current tip exactly as a land
+	// does, makes the objects it wrote readable, and returns the commit in
+	// LandResult.LandedCommitID. The branch is not updated.
+	//
+	// It is what a merge queue needs: ask for the result, verify that commit,
+	// publish it as the verification checkpoint of the branch
+	// (graft green set, or Repo.UpdateReference on refs/graft/green/<branch>),
+	// then land the same request with the same Timestamp and User. The land
+	// produces that very commit, so the branch is green when it is written
+	// (doc/graft/BRANCHES.md).
+	DryRun bool
 }
 
 // UnavailableRetry is the client side of the server's contract for
@@ -223,6 +235,10 @@ type LandResult struct {
 	// LastUnavailable is the message of the last of those answers, empty
 	// without retries.
 	LastUnavailable string
+	// DryRun is true when the result describes the commit the land would
+	// produce rather than a land that happened: LandedCommitID is that
+	// commit, and the branch was not updated.
+	DryRun bool
 }
 
 // oldTip maps the zero object ID that the server reports for a created branch
@@ -268,6 +284,7 @@ func (r *Repo) Land(ctx context.Context, opts LandOptions) (*LandResult, error) 
 		CreateBranch:     opts.CreateBranch,
 		MergeMessage:     []byte(opts.MergeMessage),
 		ResolveConflicts: opts.ResolveConflicts,
+		DryRun:           opts.DryRun,
 	}
 	if !opts.Timestamp.IsZero() {
 		req.Timestamp = timestamppb.New(opts.Timestamp)
@@ -330,5 +347,6 @@ func (r *Repo) Land(ctx context.Context, opts LandOptions) (*LandResult, error) 
 
 		UnavailableRetries: retries,
 		LastUnavailable:    lastUnavailable,
+		DryRun:             resp.GetDryRun(),
 	}, nil
 }

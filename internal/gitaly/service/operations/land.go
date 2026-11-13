@@ -76,6 +76,12 @@ func (s *Server) UserLand(ctx context.Context, in *gitalypb.UserLandRequest) (*g
 		return nil, structerr.NewInvalidArgument("%w", err)
 	}
 
+	// A dry run is not a land: it computes the commit a land would produce, so
+	// that a CI can verify that commit before landing it (landDryRun).
+	if in.GetDryRun() {
+		return s.landDryRun(ctx, in, committer)
+	}
+
 	// The check of an agent's resolution runs an external process: it runs here, before the land
 	// enters its lane, so that no branch is held while it runs (landPrecheckResolution).
 	var precheck *landPrecheck
@@ -278,6 +284,72 @@ func (s *Server) landAncestry(ctx context.Context, quarantineRepo *localrepo.Rep
 
 // landAttempt performs a single compare-and-swap attempt of UserLand. It returns a landConflict
 // if the branch was moved by a concurrent writer, in which case the caller retries.
+// landDryRun computes the commit a land would produce on the current tip of the
+// branch, without updating the branch. It decides and replays the change through
+// the attempt a land uses (landingAttempt), so the commit it names is the one the
+// land would write, and it makes the objects it wrote readable before it returns:
+// a CI checks that commit out, verifies it, publishes it as the verification
+// checkpoint of the branch and lands the same request, which then produces exactly
+// that commit (UserLandRequest.dry_run).
+//
+// Nothing of the branch changes, so the branch policy is not applied here: it
+// decides updates, and a dry run writes no reference.
+func (s *Server) landDryRun(ctx context.Context, in *gitalypb.UserLandRequest, committer git.Signature) (*gitalypb.UserLandResponse, error) {
+	switch {
+	case in.GetResolveConflicts():
+		return nil, structerr.NewInvalidArgument("a dry-run land does not resolve conflicts: land with resolve_conflicts and the resolution is the result")
+	case in.GetResolution() != nil:
+		return nil, structerr.NewInvalidArgument("a dry-run land does not carry a resolution: land with the resolution is the result")
+	}
+
+	attempt, cleanup, err := s.newLandingAttempt(ctx, in.GetRepository(), landPublishPack, ignoreLandPhase)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	reference := git.NewReferenceNameFromBranchName(string(in.GetBranch()))
+	tip, err := attempt.Tip(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &landBatchRequest{ctx: ctx, in: in, committer: committer, actor: landBatchActor(ctx, in)}
+	step, err := attempt.decide(ctx, tip, req)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case step.alreadyLanded:
+		return dryRunResponse(tip, tip, false, true, false), nil
+	case step.tip == tip:
+		// The change became empty on top of the tip: a land would leave the branch unchanged.
+		return dryRunResponse(tip, tip, false, false, false), nil
+	}
+
+	// The objects of the attempt live in its quarantine, which ends when this
+	// function returns. A land migrates them with the reference update; a dry run
+	// has no update, so it migrates them itself, which puts the commit a CI has to
+	// verify in the repository. An unreferenced commit is collected by the
+	// regular GC.
+	if err := attempt.publish(ctx); err != nil {
+		return nil, err
+	}
+	if err := attempt.quarantineDir.Migrate(ctx); err != nil {
+		return nil, structerr.NewInternal("migrating the objects of a dry-run land: %w", err)
+	}
+
+	return dryRunResponse(tip, step.tip, step.rewritten, false, step.created), nil
+}
+
+// dryRunResponse is the response of a dry run: the commit a land would produce.
+func dryRunResponse(oldTip, produced git.ObjectID, rewritten, alreadyLanded, created bool) *gitalypb.UserLandResponse {
+	resp := landResponse(oldTip, produced, rewritten, alreadyLanded, created)
+	resp.DryRun = true
+	return resp
+}
+
 func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, committer git.Signature, precheck *landPrecheck, pre *landPreResolution) (*gitalypb.UserLandResponse, error) {
 	attempt, cleanup, err := s.newLandingAttempt(ctx, in.GetRepository(), landPublishLoose, ignoreLandPhase)
 	if err != nil {

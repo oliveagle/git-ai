@@ -246,6 +246,11 @@ service OperationService {
   //   exhausted (reference_update).
   // - `PermissionDenied` with a detailed UserLandError if hooks reject the
   //   update (custom_hook or access_check).
+  //
+  // With dry_run set, the server does none of that: it computes the commit the
+  // request would produce, makes it readable, and returns it without updating
+  // the branch. It is what a merge queue needs to verify the result of a land
+  // before it lands (doc/graft/BRANCHES.md, "Verifying the result of a land").
   rpc UserLand(UserLandRequest) returns (UserLandResponse) {
     option (op_type) = {
       op: MUTATOR
@@ -1284,6 +1289,24 @@ message UserLandRequest {
   // Graft-Resolved-By: agent/<actor> trailer. The whole request is bounded by
   // the 4 MiB gRPC message limit.
   LandResolution resolution = 11;
+  // dry_run asks for the commit the land would produce, without updating the
+  // branch: the server computes the change on the current tip exactly as a land
+  // does, makes the objects it wrote readable, and returns the commit in
+  // landed_commit_id. Nothing of the branch changes.
+  //
+  // It is the primitive a merge queue needs. A CI asks for the result, runs its
+  // verification on that commit, publishes it as the verification checkpoint of
+  // the branch (graft green set), and lands the same request: the land then
+  // produces exactly the commit the CI verified, so the branch is green when the
+  // land is written. The result is reproducible only when the request is the
+  // same, timestamp and user included, and the branch tip has not moved in
+  // between; when the tip moved the land produces another commit, and the
+  // branch policy refuses it unless that commit is verified too.
+  //
+  // A dry run refuses what it cannot decide without resolving conflicts
+  // (resolve_conflicts and resolution), and it is not a land: the policy is not
+  // applied to it, because nothing is written.
+  bool dry_run = 12;
 }
 
 // LandConflict describes the conflicts of a land that the server did not resolve, so
@@ -1534,6 +1557,10 @@ message UserLandResponse {
   // <landed_sequence>", followed by "; it was reverted later by
   // <reverted_by_commit_id>" when that is set. Empty otherwise.
   string already_landed_detail = 13;
+  // dry_run is true when the response describes the commit the land would
+  // produce rather than a land that happened: landed_commit_id names that
+  // commit, its objects are readable, and the branch was not updated.
+  bool dry_run = 14;
 }
 
 // UserLandError is an error returned by the UserLand RPC in some specific

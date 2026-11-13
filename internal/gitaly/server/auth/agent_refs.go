@@ -167,6 +167,7 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 	"gitaly.GetBranchDecisionRequest.branch":  isBranchName,
 	"gitaly.GetBranchDecisionRequest.commits": isRef,
 	"gitaly.GetBranchDecisionRequest.direct":  notRef,
+	"gitaly.GetBranchDecisionRequest.result":  isRef,
 
 	"gitaly.GetBranchDecisionResponse.allowed":    notRef,
 	"gitaly.GetBranchDecisionResponse.branch":     isBranchName,
@@ -478,12 +479,14 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 	"gitaly.UserLandRequest.branch":            notRef,
 	"gitaly.UserLandRequest.commit_id":         isRef,
 	"gitaly.UserLandRequest.create_branch":     notRef,
+	"gitaly.UserLandRequest.dry_run":           notRef,
 	"gitaly.UserLandRequest.merge_message":     notRef,
 	"gitaly.UserLandRequest.resolve_conflicts": notRef,
 	"gitaly.UserLandRequest.strategy":          notRef,
 
 	"gitaly.UserLandResponse.already_landed":        notRef,
 	"gitaly.UserLandResponse.already_landed_detail": notRef,
+	"gitaly.UserLandResponse.dry_run":               notRef,
 	"gitaly.UserLandResponse.landed_commit_id":      notRef,
 	"gitaly.UserLandResponse.old_tip":               notRef,
 	"gitaly.UserLandResponse.resolved_paths":        notRef,

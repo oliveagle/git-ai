@@ -4745,7 +4745,25 @@ type UserLandRequest struct {
 	// resolver is configured) and lands as a merge commit with a
 	// Graft-Resolved-By: agent/<actor> trailer. The whole request is bounded by
 	// the 4 MiB gRPC message limit.
-	Resolution    *LandResolution `protobuf:"bytes,11,opt,name=resolution,proto3" json:"resolution,omitempty"`
+	Resolution *LandResolution `protobuf:"bytes,11,opt,name=resolution,proto3" json:"resolution,omitempty"`
+	// dry_run asks for the commit the land would produce, without updating the
+	// branch: the server computes the change on the current tip exactly as a land
+	// does, makes the objects it wrote readable, and returns the commit in
+	// landed_commit_id. Nothing of the branch changes.
+	//
+	// It is the primitive a merge queue needs. A CI asks for the result, runs its
+	// verification on that commit, publishes it as the verification checkpoint of
+	// the branch (graft green set), and lands the same request: the land then
+	// produces exactly the commit the CI verified, so the branch is green when the
+	// land is written. The result is reproducible only when the request is the
+	// same, timestamp and user included, and the branch tip has not moved in
+	// between; when the tip moved the land produces another commit, and the
+	// branch policy refuses it unless that commit is verified too.
+	//
+	// A dry run refuses what it cannot decide without resolving conflicts
+	// (resolve_conflicts and resolution), and it is not a land: the policy is not
+	// applied to it, because nothing is written.
+	DryRun        bool `protobuf:"varint,12,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4855,6 +4873,13 @@ func (x *UserLandRequest) GetResolution() *LandResolution {
 		return x.Resolution
 	}
 	return nil
+}
+
+func (x *UserLandRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
 }
 
 // LandConflict describes the conflicts of a land that the server did not resolve, so
@@ -5666,8 +5691,12 @@ type UserLandResponse struct {
 	// <landed_sequence>", followed by "; it was reverted later by
 	// <reverted_by_commit_id>" when that is set. Empty otherwise.
 	AlreadyLandedDetail string `protobuf:"bytes,13,opt,name=already_landed_detail,json=alreadyLandedDetail,proto3" json:"already_landed_detail,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// dry_run is true when the response describes the commit the land would
+	// produce rather than a land that happened: landed_commit_id names that
+	// commit, its objects are readable, and the branch was not updated.
+	DryRun        bool `protobuf:"varint,14,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UserLandResponse) Reset() {
@@ -5789,6 +5818,13 @@ func (x *UserLandResponse) GetAlreadyLandedDetail() string {
 		return x.AlreadyLandedDetail
 	}
 	return ""
+}
+
+func (x *UserLandResponse) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
 }
 
 // UserLandError is an error returned by the UserLand RPC in some specific
@@ -6507,7 +6543,7 @@ const file_operations_proto_rawDesc = "" +
 	"\x10reference_update\x18\x02 \x01(\v2\x1c.gitaly.ReferenceUpdateErrorH\x00R\x0freferenceUpdate\x122\n" +
 	"\n" +
 	"path_error\x18\x03 \x01(\v2\x11.gitaly.PathErrorH\x00R\tpathErrorB\a\n" +
-	"\x05error\"\xc3\x04\n" +
+	"\x05error\"\xdc\x04\n" +
 	"\x0fUserLandRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
@@ -6524,7 +6560,8 @@ const file_operations_proto_rawDesc = "" +
 	" \x01(\bR\x10resolveConflicts\x126\n" +
 	"\n" +
 	"resolution\x18\v \x01(\v2\x16.gitaly.LandResolutionR\n" +
-	"resolution\"U\n" +
+	"resolution\x12\x17\n" +
+	"\adry_run\x18\f \x01(\bR\x06dryRun\"U\n" +
 	"\bStrategy\x12\x1f\n" +
 	"\x1bSTRATEGY_REBASE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTRATEGY_MERGE\x10\x01\x12\x14\n" +
@@ -6603,7 +6640,7 @@ const file_operations_proto_rawDesc = "" +
 	"\x06Action\x12\x16\n" +
 	"\x12ACTION_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fACTION_WRITE\x10\x01\x12\x11\n" +
-	"\rACTION_DELETE\x10\x02\"\x93\x04\n" +
+	"\rACTION_DELETE\x10\x02\"\xac\x04\n" +
 	"\x10UserLandResponse\x12B\n" +
 	"\rbranch_update\x18\x01 \x01(\v2\x1d.gitaly.OperationBranchUpdateR\fbranchUpdate\x12(\n" +
 	"\x10landed_commit_id\x18\x02 \x01(\tR\x0elandedCommitId\x12\x1c\n" +
@@ -6619,7 +6656,8 @@ const file_operations_proto_rawDesc = "" +
 	" \x01(\x05R\rbatchPosition\x12'\n" +
 	"\x0flanded_sequence\x18\v \x01(\x04R\x0elandedSequence\x121\n" +
 	"\x15reverted_by_commit_id\x18\f \x01(\tR\x12revertedByCommitId\x122\n" +
-	"\x15already_landed_detail\x18\r \x01(\tR\x13alreadyLandedDetail\"\xe2\x02\n" +
+	"\x15already_landed_detail\x18\r \x01(\tR\x13alreadyLandedDetail\x12\x17\n" +
+	"\adry_run\x18\x0e \x01(\bR\x06dryRun\"\xe2\x02\n" +
 	"\rUserLandError\x12C\n" +
 	"\x0emerge_conflict\x18\x01 \x01(\v2\x1a.gitaly.MergeConflictErrorH\x00R\rmergeConflict\x12=\n" +
 	"\fnot_ancestor\x18\x02 \x01(\v2\x18.gitaly.NotAncestorErrorH\x00R\vnotAncestor\x12I\n" +
