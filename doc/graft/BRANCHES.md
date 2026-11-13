@@ -144,6 +144,12 @@ make its status check disagree with the server.
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
 reason is printed), 2 when the command line is wrong.
 
+The rules are decided in order, so a check that names no result is still a
+useful pre-flight on a branch that demands a verified result: it answers
+`no_review`, `not_approved` or `stale_review` when there is nothing to verify
+yet, and only `result_unknown` once the change is otherwise ready. A queue
+asks it before it runs the suite, not after.
+
 `gate rules` prints the rules the server enforces, so that the policy a CI is
 the status check of can be read without opening the server's configuration
 file.

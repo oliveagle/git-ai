@@ -74,6 +74,13 @@ func TestBranchGateHoldsOnAgentLands(t *testing.T) {
 	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
 	require.NotEqual(t, pushed, s.git(t, "rev-parse", "refs/heads/main"))
 
+	// The same update through an RPC is refused too: the gate decides every
+	// update of the branch, not only the one a push makes.
+	err = builder.UpdateReference(s.ctx, "refs/heads/main", base, pushed)
+	require.Error(t, err)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
+
 	// A land without a review of the change is refused.
 	_, err = landAs(s.ctx, builder, "builder", "main", commit)
 	require.Error(t, err)
