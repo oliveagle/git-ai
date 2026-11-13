@@ -209,7 +209,10 @@ func buildAgentsTool(t *testing.T, pkg string) string {
 	bin := filepath.Join(t.TempDir(), filepath.Base(pkg))
 	// GOPROXY=off keeps the build from the network: the module of the tools
 	// needs its dependencies in the module cache already.
-	cmd := exec.Command("go", "-C", "../../../tools/graft-agents", "build", "-o", bin, pkg)
+	// -buildvcs=false: the test harness sets GIT_DIR to /dev/null (a sanity
+	// check on the Git commands the server runs), and the VCS stamping of the
+	// build would fail on it.
+	cmd := exec.Command("go", "-C", "../../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, pkg)
 	cmd.Env = append(os.Environ(), "GOPROXY=off")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build %s (run go -C tools/graft-agents mod download first if the module cache is cold): %s", pkg, out)
@@ -411,7 +414,10 @@ func buildGraftCLI(t *testing.T) string {
 	t.Helper()
 
 	bin := filepath.Join(t.TempDir(), "graft")
-	out, err := exec.Command("go", "-C", "../../..", "build", "-o", bin, "./cmd/graft").CombinedOutput()
+	// -buildvcs=false: the test harness sets GIT_DIR to /dev/null (a sanity
+	// check on the Git commands the server runs), and the VCS stamping of the
+	// build would fail on it.
+	out, err := exec.Command("go", "-C", "../../..", "build", "-buildvcs=false", "-o", bin, "./cmd/graft").CombinedOutput()
 	require.NoError(t, err, "build graft: %s", out)
 	return bin
 }
