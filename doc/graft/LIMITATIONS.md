@@ -321,6 +321,10 @@ Git hooks use private.
   cover, and the branch policy then refuses it. A dry run does not resolve
   conflicts, and its objects stay in the repository unreferenced until the GC
   collects them.
+- A workspace cloned at a commit (`graft clone --at OID`) has no branch: it
+  materializes the tree of the commit, which is what a merge queue tests, and
+  `update` and a land without a branch name are errors. A land that names a
+  branch attaches the workspace to it.
 - A verified result and batched landing do not compose. A batched land writes
   one commit for the whole batch, which depends on the changes that happen to
   share it, so the commit a dry run names is not the one the batch writes. On a

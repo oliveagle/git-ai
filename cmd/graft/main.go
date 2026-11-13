@@ -47,6 +47,8 @@ type options struct {
 	author  string
 	dir     string
 	branch  string
+	// at is the commit graft clone --at materializes, instead of a branch.
+	at      string
 	sparse  string
 	message string
 	land    string
@@ -60,10 +62,15 @@ type options struct {
 	// dryRun and timestamp are those of graft land --dry-run and --timestamp.
 	dryRun    bool
 	timestamp string
-	revision  string
-	after     uint64
-	limit     int
-	jsonOut   bool
+	// commit is the commit graft land --commit lands, instead of the pending
+	// commit of a workspace. repo is the repository that land --commit works
+	// on when there is no workspace.
+	commit   string
+	repo     string
+	revision string
+	after    uint64
+	limit    int
+	jsonOut  bool
 	// stderr receives warnings of commands that succeed.
 	stderr io.Writer
 }
@@ -219,7 +226,8 @@ func bindCommon(fs *flag.FlagSet, o *options) {
 }
 
 func bindClone(fs *flag.FlagSet, o *options) {
-	fs.StringVar(&o.branch, "branch", "main", "branch to check out")
+	fs.StringVar(&o.branch, "branch", "", "branch to check out (default main)")
+	fs.StringVar(&o.at, "at", "", "materialize the tree of this commit instead of a branch, such as the commit a dry-run land named")
 	fs.StringVar(&o.sparse, "sparse", "", "comma-separated paths to materialize (default: whole repository)")
 }
 
@@ -238,6 +246,8 @@ func bindLand(fs *flag.FlagSet, o *options) {
 	fs.StringVar(&o.resolved, "resolved", "", "land the resolution in this directory (written by --conflicts-dir, then edited)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "print the commit the land would produce, without landing it (needs --timestamp)")
 	fs.StringVar(&o.timestamp, "timestamp", "", "committer date of the rewritten commit (RFC 3339), to land the commit --dry-run named")
+	fs.StringVar(&o.commit, "commit", "", "land this commit instead of the pending one; needs BRANCH, and -address with --repo outside a workspace")
+	fs.StringVar(&o.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
 }
 
 func bindLog(fs *flag.FlagSet, o *options) {
@@ -264,13 +274,14 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: graft <command> [flags] [arguments]
 
 commands:
-  clone ADDR REPO DIR    materialize REPO into DIR (--branch, --sparse a/,b/)
+  clone ADDR REPO DIR    materialize REPO into DIR (--branch B, --at OID, --sparse a/,b/)
   status                 list local changes
   diff                   show line changes against the base commit
   commit -m MSG          commit local changes (--land BRANCH to land them, --resolve for conflicts)
-  land [BRANCH]          land the pending commit (--strategy, --resolve [--conflicts-dir DIR],
-                         --resolved DIR; --abort drops it; --dry-run --timestamp T prints
-                         the commit the land would produce)
+  land [BRANCH]          land the pending commit, or the one --commit OID names without a
+                         workspace (--strategy, --resolve [--conflicts-dir DIR], --resolved
+                         DIR; --abort drops it; --dry-run --timestamp T prints the commit
+                         the land would produce)
   revert [PATH...]       discard local changes to PATHs (default: all) and restore them
   update                 move the workspace to the tip of its branch
   sparse [PREFIX...]     restrict the workspace to PREFIX paths

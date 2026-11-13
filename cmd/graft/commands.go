@@ -26,6 +26,13 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 	}
 	address, repo, dir := args[0], args[1], args[2]
 	storage := pick(o.storage, defaultStorage)
+	branch := o.branch
+	if branch == "" && o.at == "" {
+		branch = "main"
+	}
+	if branch != "" && o.at != "" {
+		return usagef("clone takes either --branch or --at, not both")
+	}
 	backend, err := backendFactory(ctx, target{Address: address, Token: o.token, Storage: storage, Repo: repo, User: o.user})
 	if err != nil {
 		return err
@@ -34,7 +41,8 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 		Address: address,
 		Storage: storage,
 		Repo:    repo,
-		Branch:  o.branch,
+		Branch:  branch,
+		At:      o.at,
 		Sparse:  splitList(o.sparse),
 	})
 	if err != nil {
@@ -42,6 +50,12 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 	}
 	warnSkipped(o, ws)
 	s := ws.Summary()
+	if s.Branch == "" {
+		// The workspace is at a commit and not on a branch: it is the tree of a
+		// commit the caller named, such as the result of a dry-run land.
+		fmt.Fprintf(out, "cloned %s (commit %s) into %s: %d files\n", repo, shortOID(s.Base), dir, s.Files)
+		return nil
+	}
 	fmt.Fprintf(out, "cloned %s (%s) into %s: %d files at %s\n", repo, s.Branch, dir, s.Files, shortOID(s.Base))
 	return nil
 }
@@ -145,6 +159,17 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if len(args) == 1 {
 		branch = args[0]
 	}
+	if o.commit != "" {
+		// A land of a named commit needs no workspace, and the workspace
+		// operations below have nothing to act on: refuse the combinations
+		// instead of looking for a workspace the caller does not have.
+		if branch == "" {
+			return usagef("land --commit requires BRANCH: without a workspace there is no branch to take it from")
+		}
+		if o.abort || o.resolve || o.conflictsDir != "" || o.resolved != "" {
+			return usagef("land --commit takes neither --abort, --resolve, --conflicts-dir nor --resolved: it lands a commit the server already holds")
+		}
+	}
 	if o.abort {
 		if branch != "" {
 			return usagef("land --abort takes no BRANCH")
@@ -187,6 +212,9 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if err != nil {
 		return err
 	}
+	if o.commit != "" {
+		return cmdLandCommit(ctx, out, o, branch, committer, timestamp)
+	}
 	ws, err := openWorkspace(ctx, o)
 	if err != nil {
 		return err
@@ -220,6 +248,51 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 		}
 		return err
 	}
+	return printLandResult(out, o, res)
+}
+
+// cmdLandCommit lands the commit named by graft land --commit, on the branch
+// the caller names, without a workspace: it is the land of a CI that holds a
+// commit and a server, not a checkout. The commit is resolved against the
+// server first, so that a commit it does not hold is an error that names it.
+func cmdLandCommit(ctx context.Context, out io.Writer, o *options, branch string, committer workspace.Signature, timestamp time.Time) error {
+	t, _, err := resolveTarget(o, o.repo, "land")
+	if err != nil {
+		return err
+	}
+	backend, err := backendFactory(ctx, t)
+	if err != nil {
+		return err
+	}
+
+	commit, err := backend.ResolveRevision(ctx, o.commit)
+	if err != nil {
+		return fmt.Errorf("the commit %q: %w", o.commit, err)
+	}
+
+	res, err := backend.Land(ctx, workspace.LandOptions{
+		Branch:    branch,
+		Commit:    commit,
+		Strategy:  o.strategy,
+		Committer: committer,
+		Timestamp: timestamp,
+		DryRun:    o.dryRun,
+	})
+	if err != nil {
+		// The conflict package of the failed land is printed for the caller
+		// that asked for the server's resolution; a named commit is never
+		// resolved with a local resolution directory.
+		if pkg, ok := sdk.LandConflict(err); ok {
+			printConflict(out, pkg)
+		}
+		return err
+	}
+	return printLandResult(out, o, res)
+}
+
+// printLandResult prints the outcome of a land: the object ID alone for a dry
+// run, whose output is read by the script that verifies the result.
+func printLandResult(out io.Writer, o *options, res workspace.LandResult) error {
 	if o.dryRun {
 		// The command exists for a script that verifies the result and publishes
 		// it: the object ID is the output, and nothing else is printed.

@@ -12,7 +12,8 @@ Code: `internal/graft/branchgate` (the decision), `internal/gitaly/hook`
 `internal/gitaly/service/branchpolicy` (the answer to a CI, `proto/branch.proto`),
 `cmd/graft/gate.go`
 (the CLI that asks the question) and `cmd/graft/green.go` (the CLI that
-publishes the checkpoint). Configuration: `[[graft.branch]]`, see
+publishes the checkpoint), and `cmd/graft/commands.go` (the land of a named
+commit, `land --commit`). Configuration: `[[graft.branch]]`, see
 [CONFIGURATION.md](CONFIGURATION.md).
 
 ## The rules
@@ -152,6 +153,29 @@ branch management policy, and only an operator may move it.
 Exit status: 0 when the checkpoint was moved or read, 1 when the move was
 refused, 2 when the command line is wrong.
 
+## Landing a commit the CI holds
+
+A CI commonly holds the object ID of the change and the address of the server,
+not a checkout of the agent's workspace. `graft land` takes the commit and the
+branch itself then, and needs no workspace:
+
+```
+graft land main --commit OID [--dry-run] [--timestamp T] [--strategy S] [--repo REPO]
+```
+
+- `--commit OID` lands that commit instead of the pending commit of a
+  workspace. The commit is resolved against the server first, so one the
+  repository does not hold is an error that names it. `BRANCH` is required:
+  without a workspace there is nothing to take it from.
+- With `-address` and `--repo` the command works anywhere; inside a workspace
+  the repository and the address of the workspace are used.
+- `--dry-run` and `--timestamp` behave as they do for a pending commit. The
+  commit the dry run names is the one the land writes for the same `--commit`,
+  `--timestamp`, `--user` and tip, which is what the merge queue below needs.
+- It takes neither `--resolve`, `--conflicts-dir` nor `--resolved`: a
+  resolution belongs to the workspace that has the conflict package, and a
+  named commit is landed as it is or not at all.
+
 ## How a CI uses it
 
 A CI that runs its own tests and lands with the shared token does four
@@ -189,9 +213,11 @@ tip it builds on, and the server tells the CI what that commit is:
    and nothing of the branch changed. Pass the `Timestamp` the land will use,
    and the same `User`: the commit is a rewrite of the change, and its committer
    date is part of its object ID.
-2. The CI checks that commit out and runs the verification on it. Its tree is
+2. The CI materializes that commit and runs the verification on it. Its tree is
    the tree the branch will hold after the land, which is where a change that is
-   green alone and red on the tip shows up.
+   green alone and red on the tip shows up. `graft clone ADDR REPO DIR --at
+   <result>` materializes the whole tree of the commit, which no branch points
+   at yet; such a workspace has no branch, so it takes one to land from it.
 3. It publishes the commit it verified: `graft green set --branch main --commit
    <result>`.
 4. It asks the gate with the result: `graft gate check --branch main --commit
@@ -209,10 +235,23 @@ workspace of the change:
 ```
 T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 M=$(graft land --dry-run --timestamp "$T")   # the commit the land would produce
-<run the tests on M: check it out, build it, test it>
+graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"   # the whole tree of M
+(cd ./verify && make test)
 graft green set --branch main --commit "$M"
 graft gate check --branch main --result "$M"
 graft land --timestamp "$T"
+```
+
+The same loop without a workspace — the CI holds the object ID of the change:
+
+```
+T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+M=$(graft land main --commit "$C" --dry-run --timestamp "$T")
+graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"
+(cd ./verify && make test)
+graft green set --branch main --commit "$M"
+graft gate check --branch main --commit "$C" --result "$M"
+graft land main --commit "$C" --timestamp "$T"
 ```
 
 `graft land --dry-run` prints the object ID alone, so the script can take it.

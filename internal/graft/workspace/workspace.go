@@ -61,8 +61,14 @@ type CloneOptions struct {
 	Address string
 	Storage string
 	Repo    string
-	Branch  string
-	Sparse  []string
+	// Branch is the branch to check out. Empty means main, unless At is set.
+	Branch string
+	// At materializes the tree of a commit instead of the tip of a branch: the
+	// commit a dry run named, which no branch points at yet. The workspace is
+	// then at that commit and not on a branch (doc/graft/BRANCHES.md, "Verifying
+	// the result of a land").
+	At     string
+	Sparse []string
 }
 
 // CommitRequest describes a commit of the local changes.
@@ -183,8 +189,11 @@ func Clone(ctx context.Context, root string, backend Backend, opts CloneOptions)
 		return nil, err
 	}
 	branch := opts.Branch
-	if branch == "" {
+	if branch == "" && opts.At == "" {
 		branch = "main"
+	}
+	if branch != "" && opts.At != "" {
+		return nil, errors.New("workspace: clone takes either a branch or a commit, not both")
 	}
 	sparse, err := normalizeSparse(opts.Sparse)
 	if err != nil {
@@ -198,9 +207,17 @@ func Clone(ctx context.Context, root string, backend Backend, opts CloneOptions)
 		return nil, err
 	}
 	existed := err == nil
-	base, err := backend.ResolveRevision(ctx, branch)
-	if err != nil {
-		return nil, fmt.Errorf("resolve branch %q: %w", branch, err)
+	var base string
+	if opts.At != "" {
+		base, err = backend.ResolveRevision(ctx, opts.At)
+		if err != nil {
+			return nil, fmt.Errorf("resolve commit %q: %w", opts.At, err)
+		}
+	} else {
+		base, err = backend.ResolveRevision(ctx, branch)
+		if err != nil {
+			return nil, fmt.Errorf("resolve branch %q: %w", branch, err)
+		}
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -571,6 +588,9 @@ func (w *Workspace) DryRunLand(ctx context.Context, branch, strategy string, com
 	if branch == "" {
 		branch = w.state.Branch
 	}
+	if branch == "" {
+		return LandResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: name the branch to land on", w.state.Base)
+	}
 	if strategy == "" {
 		strategy = StrategyRebase
 	}
@@ -596,6 +616,9 @@ func (w *Workspace) land(ctx context.Context, branch, strategy string, committer
 	}
 	if branch == "" {
 		branch = w.state.Branch
+	}
+	if branch == "" {
+		return LandResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: name the branch to land on", w.state.Base)
 	}
 	if strategy == "" {
 		strategy = StrategyRebase
@@ -736,6 +759,9 @@ func (w *Workspace) Update(ctx context.Context) (UpdateResult, error) {
 
 	if w.state.Pending != nil {
 		return UpdateResult{}, w.pendingError("updating")
+	}
+	if w.state.Branch == "" {
+		return UpdateResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: nothing to update", w.state.Base)
 	}
 	tip, err := w.backend.ResolveRevision(ctx, w.state.Branch)
 	if err != nil {
