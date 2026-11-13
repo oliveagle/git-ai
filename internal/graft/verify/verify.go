@@ -137,6 +137,12 @@ func newVerifier(ctx context.Context, cfg Config, backend workspace.Backend, gre
 	if err := prepareWorkDir(workDir); err != nil {
 		return nil, err
 	}
+	if len(cfg.Sparse) > 0 {
+		// The operator asked for it, and the checkpoint still says the commit
+		// passed: whoever reads the checkpoint has to know what it covers.
+		logger.Warn("graft-verify: the test command runs on part of the tree; a checkpoint this verifier publishes covers only the materialized paths",
+			"sparse", cfg.Sparse, "green_ref", cfg.GreenRef)
+	}
 	st, err := loadState(cfg.StateFile)
 	if err != nil {
 		return nil, err

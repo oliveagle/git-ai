@@ -99,6 +99,12 @@ type TestConfig struct {
 	Env []string `toml:"env"`
 	// Timeout bounds one run of the command.
 	Timeout Duration `toml:"timeout"`
+	// AllowSparse permits the command to run on a work tree that Sparse leaves
+	// partial. Without it a configuration with a sparse set is refused: a test
+	// that passes on part of the tree is no evidence about the rest, and the
+	// checkpoint the verifier publishes is the trust anchor of the branch
+	// management policy.
+	AllowSparse bool `toml:"allow_sparse"`
 }
 
 // RevertConfig configures automatic reverts of culprits (see the bisector).
@@ -217,6 +223,12 @@ func (c Config) Validate() error {
 		if prefix == "" {
 			fail("sparse entries must not be empty")
 		}
+	}
+	if len(c.Sparse) > 0 && !c.Test.AllowSparse {
+		// The files that sparse leaves out are files the command cannot see:
+		// a test that passes without them says nothing about the commit the
+		// checkpoint would name.
+		fail("sparse hides the files the test command cannot see, and a test that passes on part of the tree is no evidence about the rest: set test.allow_sparse = true to publish a checkpoint from a partial work tree")
 	}
 	if c.Revert.MaxPerHour < 0 {
 		fail("revert.max_per_hour must not be negative")

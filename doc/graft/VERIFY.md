@@ -80,6 +80,7 @@ state_file = "/var/lib/graft/verify/main.cursor"
 command = ["go", "test", "./services/api/..."]   # runs in the materialized tree
 env = ["GOFLAGS=-mod=readonly"]                  # KEY=VALUE, added to the environment
 timeout = "15m"
+allow_sparse = true                              # the sparse set above is intended
 
 [revert]
 enabled = true
@@ -103,12 +104,21 @@ webhook_url = "https://hooks.internal.example/graft"
 | `test.command` | required | argv of the test command, run in the materialized tree. `GRAFT_VERIFY_COMMIT` is set to the commit under test. |
 | `test.env` | none | Extra `KEY=VALUE` entries. The rest of the environment is inherited. |
 | `test.timeout` | `10m` | Bound on one test run. |
+| `test.allow_sparse` | `false` | Permit the command to run on a work tree that `sparse` leaves partial. Without it a configuration with `sparse` is refused: the checkpoint this verifier publishes is the trust anchor of the branch management policy, and a test that passes on part of the tree says nothing about the rest. |
 | `revert.enabled` | `false` | Bisect and revert culprits. |
 | `revert.dry_run` | `false` | Report the planned revert without making it. |
 | `revert.max_per_hour` | `0` | Reverts allowed per hour. `0` allows none, so set it with `enabled`. |
 | `revert.webhook_url` | none | Receives a JSON notification for every revert decision. |
 
 Unknown keys are an error.
+
+A sparse work tree is a partial one: the files `sparse` leaves out are files
+the command cannot see, so a suite that needs the rest of the monorepo fails,
+and one that silently reads less than it should can pass. The verifier therefore
+refuses a configuration with `sparse` unless `test.allow_sparse = true` says the
+partial tree is intended, and logs a warning for the whole life of the process
+when it is. Verify the whole tree when the checkpoint has to mean "the commit
+passed", which is what a branch with `require_verified` asks it to mean.
 
 ## Bisection
 

@@ -49,6 +49,7 @@ batch_window = "45s"
 command = ["make", "test"]
 env = ["CI=1", "GOFLAGS=-mod=mod"]
 timeout = "5m"
+allow_sparse = true
 
 [revert]
 enabled = true
@@ -67,6 +68,7 @@ webhook_url = "https://hooks.example.test/x"
 	require.Equal(t, []string{"make", "test"}, cfg.Test.Command)
 	require.Equal(t, []string{"CI=1", "GOFLAGS=-mod=mod"}, cfg.Test.Env)
 	require.Equal(t, 5*time.Minute, cfg.Test.Timeout.Std())
+	require.True(t, cfg.Test.AllowSparse)
 	require.Equal(t, RevertConfig{
 		Enabled:    true,
 		DryRun:     true,
@@ -185,6 +187,14 @@ func TestParseConfigRejects(t *testing.T) {
 			name:    "empty sparse entry",
 			toml:    validConfigTOML + "\nsparse = [\"\"]\n",
 			wantErr: "sparse entries must not be empty",
+		},
+		{
+			// The checkpoint of the verifier is the trust anchor of the branch
+			// policy: a test that passes on part of the tree must not publish
+			// one without the operator saying that is what it means.
+			name:    "sparse without an explicit allowance",
+			toml:    validConfigTOML + "\nsparse = [\"cmd/\"]\n",
+			wantErr: "set test.allow_sparse = true",
 		},
 		{
 			name:    "negative revert cap",
