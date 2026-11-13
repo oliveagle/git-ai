@@ -30,6 +30,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr/partition/migration"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gate"
 	corestoresyncer "github.com/feder-cr/git-ai/internal/graft/corestore/syncer"
@@ -394,11 +395,17 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 		gsd.graftPolicy = policystore.New(cfg.Graft.Policy)
 	}
 	hookManagerOpts := []hook.ManagerOption{hook.WithPolicyStore(gsd.graftPolicy)}
+	// One branch management policy serves the hook manager and the
+	// BranchPolicyService, as in serve.go: the refusal an agent meets and the
+	// answer a CI reads are made with one policy.
+	branchPolicy := branchgate.NewPolicy(cfg.Graft)
 	// The branch management policy reads the reviews of a repository and the
 	// verification checkpoint of a branch (internal/gitaly/hook). The factory
 	// reads references only, so it needs no catfile cache.
-	hookManagerOpts = append(hookManagerOpts, hook.WithBranchGate(hook.NewBranchGateSource(gsd.graftStorage,
-		localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))))
+	hookManagerOpts = append(hookManagerOpts,
+		hook.WithBranchPolicy(branchPolicy),
+		hook.WithBranchGate(hook.NewBranchGateSource(gsd.graftStorage,
+			localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))))
 	if gsd.graftStorage.Enabled() {
 		if gsd.catfileCache == nil {
 			cache := catfile.NewCache(cfg)
@@ -502,6 +509,7 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 
 	return &service.Dependencies{
 		GraftStorage:           gsd.graftStorage,
+		GraftBranchPolicy:      branchPolicy,
 		GraftStorageSyncer:     storageSyncer,
 		Logger:                 gsd.logger,
 		Cfg:                    cfg,

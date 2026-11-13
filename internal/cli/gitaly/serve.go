@@ -36,6 +36,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/relational"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/checkpoint"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gate"
@@ -640,10 +641,16 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	prometheus.MustRegister(reviewroots.DefaultSweeper)
 
 	hookManagerOpts := []hook.ManagerOption{hook.WithEagerObserver(eagerObserver), hook.WithPolicyStore(graftPolicy)}
+	// One branch management policy serves the hook manager, which enforces it,
+	// and the BranchPolicyService, which answers the CI: the refusal an agent
+	// meets and the answer a CI reads are made with one policy.
+	branchPolicy := branchgate.NewPolicy(cfg.Graft)
 	// The branch management policy decides the updates of a managed branch with
 	// the reviews of the repository and the verification checkpoint of the
 	// branch.
-	hookManagerOpts = append(hookManagerOpts, hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)))
+	hookManagerOpts = append(hookManagerOpts,
+		hook.WithBranchPolicy(branchPolicy),
+		hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)))
 	var (
 		storageSyncer corestore.Freshener
 		storageGate   *gate.Gate
@@ -860,6 +867,7 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 			GraftLandLanes:         landLanes,
 			GraftResolver:          graftResolver,
 			GraftStorage:           storageCore,
+			GraftBranchPolicy:      branchPolicy,
 			GraftStorageSyncer:     storageSyncer,
 			ShutdownContext:        shutdownCtx,
 		})
