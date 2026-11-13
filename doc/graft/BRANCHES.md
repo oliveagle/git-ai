@@ -8,7 +8,9 @@ must cover the branch.
 
 Code: `internal/graft/branchgate` (the decision), `internal/gitaly/hook`
 (the enforcement, `enforceBranchGate`), `internal/gitaly/hook/branchgatesource.go`
-(the state of a branch: its reviews and its checkpoint), `cmd/graft/gate.go`
+(the state of a branch: its reviews and its checkpoint),
+`internal/gitaly/service/branchpolicy` (the answer to a CI, `proto/branch.proto`),
+`cmd/graft/gate.go`
 (the CLI that asks the question) and `cmd/graft/green.go` (the CLI that
 publishes the checkpoint). Configuration: `[[graft.branch]]`, see
 [CONFIGURATION.md](CONFIGURATION.md).
@@ -88,30 +90,42 @@ then the CI's required status check, not the server's.
 | `not_enough_approvals` | The review of the change has fewer approvals than the rule asks for. |
 | `not_verified` | The verification checkpoint of the branch does not cover its tip. |
 
-## The CI command
+## The CI commands
 
 ```
-graft gate check --branch main --config /etc/gitaly/config.toml [--commit OID] [--json]
+graft gate check --branch main [--commit OID] [--direct] [--repo REPO] [--json]
+graft gate rules [--repo REPO] [--json]
 ```
 
-The command asks whether a change may land on a branch, with the rules of the
-server's configuration file (`--config`) and the state read from the server:
-the tip of the branch, its open reviews and its verification checkpoint.
+`gate check` asks the server whether a change may land on a branch. The server
+answers, with the rules it enforces (`[[graft.branch]]`) and with the state it
+decides with: the tip of the branch, its open reviews and its verification
+checkpoint. The RPC is `BranchPolicyService.GetBranchDecision`; the hook and
+the service decide with one policy (`branchgate.Policy`), so the answer a CI
+reads is the answer the server gives when the land arrives, not a second
+opinion about it. The CI holds no copy of the policy, and a stale copy cannot
+make its status check disagree with the server.
 
 - `--commit OID` checks that change, as a land of it on the branch. Without it
   the pending commit of the workspace is used, and without a workspace only
   the state of the branch is checked.
+- `--direct` asks about an update that is not a land, such as a push: it is
+  the question of a branch that only a land may update.
 - `--json` prints the decision as one JSON object: the branch, the commit, the
   tip, the checkpoint, the number of reviews, and the outcome (`allowed`,
-  `code`, `reason`).
+  `code`, `reason`), with the rule the decision was made with.
 
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
-reason is printed), 2 when the command line or the configuration file is
-wrong.
+reason is printed), 2 when the command line is wrong.
 
-An agent token cannot read `refs/graft/`, so the checkpoint is reported as
-absent with an agent token: the command needs the shared token to check a
-branch whose rule asks for a verified branch.
+`gate rules` prints the rules the server enforces, so that the policy a CI is
+the status check of can be read without opening the server's configuration
+file.
+
+Both commands are accessors of the server, and an agent token may call them:
+an agent asks the same question the CI asks. The checkpoint the answer carries
+is the commit the branch is green at, not a reference an agent may move: only
+an operator moves the checkpoint.
 
 ## The checkpoint command
 
@@ -149,7 +163,7 @@ things:
 3. When the tests pass, it publishes the checkpoint:
    `graft green set --branch main --commit <tip>`.
 4. It asks the gate whether the change may land:
-   `graft gate check --branch main --config /etc/gitaly/config.toml --commit <oid>`.
+   `graft gate check --branch main --commit <oid>`.
    The exit status is the status check of the merge request: 0 allows the
    merge, 1 refuses it, 2 says that the CI itself is misconfigured.
 

@@ -164,10 +164,10 @@ refusal aborts the update. See [BRANCHES.md](BRANCHES.md).
 The gate binds the callers that authenticated with a per-agent token, like the
 access policy does. The operator credential and the server's own operations are
 trusted, so a CI that lands with the shared token asks the same question with
-`graft gate check --branch B --config FILE`, which reads the rules of this
-file and the state of the branch from the server (exit 0 when the change may
-land, 1 when the policy refuses it, 2 when the file or the command line is
-wrong).
+`graft gate check --branch B`, which the server answers with these rules and
+with the state of the branch (exit 0 when the change may land, 1 when the
+policy refuses it, 2 when the command line is wrong). `graft gate rules` prints
+the rules the server enforces.
 
 ### `[[graft.agent]]`
 
