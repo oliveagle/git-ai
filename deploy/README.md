@@ -57,6 +57,7 @@ deploy/build-release.sh            # dist/git-ai-release-<version>.tar.gz
 deploy/deploy-lane.sh staging dist/git-ai-release-<version>.tar.gz
 deploy/integration-test.sh staging <version>    # the gate
 deploy/promote.sh <version>        # re-checks the gate, installs, health-checks
+deploy/rollback.sh prod [version]  # go back to a release that is already installed
 ```
 
 `promote.sh` takes no bundle from this machine: it installs the tarball the
@@ -145,17 +146,20 @@ and keeps it for a rollback.
 ### Rolling back
 
 ```sh
-ssh oliveagle@oleNas01 'bash -s' <<'SH'
-LANE_DIR=/home/oliveagle/opt/git-ai
-LANE_CONTAINER=git-ai-gitaly
-LANE_PROGRAMS="git-ai-cache git-ai-cache-tcp"
-VERSION=legacy-<date>        # or any directory under releases/
-# run host-scripts/switch-current.sh with these in the environment
-SH
+deploy/rollback.sh prod                            # the newest installed release before the current one
+deploy/rollback.sh prod legacy-20261114-011107     # or one by name
 ```
 
-In practice, run `deploy/promote.sh <rather-older-version>` after reinstalling
-it in staging, or call `switch-current.sh` directly — it is idempotent.
+It switches `current` to a release that is already installed, restarts the
+container and the cache tiers, and runs the same health check a deploy runs —
+nothing is built or downloaded, so a rollback cannot fail for want of a bundle.
+`deploy-lane.sh` performs the same switch on its own when a release fails its
+health check, and `promote.sh` refuses a release the gate has not passed, so a
+rollback is the only way a lane goes backwards.
+
+`releases/legacy-<date>` is the release a lane ran before it adopted this
+layout. It is a rollback target like any other, and rolling back to it was
+verified to read data written by the newer release.
 
 ## Prerequisites
 
