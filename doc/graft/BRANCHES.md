@@ -235,6 +235,12 @@ Three things hold whichever suite runs where:
   with no network and no credentials, as [VERIFY.md](VERIFY.md) and
   [AGENT-SECURITY.md](AGENT-SECURITY.md) describe.
 
+[`examples/graft/standard-project`](../../examples/graft/standard-project) is a
+runnable version of this: a project with a unit suite and an integration suite,
+the queue that lands it, the rules that keep `main` the ref of the CI, and the
+emergency update that leaves the checkpoint behind the tip. `run.sh` there runs
+the whole loop against a real server in a temporary directory.
+
 ## Verifying the result of a land
 
 A merge queue verifies the *result* of a land before it happens. The gate

@@ -1,0 +1,22 @@
+# The post-merge verifier: it tests the tip of the branch after the lands, moves
+# the checkpoint itself, and (with [revert] enabled) reverts the commit that
+# broke it. See doc/graft/VERIFY.md.
+#
+# @WORK@ is replaced by run.sh with the work directory.
+
+address = "unix:@WORK@/run/gitaly.sock"
+token = "the-shared-token-of-this-example"
+storage = "default"
+repository = "shop.git"
+branch = "main"
+batch_window = "1s"
+work_dir = "@WORK@/verify-post"
+state_file = "@WORK@/verify-post.cursor"
+
+[test]
+# The same command the merge queue runs, on the same tree, after the fact.
+command = ["make", "test"]
+timeout = "10m"
+
+[revert]
+enabled = false
