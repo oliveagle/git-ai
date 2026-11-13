@@ -262,3 +262,80 @@ func TestBranchGateCountsTheApprovalsOfTheReview(t *testing.T) {
 	require.Contains(t, err.Error(), "approvals")
 	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
 }
+
+// TestBranchGateAnswersWhatItEnforces checks the property a CI relies on: the
+// answer the server gives before a land is the answer it gives when the land
+// arrives, so that a status check built on the decision is the policy the
+// server enforces, not a second opinion about it.
+func TestBranchGateAnswersWhatItEnforces(t *testing.T) {
+	t.Parallel()
+
+	s := startWithBranchGate(t)
+	base := writeMain(t, s, map[string]string{"README.md": "main\n"})
+
+	builder := s.repoAs(t, exampleTokens["builder"])
+	planner := s.repoAs(t, exampleTokens["planner"])
+
+	commit, err := commitFile(s.ctx, builder, "builder", "feature", base, "main.go", "package main\n")
+	require.NoError(t, err)
+
+	// A change without a review: the check refuses it, and the land meets the
+	// same refusal.
+	answer, err := builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main", Commits: []string{commit}})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed())
+	require.Equal(t, sdk.BranchNoReview, answer.GetCode())
+	require.Contains(t, answer.GetReason(), "has no review")
+
+	_, err = landAs(s.ctx, builder, "builder", "main", commit)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "has no review on the branch")
+	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
+
+	// The same change with an approved review: the check allows it, and the
+	// land lands.
+	review, err := builder.CreateReview(s.ctx, sdk.CreateReviewOptions{
+		TargetBranch: "main",
+		Head:         commit,
+		Base:         base,
+		Title:        "land the change",
+	})
+	require.NoError(t, err)
+	_, err = planner.ApproveReview(s.ctx, review.GetId(), "looks good")
+	require.NoError(t, err)
+
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main", Commits: []string{commit}})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.Equal(t, base, answer.GetTip())
+
+	landed, err := landAs(s.ctx, builder, "builder", "main", commit)
+	require.NoError(t, err)
+	require.NotEmpty(t, landed.LandedCommitID)
+	require.NotEqual(t, base, s.git(t, "rev-parse", "refs/heads/main"))
+
+	// A push: the check refuses a direct update, and the push is refused with
+	// the same code.
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{Branch: "main", Direct: true, Commits: []string{commit}})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed())
+	require.Equal(t, sdk.BranchDirectUpdateDenied, answer.GetCode())
+
+	clientPath := filepath.Join(t.TempDir(), "client")
+	gittest.Exec(t, s.cfg, "clone", "--quiet", s.repoPath, clientPath)
+	require.NoError(t, os.WriteFile(filepath.Join(clientPath, "pushed.go"), []byte("package main\n"), 0o644))
+	gittest.Exec(t, s.cfg, "-C", clientPath, "add", "pushed.go")
+	gittest.Exec(t, s.cfg, "-C", clientPath, "-c", "user.name=builder", "-c", "user.email=builder@example.com", "commit", "--quiet", "-m", "pushed")
+	out, ok := agentPush(t, s, clientPath, exampleTokens["builder"], "builder", "HEAD:refs/heads/main")
+	require.False(t, ok, out)
+	require.Contains(t, out, "update aborted by the reference-transaction hook")
+
+	// The rules the check is made with are readable, and they are the rules of
+	// the server's configuration.
+	rules, err := builder.BranchRules(s.ctx)
+	require.NoError(t, err)
+	require.Len(t, rules, 1)
+	require.Equal(t, "main", rules[0].GetName())
+	require.True(t, rules[0].GetRequireReview())
+	require.False(t, rules[0].GetAllowDirectUpdate())
+}
