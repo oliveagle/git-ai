@@ -105,39 +105,51 @@ previous="$(ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
   "readlink '$LANE_DIR/current' 2>/dev/null | sed 's#.*/##' || true")"
 
 log "switching to $version${previous:+ (from $previous)}"
+# A switch that fails leaves the lane on whatever release it ran before: that
+# is exactly the state the rollback restores, so the same path handles it.
+switched=0
 ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION
+  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION && switched=1 || \
+  warn "the switch to $version did not complete"
 
 healthy=0
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  sleep 2
-  if ssh_script "$DEPLOY_DIR/host-scripts/healthcheck.sh" \
-      LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
-      LANE_CONTAINER LANE_PG_DB LANE_PG_USER LANE_BUCKET EXPECTED_VERSION \
-      MK_BUCKET PG_CONTAINER PG_IN_CONTAINER_PORT RUSTFS_ENDPOINT RUSTFS_REGION \
-      >"/tmp/healthcheck.$lane.log" 2>&1; then
-    healthy=1
-    break
-  fi
-  log "health check attempt $attempt failed"
-done
-sed 's/^/  /' "/tmp/healthcheck.$lane.log" >&2 || true
+if [ "$switched" = "1" ]; then
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 2
+    if ssh_script "$DEPLOY_DIR/host-scripts/healthcheck.sh" \
+        LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
+        LANE_CONTAINER LANE_PG_DB LANE_PG_USER LANE_BUCKET EXPECTED_VERSION \
+        MK_BUCKET PG_CONTAINER PG_IN_CONTAINER_PORT RUSTFS_ENDPOINT RUSTFS_REGION \
+        >"/tmp/healthcheck.$lane.log" 2>&1; then
+      healthy=1
+      break
+    fi
+    log "health check attempt $attempt failed"
+  done
+  sed 's/^/  /' "/tmp/healthcheck.$lane.log" >&2 || true
+fi
 
 if [ "$healthy" != "1" ]; then
   if [ -n "$previous" ]; then
     warn "the release is not healthy, rolling the lane back to $previous"
+    # switch-current.sh reads the release to switch to from VERSION, so the
+    # rollback sends it under that name.
+    VERSION="$previous"
+    export VERSION
     ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-      LANE_DIR LANE_CONTAINER LANE_PROGRAMS previous
+      LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION
     sleep 3
+    # The lane runs the release it ran before this one now, so the health check
+    # must not demand the version that failed.
+    EXPECTED_VERSION=""
     ssh_script "$DEPLOY_DIR/host-scripts/healthcheck.sh" \
       LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
-      LANE_CONTAINER LANE_PG_DB LANE_PG_USER LANE_BUCKET previous \
+      LANE_CONTAINER LANE_PG_DB LANE_PG_USER LANE_BUCKET EXPECTED_VERSION \
       MK_BUCKET PG_CONTAINER PG_IN_CONTAINER_PORT RUSTFS_ENDPOINT RUSTFS_REGION \
       || warn "the lane is not healthy after the rollback either"
   fi
   die "deploy of $version to $lane failed"
 fi
-
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
   LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI \

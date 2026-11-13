@@ -54,9 +54,16 @@ docker run -d --name "$LANE_CONTAINER" --restart unless-stopped \
 echo "  container $LANE_CONTAINER started"
 
 # The cache tiers run the release's binary too.
-supervisorctl -c "$HOME/.supervisord/supervisord.conf" reread >/dev/null
-supervisorctl -c "$HOME/.supervisord/supervisord.conf" update >/dev/null
+sup="$HOME/.supervisord/supervisord.conf"
+supervisorctl -c "$sup" reread >/dev/null 2>&1 || true
+supervisorctl -c "$sup" update >/dev/null 2>&1 || true
+# A cache tier refuses to run when the server it proxies to is not up yet, and
+# a release that cannot start is what the health check exists to catch. A tier
+# that will not come back is reported here and judged there; it must not be
+# what ends the switch, because the switch is what the rollback undoes.
 for prog in $LANE_PROGRAMS; do
-  supervisorctl -c "$HOME/.supervisord/supervisord.conf" restart "$prog" >/dev/null
+  supervisorctl -c "$sup" restart "$prog" >/dev/null 2>&1 ||
+    supervisorctl -c "$sup" start "$prog" >/dev/null 2>&1 ||
+    echo "  cache tier $prog did not start — the health check judges that"
 done
 echo "  cache tiers restarted ($LANE_PROGRAMS)"
