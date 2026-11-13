@@ -25,6 +25,10 @@ type Graft struct {
 	// first rule whose Actor and Refs both match decides. When Policy is
 	// empty every authenticated actor may update every reference.
 	Policy []GraftPolicyRule `json:"policy" toml:"policy,omitempty"`
+	// Branches are the branch management rules: what may update a branch, and
+	// what a change must carry to land on it. A branch without a rule is not
+	// managed: it is updated as any other reference.
+	Branches []GraftBranchRule `json:"branches" toml:"branch,omitempty"`
 	// Agents are the per-agent credentials accepted by the gRPC server. When
 	// at least one agent is configured, every request must present one of
 	// these tokens (in addition to or instead of auth.token), and the agent
@@ -559,6 +563,9 @@ func (g Graft) Validate() error {
 		}
 	}
 
+	if err := g.validateBranches(); err != nil {
+		return err
+	}
 	if err := g.Land.Batch.validate(); err != nil {
 		return err
 	}
@@ -576,6 +583,55 @@ func (g Graft) Validate() error {
 	}
 
 	return g.Land.Resolver.validate()
+}
+
+// validateBranches reports malformed branch rules at load time: a rule
+// without a name, a name that is not a branch name, a negative number of
+// approvals, or two rules for one branch (the first one would decide and the
+// second one would never be read).
+func (g Graft) validateBranches() error {
+	seen := make(map[string]bool, len(g.Branches))
+	for i, rule := range g.Branches {
+		if rule.Name == "" {
+			return fmt.Errorf("graft branch rule %d: name is required", i+1)
+		}
+		if strings.HasPrefix(rule.Name, "refs/") {
+			return fmt.Errorf("graft branch rule %d: name %q is a reference name, a branch name is expected", i+1, rule.Name)
+		}
+		if !validBranchName(rule.Name) {
+			return fmt.Errorf("graft branch rule %d: name %q is not a valid branch name", i+1, rule.Name)
+		}
+		if rule.RequireApprovals < 0 {
+			return fmt.Errorf("graft branch rule %d: require_approvals must not be negative", i+1)
+		}
+		if seen[rule.Name] {
+			return fmt.Errorf("graft branch rule %d: branch %q has more than one rule", i+1, rule.Name)
+		}
+		seen[rule.Name] = true
+	}
+
+	return nil
+}
+
+// validBranchName reports whether name is usable as a branch name: a
+// slash-separated path of valid reference components.
+func validBranchName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
+		strings.Contains(name, "//") || strings.Contains(name, "..") ||
+		strings.HasSuffix(name, ".") || strings.Contains(name, "@{") {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[\\", r) {
+			return false
+		}
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || part == "." || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	return true
 }
 
 func (r GraftResolver) validate() error {
@@ -791,6 +847,34 @@ type GraftPolicyRule struct {
 	Refs []string `json:"refs" toml:"refs,omitempty"`
 	// Allow decides whether matching updates are allowed or denied.
 	Allow bool `json:"allow" toml:"allow,omitempty"`
+}
+
+// GraftBranchRule is the management policy of one branch: what may update it,
+// and what a change must carry to land on it. The reference-transaction hook
+// decides every update of the branch with it (doc/graft/BRANCHES.md).
+type GraftBranchRule struct {
+	// Name is the branch the rule governs, without the refs/heads/ prefix,
+	// such as "main".
+	Name string `json:"name" toml:"name,omitempty"`
+	// RequireReview demands a review of the change that lands on the branch,
+	// approved by the approval rules of [graft.review].
+	RequireReview bool `json:"require_review" toml:"require_review,omitempty"`
+	// RequireApprovals is the number of current approvals the review of the
+	// change must carry, on top of the approvals the approval rules ask for.
+	// Zero asks for none.
+	RequireApprovals int32 `json:"require_approvals" toml:"require_approvals,omitempty"`
+	// AllowStaleBase accepts a review whose base is not the current tip of the
+	// branch. Without it a change that is based on an older tip of the branch
+	// does not land, so that a review always covers what the branch holds.
+	AllowStaleBase bool `json:"allow_stale_base" toml:"allow_stale_base,omitempty"`
+	// AllowDirectUpdate accepts an update of the branch that is not a land,
+	// such as a push. Without it only a land may update the branch.
+	AllowDirectUpdate bool `json:"allow_direct_update" toml:"allow_direct_update,omitempty"`
+	// RequireVerified demands that the verification checkpoint of the branch
+	// covers the branch: the checkpoint (refs/graft/green/<branch>, moved by
+	// graft-verify) must point at the tip the land builds on. Without it a
+	// change may land on a branch whose last verification failed.
+	RequireVerified bool `json:"require_verified" toml:"require_verified,omitempty"`
 }
 
 // GraftAgent is one agent credential.
