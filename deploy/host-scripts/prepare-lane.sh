@@ -92,7 +92,7 @@ pg_password="$(sed -n 's/^PGPASSWORD=//p' "$env_file")"
 # database. An existing role keeps its password: the lane's server is already
 # using it.
 psql_super() {
-  docker exec -i -u postgres "$PG_CONTAINER" psql -p "$PG_IN_CONTAINER_PORT" -v ON_ERROR_STOP=1 "$@"
+  docker exec -u postgres "$PG_CONTAINER" psql -p "$PG_IN_CONTAINER_PORT" -v ON_ERROR_STOP=1 "$@"
 }
 
 role_exists="$(psql_super -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$LANE_PG_USER'" | tr -d '[:space:]')"

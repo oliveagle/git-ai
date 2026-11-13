@@ -40,7 +40,7 @@ ssh_script() {
     printf 'RUSTFS_REGION=%q\n' "$RUSTFS_REGION"
     printf 'RUSTFS_CONTAINER=%q\n' "$RUSTFS_CONTAINER"
     for var in "$@"; do
-      printf '%s=%q\n' "$var" "${!var}"
+      printf '%s=%q\n' "$var" "${!var:-}"
     done
     cat "$script"
   } | ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" "bash -s"

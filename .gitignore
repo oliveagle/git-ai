@@ -21,3 +21,4 @@
 
 ## Skaffold
 k8s/statefulset.yaml
+/dist/

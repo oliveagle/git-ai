@@ -64,6 +64,7 @@ export OTHER_CACHE_TCP_PORT="$(lane_cache_port "$other")"
 export VERSION="$version"
 export EXPECTED_VERSION="$version"
 export BUNDLE_REMOTE="$LANE_DIR/releases/incoming/git-ai-release-$version.tar.gz"
+export BUNDLE="$BUNDLE_REMOTE"
 export MK_BUCKET="$LANE_DIR/.tools/bin/mkbucket"
 
 log "deploying $version to the $lane lane ($LANE_DIR)"
@@ -72,12 +73,12 @@ if [ "${BUNDLE_ALREADY_ON_HOST:-0}" = "1" ]; then
   log "using the bundle already on the host"
   ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
     "test -s '$BUNDLE_REMOTE'" || die "no bundle at $BUNDLE_REMOTE on the host"
-  ssh_script "$DEPLOY_DIR/host-scripts/stage-bundle.sh" LANE_DIR VERSION BUNDLE_REMOTE
+  ssh_script "$DEPLOY_DIR/host-scripts/stage-bundle.sh" LANE_DIR VERSION BUNDLE
 else
   log "uploading the bundle"
   ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" "mkdir -p '$LANE_DIR/releases/incoming'"
   ssh_put "$bundle" "$BUNDLE_REMOTE"
-  ssh_script "$DEPLOY_DIR/host-scripts/stage-bundle.sh" LANE_DIR VERSION BUNDLE_REMOTE
+  ssh_script "$DEPLOY_DIR/host-scripts/stage-bundle.sh" LANE_DIR VERSION BUNDLE
 fi
 
 log "preparing the lane"
@@ -95,10 +96,10 @@ ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
 
 log "installing the release"
 ssh_script "$DEPLOY_DIR/host-scripts/install-release.sh" \
-  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION BUNDLE_REMOTE
+  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION BUNDLE
 
 previous="$(ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
-  "readlink -f '$LANE_DIR/current' 2>/dev/null | sed 's#.*/##' || true")"
+  "readlink '$LANE_DIR/current' 2>/dev/null | sed 's#.*/##' || true")"
 
 log "switching to $version${previous:+ (from $previous)}"
 ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
