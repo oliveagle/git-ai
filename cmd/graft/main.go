@@ -101,6 +101,7 @@ func commandTable() map[string]command {
 		"storage": storageCommand(),
 		"repo":    repoCommand(),
 		"policy":  policyCommand(),
+		"gate":    gateCommand(),
 	}
 }
 
@@ -279,6 +280,8 @@ commands:
                          --initial-commit [--branch NAME], --json)
   policy check FILE      validate the access policy of a configuration file before a reload, and list
                          what it would deny among recent changesets (-repo, --limit, --json)
+  gate check --branch B  ask the branch management policy of a configuration file whether a change may
+                         land on a branch (--config FILE, --commit OID, --repo, --json)
 
 environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
 
