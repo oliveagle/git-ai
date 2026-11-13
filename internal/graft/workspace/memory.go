@@ -264,6 +264,16 @@ func (m *MemoryBackend) Land(_ context.Context, opts LandOptions) (LandResult, e
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if opts.DryRun {
+		// A dry run decides and replays like a land, and puts the branches back
+		// as they were: the land it is asked about does not happen.
+		branches := make(map[string]string, len(m.branches))
+		for name, id := range m.branches {
+			branches[name] = id
+		}
+		defer func() { m.branches = branches }()
+	}
+
 	id, err := m.resolve(opts.Commit)
 	if err != nil {
 		return LandResult{}, err

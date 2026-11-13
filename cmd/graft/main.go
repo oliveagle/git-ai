@@ -57,10 +57,13 @@ type options struct {
 	conflictsDir string
 	resolved     string
 	strategy     string
-	revision     string
-	after        uint64
-	limit        int
-	jsonOut      bool
+	// dryRun and timestamp are those of graft land --dry-run and --timestamp.
+	dryRun    bool
+	timestamp string
+	revision  string
+	after     uint64
+	limit     int
+	jsonOut   bool
 	// stderr receives warnings of commands that succeed.
 	stderr io.Writer
 }
@@ -233,6 +236,8 @@ func bindLand(fs *flag.FlagSet, o *options) {
 	fs.BoolVar(&o.resolve, "resolve", false, "let the server resolve merge conflicts")
 	fs.StringVar(&o.conflictsDir, "conflicts-dir", "", "with --resolve: write the conflicts the server did not resolve into this directory")
 	fs.StringVar(&o.resolved, "resolved", "", "land the resolution in this directory (written by --conflicts-dir, then edited)")
+	fs.BoolVar(&o.dryRun, "dry-run", false, "print the commit the land would produce, without landing it (needs --timestamp)")
+	fs.StringVar(&o.timestamp, "timestamp", "", "committer date of the rewritten commit (RFC 3339), to land the commit --dry-run named")
 }
 
 func bindLog(fs *flag.FlagSet, o *options) {
@@ -264,7 +269,8 @@ commands:
   diff                   show line changes against the base commit
   commit -m MSG          commit local changes (--land BRANCH to land them, --resolve for conflicts)
   land [BRANCH]          land the pending commit (--strategy, --resolve [--conflicts-dir DIR],
-                         --resolved DIR; --abort drops it)
+                         --resolved DIR; --abort drops it; --dry-run --timestamp T prints
+                         the commit the land would produce)
   revert [PATH...]       discard local changes to PATHs (default: all) and restore them
   update                 move the workspace to the tip of its branch
   sparse [PREFIX...]     restrict the workspace to PREFIX paths

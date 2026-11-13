@@ -172,18 +172,38 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if o.resolved != "" && (o.resolve || o.conflictsDir != "") {
 		return usagef("land --resolved takes neither --resolve nor --conflicts-dir")
 	}
+	if o.dryRun && (o.abort || o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --dry-run takes neither --abort, --resolve, --conflicts-dir nor --resolved")
+	}
+	if o.dryRun && o.timestamp == "" {
+		// The commit a land produces carries the committer date, so without the
+		// date the commit the dry run names is not the one the land writes.
+		return usagef("land --dry-run requires --timestamp: the commit it names is the one the land produces only when the committer date is pinned")
+	}
+	if o.timestamp != "" && (o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --timestamp is for a plain land: a resolved land is not reproducible")
+	}
+	timestamp, err := parseLandTimestamp(o.timestamp)
+	if err != nil {
+		return err
+	}
 	ws, err := openWorkspace(ctx, o)
 	if err != nil {
 		return err
 	}
 	var res workspace.LandResult
-	if o.resolved != "" {
+	switch {
+	case o.dryRun:
+		res, err = ws.DryRunLand(ctx, branch, o.strategy, committer, timestamp)
+	case o.resolved != "":
 		resolution, rerr := readResolution(o.resolved)
 		if rerr != nil {
 			return rerr
 		}
 		res, err = ws.LandResolution(ctx, branch, committer, resolution)
-	} else {
+	case o.timestamp != "":
+		res, err = ws.LandTimed(ctx, branch, o.strategy, committer, timestamp)
+	default:
 		res, err = ws.LandResolving(ctx, branch, o.strategy, committer, o.resolve)
 	}
 	warnSkipped(o, ws)
@@ -200,12 +220,31 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 		}
 		return err
 	}
+	if o.dryRun {
+		// The command exists for a script that verifies the result and publishes
+		// it: the object ID is the output, and nothing else is printed.
+		fmt.Fprintf(out, "%s\n", res.Commit)
+		return nil
+	}
 	if res.AlreadyLanded {
 		fmt.Fprintf(out, "already landed at %s\n", shortOID(res.Commit))
 		return nil
 	}
 	fmt.Fprintf(out, "landed at %s%s%s\n", shortOID(res.Commit), resolvedNote(res.ResolvedPaths), batchNote(res.BatchSize, res.BatchPosition, res.Attempts))
 	return nil
+}
+
+// parseLandTimestamp parses the committer date of graft land --timestamp, the
+// empty string meaning the server's clock.
+func parseLandTimestamp(value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	timestamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, usagef("--timestamp %q: want an RFC 3339 date, such as 2026-11-14T00:00:00Z", value)
+	}
+	return timestamp, nil
 }
 
 // batchNote describes the land batch a change was part of, such as " (batch 3/17,

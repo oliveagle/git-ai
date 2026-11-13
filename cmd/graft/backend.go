@@ -235,6 +235,8 @@ func (b *sdkBackend) Land(ctx context.Context, opts workspace.LandOptions) (work
 		Strategy:         strategy,
 		CreateBranch:     opts.CreateBranch,
 		ResolveConflicts: opts.ResolveConflicts,
+		Timestamp:        opts.Timestamp,
+		DryRun:           opts.DryRun,
 	}
 	if r := opts.Resolution; r != nil {
 		lo.Resolution = &sdk.Resolution{Tip: r.Tip, Commit: r.Commit}

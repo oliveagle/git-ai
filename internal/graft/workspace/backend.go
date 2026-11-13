@@ -159,6 +159,14 @@ type LandOptions struct {
 	// the merge with the branch tip Resolution.Tip, as a merge commit. It must
 	// resolve exactly the conflicting paths. Strategy is then not used.
 	Resolution *Resolution
+	// Timestamp is the committer date of a rewritten commit. Zero uses the
+	// server's clock, and then the commit a dry run names is not the one a later
+	// land produces: a caller that wants to verify the result before landing it
+	// sets it.
+	Timestamp time.Time
+	// DryRun asks for the commit the land would produce without landing it:
+	// neither the branch nor the workspace changes.
+	DryRun bool
 }
 
 // Resolution is a caller's resolution of the conflicts of landing Commit onto
