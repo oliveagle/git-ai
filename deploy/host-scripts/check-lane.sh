@@ -6,7 +6,7 @@
 # lane's database, bucket, port or token is refused before it runs.
 #
 #   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER
-#   LANE_BUCKET LANE_NODE_ID
+#   LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI
 #   REQUIRE_INSTALLED=1   also assert that a release is installed (after a switch)
 #   OTHER_DIR OTHER_*     the other lane, for the isolation checks
 set -euo pipefail
@@ -47,6 +47,26 @@ if [ "${REQUIRE_INSTALLED:-0}" = "1" ]; then
   [ -x "$LANE_DIR/current/bin/gitaly" ] && ok "gitaly is present in the current release" \
     || bad "no gitaly in the current release"
   [ -x "$LANE_DIR/run-gitaly.sh" ] && ok "runner is present" || bad "no runner at $LANE_DIR/run-gitaly.sh"
+fi
+
+# --- the cache tiers are defined once ------------------------------------
+# Two ini files that name the same program make supervisor refuse to load the
+# whole include: a lane's programs belong to its own file and to no other.
+if [ -n "${LANE_PROGRAMS:-}" ] && [ -n "${LANE_SUPERVISOR_INI:-}" ]; then
+  ini="$HOME/.supervisord/configs.d/$LANE_SUPERVISOR_INI"
+  if [ -s "$ini" ]; then ok "cache tiers are defined in $LANE_SUPERVISOR_INI"
+  else bad "no $ini"; fi
+  for prog in $LANE_PROGRAMS; do
+    dupes=""
+    for f in "$HOME"/.supervisord/configs.d/*.ini; do
+      [ "$(basename "$f")" = "$LANE_SUPERVISOR_INI" ] && continue
+      if [ -n "$(sed -n "/^\[program:$prog\]/p" "$f" 2>/dev/null)" ]; then
+        dupes="$dupes $(basename "$f")"
+      fi
+    done
+    if [ -n "$dupes" ]; then bad "program $prog is also defined in$dupes"
+    else ok "program $prog is defined once"; fi
+  done
 fi
 
 # --- isolation from the other lane ---------------------------------------

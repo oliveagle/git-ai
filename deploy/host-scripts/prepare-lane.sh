@@ -6,6 +6,7 @@
 #
 #   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT
 #   LANE_PG_DB LANE_PG_USER LANE_BUCKET LANE_NODE_ID LANE_CONTAINER LANE_PROGRAMS
+#   LANE_SUPERVISOR_INI (the ini that defines the lane's cache tiers)
 #   DEPLOY_BASE PG_HOST PG_PORT PG_CONTAINER PG_IN_CONTAINER_PORT
 #   RUSTFS_ENDPOINT RUSTFS_REGION RUSTFS_CONTAINER MK_BUCKET
 #
@@ -183,7 +184,7 @@ say "runner ready ($runner)"
 # --- the cache tiers ----------------------------------------------------
 # The cache reads through the lane's socket and serves the lane's port, so a
 # client of one lane cannot reach the other's objects.
-ini="$HOME/.supervisord/configs.d/git-ai-$LANE.ini"
+ini="$HOME/.supervisord/configs.d/${LANE_SUPERVISOR_INI:-git-ai-$LANE.ini}"
 mkdir -p "$(dirname "$ini")"
 prog_unix="$(printf '%s\n' "$LANE_PROGRAMS" | awk '{print $1}')"
 prog_tcp="$(printf '%s\n' "$LANE_PROGRAMS" | awk '{print $2}')"

@@ -72,6 +72,7 @@ lane_bucket()     { lane_setting "$1" BUCKET; }
 lane_node_id()    { lane_setting "$1" NODE_ID; }
 lane_container()  { lane_setting "$1" CONTAINER; }
 lane_programs()   { lane_setting "$1" SUPERVISOR_PROGRAMS; }
+lane_ini()        { lane_setting "$1" SUPERVISOR_INI; }
 
 # A version string that names a release: a tag, or the commit it was cut from.
 release_version() {

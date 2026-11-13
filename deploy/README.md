@@ -26,7 +26,8 @@ tiers. The two lanes share the machine and the storage *server*, nothing else.
 | bucket | `git-ai-objects` | `git-ai-objects-staging` |
 | node id | `oleNas01` | `oleNas01-staging` |
 | container | `git-ai-gitaly` | `git-ai-gitaly-staging` |
-| supervisor programs | `git-ai-cache`, `git-ai-cache-tcp` | `git-ai-cache-staging`, `git-ai-cache-tcp-staging` |
+| supervisor programs | `git-ai-cache`, `git-ai-cache-tcp` | `git-ai-cache-staging`, `git-ai-cache-staging-tcp` |
+| supervisor ini | `git-ai.ini` | `git-ai-staging.ini` |
 
 The names live in `lanes.env`; the scripts read them from there and nowhere
 else.
@@ -123,8 +124,9 @@ been redeployed is not a pass.
 1. the bundle is staged and its tools extracted to `<lane>/.tools`;
 2. `prepare-lane.sh` creates what is missing — directory, token, PostgreSQL
    role and database, bucket, `config.toml`, `run-gitaly.sh`, the two supervisor
-   programs — and never rotates a secret or rewrites a `config.toml` that
-   already exists;
+   programs in the lane's own ini — and never rotates a secret or rewrites a
+   `config.toml` that already exists. `lanes.env` names the ini; production
+   keeps the `git-ai.ini` it has had since before the lanes existed;
 3. `check-lane.sh` refuses a lane whose identity or isolation does not hold;
 4. `install-release.sh` verifies the checksums and unpacks into
    `releases/<version>/`;

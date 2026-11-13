@@ -53,6 +53,7 @@ export LANE_BUCKET="$(lane_bucket "$lane")"
 export LANE_NODE_ID="$(lane_node_id "$lane")"
 export LANE_CONTAINER="$(lane_container "$lane")"
 export LANE_PROGRAMS="$(lane_programs "$lane")"
+export LANE_SUPERVISOR_INI="$(lane_ini "$lane")"
 
 if [ "$lane" = "staging" ]; then other="prod"; else other="staging"; fi
 export OTHER_DIR="$(lane_dir "$other")"
@@ -85,13 +86,15 @@ log "preparing the lane"
 ssh_script "$DEPLOY_DIR/host-scripts/prepare-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
   LANE_PG_DB LANE_PG_USER LANE_BUCKET LANE_NODE_ID LANE_CONTAINER LANE_PROGRAMS \
+  LANE_SUPERVISOR_INI \
   DEPLOY_BASE PG_HOST PG_PORT PG_CONTAINER PG_IN_CONTAINER_PORT \
   RUSTFS_ENDPOINT RUSTFS_REGION RUSTFS_CONTAINER MK_BUCKET
 
 log "checking the lane before it starts"
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
-  LANE_BUCKET LANE_NODE_ID OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
+  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI \
+  OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
   OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT
 
 log "installing the release"
@@ -137,7 +140,8 @@ fi
 
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
-  LANE_BUCKET LANE_NODE_ID OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
+  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI \
+  OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
   OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT REQUIRE_INSTALLED
 
 log "release $version is live on the $lane lane"
