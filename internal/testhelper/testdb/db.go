@@ -202,29 +202,6 @@ func requireSQLOpen(tb testing.TB, dbCfg config.DB, direct bool) *sql.DB {
 	return db
 }
 
-func requireTerminateAllConnections(tb testing.TB, db *sql.DB, database string) {
-	tb.Helper()
-	ctx := testhelper.Context(tb)
-	_, err := db.ExecContext(ctx, "SELECT PG_TERMINATE_BACKEND(pid) FROM PG_STAT_ACTIVITY WHERE datname = $1", database)
-	require.NoError(tb, err)
-
-	// Once the pg_terminate_backend has completed, we may need to wait before the connections
-	// are fully released. pg_terminate_backend will return true as long as the signal was
-	// sent successfully, but the backend needs to respond to the signal to close the connection.
-	// TODO: In Postgre 14, pg_terminate_backend takes an optional timeout argument that makes it a blocking
-	// call. https://gitlab.com/gitlab-org/gitaly/-/issues/3937 tracks the refactor work to  remove this
-	// require.Eventuallyf call in favor of passing in a timeout to pg_terminate_backend
-	require.Eventuallyf(tb, func() bool {
-		var openConnections int
-		require.NoError(tb, db.QueryRowContext(
-			ctx,
-			`SELECT COUNT(*) FROM pg_stat_activity
-				WHERE datname = $1 AND pid != pg_backend_pid()`, database).
-			Scan(&openConnections))
-		return openConnections == 0
-	}, 20*time.Second, 10*time.Millisecond, "wait for all connections to be terminated")
-}
-
 func initPraefectDB(tb testing.TB, database string) *sql.DB {
 	tb.Helper()
 	ctx := testhelper.Context(tb)
@@ -259,12 +236,12 @@ func initPraefectDB(tb testing.TB, database string) *sql.DB {
 			require.NoError(tb, err, "killing PgBouncer connections")
 		}
 
-		// We need to force-terminate open connections as for the tasks that use PgBouncer
-		// the actual client connected to the database is a PgBouncer and not a test that is
-		// running.
-		requireTerminateAllConnections(tb, postgresDB, database)
-
-		_, err := postgresDB.ExecContext(ctx, "DROP DATABASE "+database)
+		// Drop with FORCE so that PostgreSQL itself terminates whatever is still
+		// connected, including the PgBouncer connections of the tests that run
+		// through it. Terminating the connections first and dropping afterwards
+		// leaves a window: a test that connects in between makes the drop fail
+		// with "database is being accessed by other users" (SQLSTATE 55006).
+		_, err := postgresDB.ExecContext(ctx, "DROP DATABASE "+database+" WITH (FORCE)")
 		require.NoErrorf(tb, err, "failed to drop %q database", database)
 	})
 
