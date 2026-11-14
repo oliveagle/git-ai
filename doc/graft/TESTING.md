@@ -56,6 +56,35 @@ table, not only in a unit test of the parser.
 | A crash path, a retry | a fault injection test that kills the process or the connection |
 | A reload of a policy | a unit test of the store that holds it, and an end-to-end test that signals a real process and reads the change in what the server decides |
 
+## What a local run needs
+
+`make test` reads its environment the way CI does, and three of the
+prerequisites fail the run rather than skip when they are missing:
+
+- **A PostgreSQL 16.** The `praefect` and `datastore` tests connect through
+  libpq's variables (`PGHOST`, `PGPORT`, `PGUSER`) and fail without them; the
+  storage core runs its suites on SQLite and, when `GRAFT_TEST_POSTGRES_DSN`
+  is set, again on PostgreSQL. CI starts a `postgres:16-alpine` service with
+  trust authentication; a container with `POSTGRES_HOST_AUTH_METHOD=trust`
+  and a published port is enough.
+- **Git 2.45 or newer in `PATH`.** The conformance harness runs the machine's
+  git as the reference client and compares it with the server's bundled git,
+  and the authoritative storage modes serve reftable repositories, which older
+  git cannot read (`unknown repository extension: refstorage`). The bundled
+  versions are built under `_build/deps/git-*`; use one of them when the
+  distribution's git is older, or the comparison measures a version
+  difference instead of the server.
+- **Go 1.26.** The Makefile exports `GOTOOLCHAIN=local`, so the `go` in `PATH`
+  has to be the version `go.mod` names, not a toolchain it would download.
+- **A temporary directory that behaves like the tests assume.**
+  `TEST_TMP_DIR` (default `/tmp`) has to be on a filesystem that accepts a
+  4095-byte symlink target (ext4 does; XFS stops at 1024) and is short enough
+  for a Unix socket path (108 bytes): the checkout and runtime-directory tests
+  run into both limits.
+
+The whole suite is then `make test`. The reftable variants CI runs are
+`make test-with-reftable TEST_PACKAGES="$(go list ./internal/git/... ./internal/gitaly/service/... ./internal/gitaly/storage/... | tr '\n' ' ')"`.
+
 ## What CI runs
 
 `.github/workflows/ci.yml` runs:
