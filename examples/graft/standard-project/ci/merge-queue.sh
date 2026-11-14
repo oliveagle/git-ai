@@ -66,13 +66,16 @@ say "5/6 publish the checkpoint, and ask the gate the question the land asks"
 # held part of the tree would certify a tree the suites never saw, and the
 # server would refuse the land.
 ( cd "$work/verify" && operator "$graft" green set --branch "$branch" --commit "$result" )
-if ! "$graft" gate check --branch "$branch" --result "$result"; then
-  # The gate refused the land, and its reason says what to do: when the result
+if ! answer=$("$graft" gate check --branch "$branch" --result "$result" --json); then
+  # The gate refused the land, and its code says what to do: when the result
   # is stale, the branch moved while the suite ran, and the queue computes the
   # result again on the tip the branch holds.
-  echo "merge-queue: the gate refused the land of $result" >&2
-  echo "merge-queue: a stale result means the branch moved while the suite ran:" >&2
-  echo "merge-queue: the queue runs again on the new tip" >&2
+  code=$(printf '%s' "$answer" | sed -n 's/.*"code": *"\([a-z_]*\)".*/\1/p')
+  echo "merge-queue: the gate refused the land of $result: $code" >&2
+  if [ "$code" = "stale_result" ]; then
+    echo "merge-queue: a stale result means the branch moved while the suite ran:" >&2
+    echo "merge-queue: the queue runs again on the new tip" >&2
+  fi
   exit 1
 fi
 

@@ -114,4 +114,8 @@ func TestBranchGateRefusesALandWithoutItsResult(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	require.Contains(t, err.Error(), "no verification checkpoint")
+
+	// The refusal carries the code of the decision, so that a queue branches
+	// on the code instead of parsing the message.
+	require.Equal(t, "not_verified", sdk.BranchGateCode(err))
 }

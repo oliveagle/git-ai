@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
+	"github.com/feder-cr/git-ai/sdk"
 )
 
 const (
@@ -180,6 +181,12 @@ func runContext(parent context.Context, args []string, stdout, stderr io.Writer)
 		return exitInterrupted
 	}
 	fmt.Fprintf(stderr, "graft %s: %v\n", name, err)
+	// A refusal by the branch management policy carries the code of the
+	// decision, and the code is what a script branches on: the reason is for
+	// a human.
+	if code := sdk.BranchGateCode(err); code != "" {
+		fmt.Fprintf(stderr, "graft %s: the branch policy refused the update: %s\n", name, code)
+	}
 	var ue *usageError
 	if errors.As(err, &ue) {
 		return exitUsage

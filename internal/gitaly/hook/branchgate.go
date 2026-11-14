@@ -125,7 +125,15 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 		if !decision.Allowed {
 			fields["reason"] = decision.Reason
 			m.logger.WithFields(fields).InfoContext(ctx, "agent branch update denied")
+			// The refusal carries the code of the decision, so that a CI
+			// that lands reads what to do next (a stale result is computed
+			// again, a missing verification is published before the land)
+			// instead of parsing the reason.
 			return structerr.NewPermissionDenied("%w", BranchGateDenial{
+				Branch: branch,
+				Code:   decision.Code,
+				Reason: decision.Reason,
+			}).WithDetail(&gitalypb.BranchGateError{
 				Branch: branch,
 				Code:   decision.Code,
 				Reason: decision.Reason,

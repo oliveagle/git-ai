@@ -65,6 +65,34 @@ const (
 	BranchNotFullTree = "not_full_tree"
 )
 
+// BranchGateDenial returns the refusal of the branch management policy: the
+// branch, the code of the decision and its reason. The second return value is
+// false when the error is not a refusal of that policy.
+func BranchGateDenial(err error) (*gitalypb.BranchGateError, bool) {
+	st, ok := status.FromError(err)
+	if !ok {
+		return nil, false
+	}
+	for _, detail := range st.Details() {
+		if denial, ok := detail.(*gitalypb.BranchGateError); ok {
+			return denial, true
+		}
+	}
+	return nil, false
+}
+
+// BranchGateCode returns the code of the refusal of the branch management
+// policy, the empty string when the error is not such a refusal. It is the
+// code a CI branches on: stale_result means the result has to be computed
+// again, not_verified means the checkpoint has to be published first.
+func BranchGateCode(err error) string {
+	denial, ok := BranchGateDenial(err)
+	if !ok {
+		return ""
+	}
+	return denial.GetCode()
+}
+
 // BranchDecisionOptions asks whether changes may land on a branch.
 type BranchDecisionOptions struct {
 	// Branch is the branch the changes would land on, without the refs/heads/

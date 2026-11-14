@@ -145,6 +145,74 @@ func (x *BranchRule) GetRequireFullTree() bool {
 	return false
 }
 
+// BranchGateError is the refusal of an update by the branch management
+// policy, with the code of the decision, for a machine to read. A CI that
+// lands reads the code to know what to do next: a stale result is computed
+// again, a missing verification is published before the land.
+type BranchGateError struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// branch is the branch whose rule refused the update, without the
+	// refs/heads/ prefix.
+	Branch string `protobuf:"bytes,1,opt,name=branch,proto3" json:"branch,omitempty"`
+	// code names the outcome (not_verified, stale_result, say).
+	Code string `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	// reason explains the outcome for a human.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BranchGateError) Reset() {
+	*x = BranchGateError{}
+	mi := &file_branch_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BranchGateError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BranchGateError) ProtoMessage() {}
+
+func (x *BranchGateError) ProtoReflect() protoreflect.Message {
+	mi := &file_branch_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BranchGateError.ProtoReflect.Descriptor instead.
+func (*BranchGateError) Descriptor() ([]byte, []int) {
+	return file_branch_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BranchGateError) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *BranchGateError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *BranchGateError) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 // GetBranchDecisionRequest is a request for GetBranchDecision.
 type GetBranchDecisionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -170,7 +238,7 @@ type GetBranchDecisionRequest struct {
 
 func (x *GetBranchDecisionRequest) Reset() {
 	*x = GetBranchDecisionRequest{}
-	mi := &file_branch_proto_msgTypes[1]
+	mi := &file_branch_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +250,7 @@ func (x *GetBranchDecisionRequest) String() string {
 func (*GetBranchDecisionRequest) ProtoMessage() {}
 
 func (x *GetBranchDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_branch_proto_msgTypes[1]
+	mi := &file_branch_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +263,7 @@ func (x *GetBranchDecisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBranchDecisionRequest.ProtoReflect.Descriptor instead.
 func (*GetBranchDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_branch_proto_rawDescGZIP(), []int{1}
+	return file_branch_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetBranchDecisionRequest) GetRepository() *Repository {
@@ -273,7 +341,7 @@ type GetBranchDecisionResponse struct {
 
 func (x *GetBranchDecisionResponse) Reset() {
 	*x = GetBranchDecisionResponse{}
-	mi := &file_branch_proto_msgTypes[2]
+	mi := &file_branch_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -285,7 +353,7 @@ func (x *GetBranchDecisionResponse) String() string {
 func (*GetBranchDecisionResponse) ProtoMessage() {}
 
 func (x *GetBranchDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_branch_proto_msgTypes[2]
+	mi := &file_branch_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -298,7 +366,7 @@ func (x *GetBranchDecisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBranchDecisionResponse.ProtoReflect.Descriptor instead.
 func (*GetBranchDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_branch_proto_rawDescGZIP(), []int{2}
+	return file_branch_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetBranchDecisionResponse) GetAllowed() bool {
@@ -396,7 +464,7 @@ type ListBranchRulesRequest struct {
 
 func (x *ListBranchRulesRequest) Reset() {
 	*x = ListBranchRulesRequest{}
-	mi := &file_branch_proto_msgTypes[3]
+	mi := &file_branch_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -408,7 +476,7 @@ func (x *ListBranchRulesRequest) String() string {
 func (*ListBranchRulesRequest) ProtoMessage() {}
 
 func (x *ListBranchRulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_branch_proto_msgTypes[3]
+	mi := &file_branch_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -421,7 +489,7 @@ func (x *ListBranchRulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBranchRulesRequest.ProtoReflect.Descriptor instead.
 func (*ListBranchRulesRequest) Descriptor() ([]byte, []int) {
-	return file_branch_proto_rawDescGZIP(), []int{3}
+	return file_branch_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListBranchRulesRequest) GetRepository() *Repository {
@@ -442,7 +510,7 @@ type ListBranchRulesResponse struct {
 
 func (x *ListBranchRulesResponse) Reset() {
 	*x = ListBranchRulesResponse{}
-	mi := &file_branch_proto_msgTypes[4]
+	mi := &file_branch_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -454,7 +522,7 @@ func (x *ListBranchRulesResponse) String() string {
 func (*ListBranchRulesResponse) ProtoMessage() {}
 
 func (x *ListBranchRulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_branch_proto_msgTypes[4]
+	mi := &file_branch_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,7 +535,7 @@ func (x *ListBranchRulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBranchRulesResponse.ProtoReflect.Descriptor instead.
 func (*ListBranchRulesResponse) Descriptor() ([]byte, []int) {
-	return file_branch_proto_rawDescGZIP(), []int{4}
+	return file_branch_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListBranchRulesResponse) GetRules() []*BranchRule {
@@ -492,7 +560,11 @@ const file_branch_proto_rawDesc = "" +
 	"\x13allow_direct_update\x18\x05 \x01(\bR\x11allowDirectUpdate\x12)\n" +
 	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\x126\n" +
 	"\x17require_verified_result\x18\a \x01(\bR\x15requireVerifiedResult\x12*\n" +
-	"\x11require_full_tree\x18\b \x01(\bR\x0frequireFullTree\"\xb6\x01\n" +
+	"\x11require_full_tree\x18\b \x01(\bR\x0frequireFullTree\"U\n" +
+	"\x0fBranchGateError\x12\x16\n" +
+	"\x06branch\x18\x01 \x01(\tR\x06branch\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xb6\x01\n" +
 	"\x18GetBranchDecisionRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
@@ -539,24 +611,25 @@ func file_branch_proto_rawDescGZIP() []byte {
 	return file_branch_proto_rawDescData
 }
 
-var file_branch_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_branch_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_branch_proto_goTypes = []any{
 	(*BranchRule)(nil),                // 0: gitaly.BranchRule
-	(*GetBranchDecisionRequest)(nil),  // 1: gitaly.GetBranchDecisionRequest
-	(*GetBranchDecisionResponse)(nil), // 2: gitaly.GetBranchDecisionResponse
-	(*ListBranchRulesRequest)(nil),    // 3: gitaly.ListBranchRulesRequest
-	(*ListBranchRulesResponse)(nil),   // 4: gitaly.ListBranchRulesResponse
-	(*Repository)(nil),                // 5: gitaly.Repository
+	(*BranchGateError)(nil),           // 1: gitaly.BranchGateError
+	(*GetBranchDecisionRequest)(nil),  // 2: gitaly.GetBranchDecisionRequest
+	(*GetBranchDecisionResponse)(nil), // 3: gitaly.GetBranchDecisionResponse
+	(*ListBranchRulesRequest)(nil),    // 4: gitaly.ListBranchRulesRequest
+	(*ListBranchRulesResponse)(nil),   // 5: gitaly.ListBranchRulesResponse
+	(*Repository)(nil),                // 6: gitaly.Repository
 }
 var file_branch_proto_depIdxs = []int32{
-	5, // 0: gitaly.GetBranchDecisionRequest.repository:type_name -> gitaly.Repository
+	6, // 0: gitaly.GetBranchDecisionRequest.repository:type_name -> gitaly.Repository
 	0, // 1: gitaly.GetBranchDecisionResponse.rule:type_name -> gitaly.BranchRule
-	5, // 2: gitaly.ListBranchRulesRequest.repository:type_name -> gitaly.Repository
+	6, // 2: gitaly.ListBranchRulesRequest.repository:type_name -> gitaly.Repository
 	0, // 3: gitaly.ListBranchRulesResponse.rules:type_name -> gitaly.BranchRule
-	1, // 4: gitaly.BranchPolicyService.GetBranchDecision:input_type -> gitaly.GetBranchDecisionRequest
-	3, // 5: gitaly.BranchPolicyService.ListBranchRules:input_type -> gitaly.ListBranchRulesRequest
-	2, // 6: gitaly.BranchPolicyService.GetBranchDecision:output_type -> gitaly.GetBranchDecisionResponse
-	4, // 7: gitaly.BranchPolicyService.ListBranchRules:output_type -> gitaly.ListBranchRulesResponse
+	2, // 4: gitaly.BranchPolicyService.GetBranchDecision:input_type -> gitaly.GetBranchDecisionRequest
+	4, // 5: gitaly.BranchPolicyService.ListBranchRules:input_type -> gitaly.ListBranchRulesRequest
+	3, // 6: gitaly.BranchPolicyService.GetBranchDecision:output_type -> gitaly.GetBranchDecisionResponse
+	5, // 7: gitaly.BranchPolicyService.ListBranchRules:output_type -> gitaly.ListBranchRulesResponse
 	6, // [6:8] is the sub-list for method output_type
 	4, // [4:6] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
@@ -577,7 +650,7 @@ func file_branch_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_branch_proto_rawDesc), len(file_branch_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

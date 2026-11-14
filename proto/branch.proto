@@ -65,6 +65,20 @@ message BranchRule {
   bool require_full_tree = 8;
 }
 
+// BranchGateError is the refusal of an update by the branch management
+// policy, with the code of the decision, for a machine to read. A CI that
+// lands reads the code to know what to do next: a stale result is computed
+// again, a missing verification is published before the land.
+message BranchGateError {
+  // branch is the branch whose rule refused the update, without the
+  // refs/heads/ prefix.
+  string branch = 1;
+  // code names the outcome (not_verified, stale_result, say).
+  string code = 2;
+  // reason explains the outcome for a human.
+  string reason = 3;
+}
+
 // GetBranchDecisionRequest is a request for GetBranchDecision.
 message GetBranchDecisionRequest {
   // repository is the repository of the branch.

@@ -372,6 +372,17 @@ code recomputes the result on the tip the branch holds, instead of publishing a
 checkpoint for a commit the branch will not take. The land is refused the same
 way, whatever the check said.
 
+Both answer with the same code, and the land carries it in the refusal itself
+(`BranchGateError`), so a queue branches on the code and not on the message:
+`stale_result` means the result is computed again, `not_verified` means the
+checkpoint has to be published before the land, `no_review` means the change
+waits for a reviewer. `graft gate check --json` prints the code, and `graft
+land` prints the code of a refusal it got:
+
+```
+graft land: the branch policy refused the update: not_verified
+```
+
 A dry run writes the objects of the commit it names into the repository, and no
 reference points at them: the regular GC collects them if the land never
 comes. It does not resolve conflicts (a result that depends on a resolution is

@@ -229,6 +229,12 @@ tree the suites never saw, and a branch that asks for the whole tree
 to write another one, so a branch that moved while the suites ran takes
 nothing, and the queue computes the result again on the tip the branch holds.
 
+A refusal carries a code, so that the queue branches on it and not on the
+message: `graft gate check --json` prints it, and `graft land` prints the
+code of a refusal it got. `stale_result` means the result is computed again,
+`not_verified` means the checkpoint has to be published first, `no_review`
+means the change waits for a reviewer.
+
 [BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
 decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and
 [`examples/graft/standard-project`](../../examples/graft/standard-project) is a
