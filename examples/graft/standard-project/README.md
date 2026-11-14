@@ -130,7 +130,10 @@ It needs Go and make on `PATH`, plus the built `gitaly`, `graft` and
    refuses the land itself;
 4. an emergency update by the operator that leaves the checkpoint behind the
    tip: the branch answers "not green" until step 5 covers it;
-5. `graft-verify -once` testing the new tip, moving the checkpoint, and the
+5. a careless CI that publishes a checkpoint certified by the unit suite
+   alone: the gate refuses it with `suites_missing`, because the rule of main
+   asks for the integration suite too;
+6. `graft-verify -once` testing the new tip, moving the checkpoint, and the
    queue landing the reviewed change on the covered tip.
 
 ## Adapting it to your project

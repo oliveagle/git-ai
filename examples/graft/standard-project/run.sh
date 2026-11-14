@@ -16,7 +16,8 @@
 #      main is the ref of the CI;
 #   4. an emergency update by the operator leaves the checkpoint behind the tip,
 #      so the branch is not green until the verifier has covered it;
-#   5. the verifier tests the new tip, and the queue lands the reviewed change.
+#   5. a checkpoint certified by the unit suite alone is refused by the gate;
+#   6. the verifier tests the new tip, and the queue lands the reviewed change.
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -278,6 +279,29 @@ GO
   as_agent builder "$bin/graft" review create --branch main --title "price: round a total to a step"
   id=$(as_agent reviewer "$bin/graft" review list --branch main | cut -f1 | sed -n 1p)
   as_agent reviewer "$bin/graft" review approve "$id" --body "the rounding is right"
+)
+
+log "3d. a checkpoint certified by the unit suite alone does not carry the land"
+(
+  cd "$work/shop"
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  result=$(as_agent builder "$bin/graft" land --dry-run --timestamp "$timestamp")
+  note "the result the land would produce:"
+  note "$result"
+  scratch=$(mktemp -d "$work/q.XXXXXX")
+  as_agent builder "$bin/graft" clone "$GRAFT_ADDRESS" shop.git "$scratch/verify" --at "$result"
+  (
+    cd "$scratch/verify"
+    note "a careless CI publishes the checkpoint with the unit suite alone:"
+    as_operator "$bin/graft" green set --branch main --commit "$result" --suite unit
+  )
+  if answer=$(as_agent builder "$bin/graft" gate check --branch main --result "$result" --json); then
+    echo "run.sh: the gate took a checkpoint certified by the unit suite alone" >&2
+    exit 1
+  fi
+  code=$(printf '%s' "$answer" | sed -n 's/.*"code": *"\([a-z_]*\)".*/\1/p')
+  note "the gate refused it with $code: the rule asks for the unit suite and the"
+  note "integration suite, and the integration suite never ran on that tree."
 )
 
 log "4. post-merge: the verifier tests the tip and moves the checkpoint"
