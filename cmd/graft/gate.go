@@ -79,6 +79,9 @@ type gateRule struct {
 	// RequireVerifiedResult demands a checkpoint that covers the commit the
 	// update produces: the rule of a merge queue.
 	RequireVerifiedResult bool `json:"require_verified_result"`
+	// RequireFullTree demands a checkpoint that certifies the whole tree of
+	// the commit it names.
+	RequireFullTree bool `json:"require_full_tree"`
 }
 
 // gateResult is the JSON output of graft gate check.
@@ -99,6 +102,14 @@ type gateResult struct {
 	// Checkpoint is the commit the verification checkpoint of the branch points
 	// at, empty when the branch has none.
 	Checkpoint string `json:"checkpoint,omitempty"`
+	// CheckpointTree is the tree of the commit the checkpoint names.
+	CheckpointTree string `json:"checkpoint_tree,omitempty"`
+	// CertifiedTree is the tree the checkpoint certifies: the tree the suite
+	// ran on. It is empty when the checkpoint certifies no tree.
+	CertifiedTree string `json:"certified_tree,omitempty"`
+	// FullTree tells whether the checkpoint certifies the whole tree of the
+	// commit it names.
+	FullTree bool `json:"full_tree"`
 	// Reviews is the number of open reviews of the branch.
 	Reviews int `json:"reviews"`
 	// Allowed tells whether the change may land.
@@ -191,18 +202,21 @@ func gateCheck(ctx context.Context, out io.Writer, o *options, f *gateFlags) err
 	}
 
 	res := gateResult{
-		Branch:     answer.GetBranch(),
-		Managed:    answer.GetManaged(),
-		Commit:     commit,
-		Direct:     f.direct,
-		Result:     f.result,
-		Tip:        answer.GetTip(),
-		Checkpoint: answer.GetCheckpoint(),
-		Reviews:    int(answer.GetReviews()),
-		Allowed:    answer.GetAllowed(),
-		Code:       answer.GetCode(),
-		Reason:     answer.GetReason(),
-		Rule:       ruleOf(answer.GetRule()),
+		Branch:         answer.GetBranch(),
+		Managed:        answer.GetManaged(),
+		Commit:         commit,
+		Direct:         f.direct,
+		Result:         f.result,
+		Tip:            answer.GetTip(),
+		Checkpoint:     answer.GetCheckpoint(),
+		CheckpointTree: answer.GetCheckpointTree(),
+		CertifiedTree:  answer.GetCertifiedTree(),
+		FullTree:       answer.GetCertifiedTree() != "" && answer.GetCertifiedTree() == answer.GetCheckpointTree(),
+		Reviews:        int(answer.GetReviews()),
+		Allowed:        answer.GetAllowed(),
+		Code:           answer.GetCode(),
+		Reason:         answer.GetReason(),
+		Rule:           ruleOf(answer.GetRule()),
 	}
 
 	if o.jsonOut {
@@ -307,6 +321,7 @@ func ruleOf(rule *sdk.BranchRule) *gateRule {
 		// The stricter rule of a merge queue, so that a reader of the rules
 		// sees what the server will refuse.
 		RequireVerifiedResult: rule.GetRequireVerifiedResult(),
+		RequireFullTree:       rule.GetRequireFullTree(),
 	}
 }
 
@@ -331,6 +346,9 @@ func describeGateRule(rule *gateRule) string {
 		parts = append(parts, "the verification checkpoint must cover the commit the land produces")
 	} else if rule.RequireVerified {
 		parts = append(parts, "the verification checkpoint must cover the tip")
+	}
+	if rule.RequireFullTree {
+		parts = append(parts, "the verification checkpoint must certify the whole tree of the commit it names")
 	}
 	return strings.Join(parts, "; ")
 }
@@ -359,8 +377,18 @@ func printGateCheck(out io.Writer, res gateResult) {
 
 	if res.Allowed {
 		fmt.Fprintf(out, "%s may %s %s\n", subject, verb, res.Branch)
-		return
+	} else {
+		fmt.Fprintf(out, "%s may not %s %s: %s\n", subject, verb, res.Branch, res.Reason)
 	}
 
-	fmt.Fprintf(out, "%s may not %s %s: %s\n", subject, verb, res.Branch, res.Reason)
+	if res.Checkpoint != "" {
+		switch {
+		case res.FullTree:
+			fmt.Fprintf(out, "the checkpoint of the branch %s certifies the whole tree of the commit %s\n", res.Branch, res.Checkpoint)
+		case res.CertifiedTree != "":
+			fmt.Fprintf(out, "the checkpoint of the branch %s certifies only the tree %s of the commit %s\n", res.Branch, res.CertifiedTree, res.Checkpoint)
+		default:
+			fmt.Fprintf(out, "the checkpoint of the branch %s certifies no tree of the commit %s\n", res.Branch, res.Checkpoint)
+		}
+	}
 }

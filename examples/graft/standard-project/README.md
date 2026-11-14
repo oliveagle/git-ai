@@ -32,7 +32,9 @@ Three rules hold wherever a suite runs:
   can be red together, and only the commit a dry run names has both in its tree.
 - It sees the *whole* tree. `graft clone` without `--sparse`, and `graft-verify`
   refuses a `sparse` set unless `test.allow_sparse = true` says the partial tree
-  is what the checkpoint means.
+  is what the checkpoint means. The checkpoint says which tree was tested, so a
+  branch whose rule asks for the whole tree (`require_full_tree`) refuses the
+  land of a change whose tree was not tested whole.
 - Its exit status is the contract, and the code it runs is code from the tree:
   run it in a container with no network, no credentials and resource limits
   (see [VERIFY.md](../../../doc/graft/VERIFY.md) and
@@ -70,7 +72,10 @@ and `--commit "$C"` on the gate check and the land
   (`allow_direct_update = false`), so a push is out;
 - and refuses a land without an approved review and without a checkpoint that
   covers the commit the land produces (`require_review`,
-  `require_verified_result`), not only the tip it builds on.
+  `require_verified_result`), not only the tip it builds on;
+- and refuses a checkpoint that certifies only part of the tree
+  (`require_full_tree`): the suites have to run on the whole tree of the
+  result, so a unit suite alone never carries a land.
 
 `require_verified_result` is what makes the queue the only way in rather than a
 strong habit: a checkpoint on the tip says the branch *was* green, and this rule

@@ -883,6 +883,14 @@ type GraftBranchRule struct {
 	// RequireVerified. An update whose result the caller does not name (a
 	// dry-run land, and the hook, name it) is refused.
 	RequireVerifiedResult bool `json:"require_verified_result" toml:"require_verified_result,omitempty"`
+	// RequireFullTree demands that the verification checkpoint certify the
+	// whole tree of the commit it names: the publisher has to say which tree
+	// the suite ran on, and that tree has to be the tree of the checkpoint
+	// commit. A suite that ran on part of the tree says nothing about the
+	// rest, so a checkpoint that certifies no tree, or only part of one, is
+	// refused. It is the rule of a project whose tests must see everything,
+	// and it goes with RequireVerifiedResult in a merge queue.
+	RequireFullTree bool `json:"require_full_tree" toml:"require_full_tree,omitempty"`
 }
 
 // GraftAgent is one agent credential.

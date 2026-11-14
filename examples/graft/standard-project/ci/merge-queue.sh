@@ -61,7 +61,11 @@ say "4/6 unit and integration suites on the whole tree of the result"
 ( cd "$work/verify" && make test )
 
 say "5/6 publish the checkpoint, and ask the gate the question the land asks"
-operator "$graft" green set --branch "$branch" --commit "$result"
+# The checkpoint is published from the workspace that was tested: it holds the
+# result as it is, and it certifies the whole tree of it. A workspace that
+# held part of the tree would certify a tree the suites never saw, and the
+# server would refuse the land.
+( cd "$work/verify" && operator "$graft" green set --branch "$branch" --commit "$result" )
 if ! "$graft" gate check --branch "$branch" --result "$result"; then
   # The gate refused the land, and its reason says what to do: when the result
   # is stale, the branch moved while the suite ran, and the queue computes the

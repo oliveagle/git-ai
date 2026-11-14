@@ -29,8 +29,10 @@ into leaking it (a prompt injection planted in the repository). See
    `internal/graft/workspace`, sparse prefixes allowed) and run the test
    command with its argv, environment and timeout.
 4. On success, move the green ref (default `refs/graft/green/<branch>`) to the
-   tested tip with a compare-and-swap. The green ref lets consumers ask for
-   the newest tested tip.
+   tested tip with a compare-and-swap, and the tree it certifies
+   (`refs/graft/green-tree/<branch>`) with it. The green ref lets consumers ask
+   for the newest tested tip; the tree says which tree was tested, and the two
+   are the same tree only when the verification covered the whole tree.
 5. On failure, re-run the test once to rule out flakiness. If it still fails
    and `[revert] enabled = true`, bisect (below) and revert the culprit (below).
    Reverts are off unless `enabled = true` is set. Then a failing tip is only
@@ -110,7 +112,7 @@ webhook_url = "https://hooks.internal.example/graft"
 | `test.command` | required | argv of the test command, run in the materialized tree. `GRAFT_VERIFY_COMMIT` is set to the commit under test. |
 | `test.env` | none | Extra `KEY=VALUE` entries. The rest of the environment is inherited. |
 | `test.timeout` | `10m` | Bound on one test run. |
-| `test.allow_sparse` | `false` | Permit the command to run on a work tree that `sparse` leaves partial. Without it a configuration with `sparse` is refused: the checkpoint this verifier publishes is the trust anchor of the branch management policy, and a test that passes on part of the tree says nothing about the rest. |
+| `test.allow_sparse` | `false` | Permit the command to run on a work tree that `sparse` leaves partial. Without it a configuration with `sparse` is refused: the checkpoint this verifier publishes is the trust anchor of the branch management policy, and a test that passes on part of the tree says nothing about the rest. A verifier that runs sparse certifies no tree, so a branch that asks for the whole tree (`require_full_tree`) refuses its checkpoint. |
 | `revert.enabled` | `false` | Bisect and revert culprits. |
 | `revert.dry_run` | `false` | Report the planned revert without making it. |
 | `revert.max_per_hour` | `0` | Reverts allowed per hour. `0` allows none, so set it with `enabled`. |
@@ -125,6 +127,12 @@ refuses a configuration with `sparse` unless `test.allow_sparse = true` says the
 partial tree is intended, and logs a warning for the whole life of the process
 when it is. Verify the whole tree when the checkpoint has to mean "the commit
 passed", which is what a branch with `require_verified` asks it to mean.
+
+A verifier with a `sparse` set certifies no tree at all: its checkpoint says
+the tip passed, and says nothing about the files the command could not see. A
+branch whose rule asks for the whole tree (`require_full_tree`) refuses the
+land of such a checkpoint with `not_full_tree`, so a monorepo that wants that
+rule has to verify the whole tree.
 
 ## Bisection
 

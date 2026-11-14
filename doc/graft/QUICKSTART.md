@@ -214,11 +214,16 @@ anchor of the policy:
 make test-unit                          # 1. cheap, local
 graft land --dry-run --timestamp "$T"   # 2. the commit the land would produce
 graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
-make test                               # 4. both suites, on that tree
-graft green set --branch main --commit "$M"   # 5. the checkpoint
+(cd DIR && make test)                   # 4. both suites, on that tree
+(cd DIR && graft green set --branch main --commit "$M")   # 5. the checkpoint
 graft gate check --branch main --result "$M"  #    the status check
 graft land --timestamp "$T"             # 6. land exactly the commit that was tested
 ```
+
+The checkpoint is published in the workspace the suites ran on, because it
+certifies the tree that was tested: a sparse or changed workspace certifies a
+tree the suites never saw, and a branch that asks for the whole tree
+(`require_full_tree`) refuses the land.
 
 [BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
 decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and

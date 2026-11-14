@@ -142,3 +142,53 @@ func (r *refUpdater) Move(ctx context.Context, ref, old, next string) error {
 	}
 	return nil
 }
+
+// MoveAll implements greenRefs. The references move together: the checkpoint
+// of a branch and the tree it certifies have to move as one, so that a reader
+// never sees a checkpoint that certifies a tree of another commit.
+func (r *refUpdater) MoveAll(ctx context.Context, moves []Move) error {
+	if len(moves) == 0 {
+		return nil
+	}
+
+	updates := make([]*gitalypb.UpdateReferencesRequest_Update, 0, len(moves))
+	for _, move := range moves {
+		if move.New == "" {
+			return fmt.Errorf("move %s: a new object ID is required", move.Ref)
+		}
+		old := move.Old
+		if old == "" {
+			old = zeroOIDLike(move.New)
+		}
+		updates = append(updates, &gitalypb.UpdateReferencesRequest_Update{
+			Reference:   []byte(move.Ref),
+			OldObjectId: []byte(old),
+			NewObjectId: []byte(move.New),
+		})
+	}
+
+	stream, err := r.refs.UpdateReferences(ctx)
+	if err != nil {
+		return fmt.Errorf("update references: %w", err)
+	}
+	if err := stream.Send(&gitalypb.UpdateReferencesRequest{
+		Repository: r.repository,
+		Updates:    updates,
+	}); err != nil {
+		return fmt.Errorf("update references: %w", err)
+	}
+	if _, err := stream.CloseAndRecv(); err != nil {
+		return fmt.Errorf("update references: %w", err)
+	}
+	return nil
+}
+
+// Tree implements greenRefs: the tree of the commit rev names, which is the
+// tree a suite has to test for the checkpoint to mean anything.
+func (r *refUpdater) Tree(ctx context.Context, rev string) (string, error) {
+	tree, err := r.repo.TreeID(ctx, rev)
+	if err != nil {
+		return "", err
+	}
+	return tree, nil
+}

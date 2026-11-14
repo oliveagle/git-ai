@@ -56,6 +56,13 @@ message BranchRule {
   // require_verified, and it refuses an update whose result the caller does
   // not name (the hook names it, and so does a dry-run land).
   bool require_verified_result = 7;
+  // require_full_tree demands that the verification checkpoint certify the
+  // whole tree of the commit it names: the publisher has to say which tree
+  // the suite ran on, and that tree has to be the tree of the checkpoint
+  // commit. A suite that ran on part of the tree says nothing about the
+  // rest, so a checkpoint that certifies no tree, or only part of one, is
+  // refused.
+  bool require_full_tree = 8;
 }
 
 // GetBranchDecisionRequest is a request for GetBranchDecision.
@@ -103,6 +110,14 @@ message GetBranchDecisionResponse {
   // branch is the branch the decision is about, without the refs/heads/
   // prefix.
   string branch = 10;
+  // checkpoint_tree is the tree of the commit the verification checkpoint
+  // points at: the tree of the branch as it was tested.
+  string checkpoint_tree = 11;
+  // certified_tree is the tree the verification checkpoint certifies: the
+  // tree the suite ran on. It is empty when the checkpoint certifies no tree,
+  // and it differs from checkpoint_tree when the suite ran on part of the
+  // tree.
+  string certified_tree = 12;
 }
 
 // ListBranchRulesRequest is a request for ListBranchRules.

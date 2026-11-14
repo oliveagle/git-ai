@@ -698,3 +698,71 @@ func TestBranchGateKeepsTheCheckpointFromAgents(t *testing.T) {
 	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
 	require.Equal(t, base, answer.GetCheckpoint())
 }
+
+// TestBranchGateRefusesACheckpointThatCertifiesNoTree checks the rule that
+// asks for the whole tree: a branch takes no land while the checkpoint
+// certifies no tree, because a suite that ran on part of the tree says
+// nothing about the rest.
+func TestBranchGateRefusesACheckpointThatCertifiesNoTree(t *testing.T) {
+	t.Parallel()
+
+	s := startWithBranchRule(t, config.GraftBranchRule{Name: "main", RequireVerifiedResult: true, RequireFullTree: true})
+	base := writeMain(t, s, map[string]string{"README.md": "main\n"})
+
+	builder := s.repoAs(t, exampleTokens["builder"])
+	commit, err := commitFile(s.ctx, builder, "builder", "feature", base, "main.go", "package main\n")
+	require.NoError(t, err)
+
+	land := sdk.LandOptions{
+		Branch:    "main",
+		Commit:    commit,
+		User:      sdk.User{Name: clientDisplayName, Email: "builder@example.com"},
+		Timestamp: time.Unix(1700000000, 0),
+	}
+	dry := land
+	dry.DryRun = true
+	produced, err := builder.Land(s.ctx, dry)
+	require.NoError(t, err)
+	require.NotEmpty(t, produced.LandedCommitID)
+
+	// The CI publishes the checkpoint of the result it tested, but says
+	// nothing about the tree it tested: the checkpoint certifies no tree.
+	s.git(t, "update-ref", "refs/graft/green/main", produced.LandedCommitID)
+
+	answer, err := builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.Equal(t, sdk.BranchNotFullTree, answer.GetCode())
+	require.Empty(t, answer.GetCertifiedTree())
+
+	// The land is refused the same way: the server does not take the word of
+	// the check.
+	_, err = builder.Land(s.ctx, land)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "whole tree")
+	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
+
+	// The CI publishes the tree it tested: the checkpoint certifies the whole
+	// tree of the result, and the land goes on.
+	tree := s.git(t, "rev-parse", produced.LandedCommitID+"^{tree}")
+	s.git(t, "update-ref", "refs/graft/green-tree/main", tree)
+
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.NotEmpty(t, answer.GetCertifiedTree())
+	require.Equal(t, answer.GetCheckpointTree(), answer.GetCertifiedTree())
+
+	landed, err := builder.Land(s.ctx, land)
+	require.NoError(t, err)
+	require.Equal(t, produced.LandedCommitID, landed.LandedCommitID)
+	require.Equal(t, produced.LandedCommitID, s.git(t, "rev-parse", "refs/heads/main"))
+}

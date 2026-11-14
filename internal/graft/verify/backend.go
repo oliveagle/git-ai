@@ -237,6 +237,22 @@ type greenRefs interface {
 	// exist yet. The move fails, changing nothing, when ref does not point to
 	// old.
 	Move(ctx context.Context, ref, old, new string) error
+	// MoveAll points every reference of the moves from its old object ID to
+	// its new one, atomically: either all of them move, or none does.
+	MoveAll(ctx context.Context, moves []Move) error
+	// Tree returns the object ID of the tree of the commit rev names.
+	Tree(ctx context.Context, rev string) (string, error)
+}
+
+// Move is one reference to move, with the compare-and-swap of the move.
+type Move struct {
+	// Ref is the name of the reference.
+	Ref string
+	// Old is the object ID the reference must point at. It is empty when the
+	// reference must not exist yet.
+	Old string
+	// New is the object ID the reference points at after the move.
+	New string
 }
 
 // zeroOIDLike returns the all-zero object ID of the same length as oid, which

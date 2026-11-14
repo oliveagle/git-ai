@@ -30,6 +30,7 @@ allow_stale_base = false
 allow_direct_update = false
 require_verified = false
 require_verified_result = false
+require_full_tree = false
 ```
 
 | Key | Default | What it says |
@@ -41,6 +42,7 @@ require_verified_result = false
 | `allow_direct_update` | `false` | Accept an update of the branch that is not a land, such as a push. Without it **only a land may update the branch**. |
 | `require_verified` | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by [graft-verify](VERIFY.md)) must point at the tip the land builds on, or at the commit the land produces (see [Verifying the result of a land](#verifying-the-result-of-a-land)). |
 | `require_verified_result` | `false` | The checkpoint must cover the commit the update produces, and nothing else: the branch takes no land on the strength of a green tip. This is the rule of a merge queue — the CI asks what the land would produce, tests that commit, publishes it with `graft green set` — and it implies `require_verified`. A caller that does not name the result (the hook always does, `graft gate check --result` does) is refused with `result_unknown`. |
+| `require_full_tree` | `false` | The checkpoint must certify the **whole tree** of the commit it names: the tree the suite ran on is the tree of that commit. A checkpoint that certifies no tree, or only part of one, is refused with `not_full_tree`. A suite that ran on a sparse checkout says nothing about the files it could not see, so a branch that asks this rule takes no land whose tree was not tested whole. |
 
 Two rules for one branch are refused when the configuration is loaded, as are a
 rule without a name and a name that is not a branch name.
@@ -116,6 +118,7 @@ then the CI's required status check, not the server's.
 | `not_verified` | The verification checkpoint of the branch covers neither its tip nor the commit the update produces. On a branch with `require_verified_result`, the checkpoint is not the commit the update produces. |
 | `result_unknown` | The rule of the branch asks for a verified result and the caller did not name the commit the update produces. The state of the tip does not matter: the rule refuses the question, not only a land, so a status of such a branch is read with `graft green show`, not with a decision that names no result. |
 | `stale_result` | The rule of the branch asks for a verified result and the result the caller named is not the commit the branch would take any more: the branch moved after the result was computed. The queue computes the result again. |
+| `not_full_tree` | The rule of the branch asks for the whole tree (`require_full_tree`) and the checkpoint certifies no tree, or a tree that is not the tree of the commit it names: the suite ran on part of the tree, or on another one. The suite that decides the change has to run on the whole tree of the result. |
 
 ## The CI commands
 
@@ -172,11 +175,27 @@ names the commit whose tree passed the tests. `graft-verify` moves it when it
 runs the tests itself; a CI that runs its own tests moves it with
 `graft green set`.
 
+A checkpoint certifies a **tree**, and that tree is the second reference of the
+pair: `refs/graft/green-tree/<branch>` holds the tree the suite ran on. The
+checkpoint certifies the whole commit only when that tree is the tree of the
+commit the checkpoint names. The two references move together, the tree first,
+so that a reader never sees a checkpoint that certifies the tree of another
+commit.
+
 - `green set` moves the checkpoint to the commit, with a compare-and-swap: the
   move fails when the checkpoint moved since it was read, so that two CIs
   cannot overwrite each other. The commit must exist in the repository.
-- `green show` prints the commit the checkpoint points at and the tip of the
-  branch, and tells whether the branch is green.
+- `green set` publishes the tree of the commit it names, and certifies it only
+  when the workspace it runs in is the one that was tested: a sparse
+  workspace, a workspace of another commit, or a workspace with a tracked file
+  changed is refused, because the suite tested a tree that is not the tree of
+  the commit. A file the suite wrote (untracked) is not part of the tree of the
+  commit and refuses nothing. Run the command in the workspace that was
+  tested; a CI that holds no workspace publishes it from anywhere, and the tree
+  it certifies is then the operator's declaration.
+- `green show` prints the commit the checkpoint points at, the tree it
+  certifies and the tip of the branch, and tells whether the branch is green
+  and whether the checkpoint certifies the whole tree.
 
 The command needs the shared token: the checkpoint is the trust anchor of the
 branch management policy, and only an operator may move it.
@@ -217,7 +236,7 @@ things:
    files the tests touch, and the gate asks about the whole tree.
 2. It runs the tests on the tip of the branch.
 3. When the tests pass, it publishes the checkpoint:
-   `graft green set --branch main --commit <tip>`.
+   `graft green set --branch main --commit <tip>`, in the workspace it tested.
 4. It asks the gate whether the change may land:
    `graft gate check --branch main --commit <oid>`.
    The exit status is the status check of the merge request: 0 allows the
@@ -252,7 +271,11 @@ Three things hold whichever suite runs where:
 - A test that sees part of the tree is not evidence about the whole commit. The
   CI takes the whole tree (`graft clone` without `--sparse`), and the verifier
   refuses a `sparse` set unless `test.allow_sparse = true` says the partial tree
-  is what its checkpoint means.
+  is what its checkpoint means. A branch whose rule asks for the whole tree
+  (`require_full_tree`) refuses a land whose checkpoint certifies only part of
+  the tree, so the suite that decides the change has to run on the whole tree
+  of the result — the unit suite alone is a pre-check of the agent, not the
+  evidence the branch takes.
 - The tests are code from the tree, written by agents. Run them in a container
   with no network and no credentials, as [VERIFY.md](VERIFY.md) and
   [AGENT-SECURITY.md](AGENT-SECURITY.md) describe.
@@ -280,7 +303,7 @@ tip it builds on, and the server tells the CI what that commit is:
    <result>` materializes the whole tree of the commit, which no branch points
    at yet; such a workspace has no branch, so it takes one to land from it.
 3. It publishes the commit it verified: `graft green set --branch main --commit
-   <result>`.
+   <result>`, in the workspace it verified.
 4. It asks the gate with the result: `graft gate check --branch main --commit
    <change> --result <result>` (`result` in
    `BranchPolicyService.GetBranchDecision`). Without `--result` the answer is
@@ -305,7 +328,7 @@ T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 M=$(graft land --dry-run --timestamp "$T")   # the commit the land would produce
 graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"   # the whole tree of M
 (cd ./verify && make test)
-graft green set --branch main --commit "$M"
+(cd ./verify && graft green set --branch main --commit "$M")
 graft gate check --branch main --result "$M"
 graft land --timestamp "$T"
 ```
@@ -317,7 +340,7 @@ T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 M=$(graft land main --commit "$C" --dry-run --timestamp "$T")
 graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"
 (cd ./verify && make test)
-graft green set --branch main --commit "$M"
+(cd ./verify && graft green set --branch main --commit "$M")
 graft gate check --branch main --commit "$C" --result "$M"
 graft land main --commit "$C" --timestamp "$T"
 ```
@@ -351,10 +374,11 @@ dry run makes none.
   approved. Running the tests is the job of the CI, or of
   [graft-verify](VERIFY.md).
 - The gate cannot tell what a checkpoint means: whether the suite was the whole
-  one, ran on the whole tree, or ran at all. It can refuse a checkpoint that
-  does not cover the update exactly, which is what `require_verified_result`
-  does; what the checkpoint stands for is the contract between the CI and the
-  branch, and `graft green set` is the operator's signature on it.
+  one, or ran at all. It can refuse a checkpoint that does not cover the update
+  exactly, which is what `require_verified_result` does, and it can tell which
+  tree the checkpoint certifies, which is what `require_full_tree` refuses on.
+  What the suite behind the checkpoint was is still the contract between the CI
+  and the branch, and `graft green set` is the operator's signature on it.
 - The gate does not bind the operator credential on the server. A CI that
   lands with the shared token must run `graft gate check` itself.
 - The gate does not merge. It decides; the land does the work.

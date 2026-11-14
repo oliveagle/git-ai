@@ -48,8 +48,15 @@ type BranchRule struct {
 	// require_verified, and it refuses an update whose result the caller does
 	// not name (the hook names it, and so does a dry-run land).
 	RequireVerifiedResult bool `protobuf:"varint,7,opt,name=require_verified_result,json=requireVerifiedResult,proto3" json:"require_verified_result,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// require_full_tree demands that the verification checkpoint certify the
+	// whole tree of the commit it names: the publisher has to say which tree
+	// the suite ran on, and that tree has to be the tree of the checkpoint
+	// commit. A suite that ran on part of the tree says nothing about the
+	// rest, so a checkpoint that certifies no tree, or only part of one, is
+	// refused.
+	RequireFullTree bool `protobuf:"varint,8,opt,name=require_full_tree,json=requireFullTree,proto3" json:"require_full_tree,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BranchRule) Reset() {
@@ -127,6 +134,13 @@ func (x *BranchRule) GetRequireVerified() bool {
 func (x *BranchRule) GetRequireVerifiedResult() bool {
 	if x != nil {
 		return x.RequireVerifiedResult
+	}
+	return false
+}
+
+func (x *BranchRule) GetRequireFullTree() bool {
+	if x != nil {
+		return x.RequireFullTree
 	}
 	return false
 }
@@ -244,7 +258,15 @@ type GetBranchDecisionResponse struct {
 	Change string `protobuf:"bytes,9,opt,name=change,proto3" json:"change,omitempty"`
 	// branch is the branch the decision is about, without the refs/heads/
 	// prefix.
-	Branch        string `protobuf:"bytes,10,opt,name=branch,proto3" json:"branch,omitempty"`
+	Branch string `protobuf:"bytes,10,opt,name=branch,proto3" json:"branch,omitempty"`
+	// checkpoint_tree is the tree of the commit the verification checkpoint
+	// points at: the tree of the branch as it was tested.
+	CheckpointTree string `protobuf:"bytes,11,opt,name=checkpoint_tree,json=checkpointTree,proto3" json:"checkpoint_tree,omitempty"`
+	// certified_tree is the tree the verification checkpoint certifies: the
+	// tree the suite ran on. It is empty when the checkpoint certifies no tree,
+	// and it differs from checkpoint_tree when the suite ran on part of the
+	// tree.
+	CertifiedTree string `protobuf:"bytes,12,opt,name=certified_tree,json=certifiedTree,proto3" json:"certified_tree,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -349,6 +371,20 @@ func (x *GetBranchDecisionResponse) GetBranch() string {
 	return ""
 }
 
+func (x *GetBranchDecisionResponse) GetCheckpointTree() string {
+	if x != nil {
+		return x.CheckpointTree
+	}
+	return ""
+}
+
+func (x *GetBranchDecisionResponse) GetCertifiedTree() string {
+	if x != nil {
+		return x.CertifiedTree
+	}
+	return ""
+}
+
 // ListBranchRulesRequest is a request for ListBranchRules.
 type ListBranchRulesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -446,7 +482,7 @@ var File_branch_proto protoreflect.FileDescriptor
 const file_branch_proto_rawDesc = "" +
 	"\n" +
 	"\fbranch.proto\x12\x06gitaly\x1a\n" +
-	"lint.proto\x1a\fshared.proto\"\xb1\x02\n" +
+	"lint.proto\x1a\fshared.proto\"\xdd\x02\n" +
 	"\n" +
 	"BranchRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
@@ -455,7 +491,8 @@ const file_branch_proto_rawDesc = "" +
 	"\x10allow_stale_base\x18\x04 \x01(\bR\x0eallowStaleBase\x12.\n" +
 	"\x13allow_direct_update\x18\x05 \x01(\bR\x11allowDirectUpdate\x12)\n" +
 	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\x126\n" +
-	"\x17require_verified_result\x18\a \x01(\bR\x15requireVerifiedResult\"\xb6\x01\n" +
+	"\x17require_verified_result\x18\a \x01(\bR\x15requireVerifiedResult\x12*\n" +
+	"\x11require_full_tree\x18\b \x01(\bR\x0frequireFullTree\"\xb6\x01\n" +
 	"\x18GetBranchDecisionRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
@@ -463,7 +500,7 @@ const file_branch_proto_rawDesc = "" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x18\n" +
 	"\acommits\x18\x03 \x03(\tR\acommits\x12\x16\n" +
 	"\x06direct\x18\x04 \x01(\bR\x06direct\x12\x16\n" +
-	"\x06result\x18\x05 \x01(\tR\x06result\"\x9f\x02\n" +
+	"\x06result\x18\x05 \x01(\tR\x06result\"\xef\x02\n" +
 	"\x19GetBranchDecisionResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x16\n" +
@@ -477,7 +514,9 @@ const file_branch_proto_rawDesc = "" +
 	"\x04rule\x18\b \x01(\v2\x12.gitaly.BranchRuleR\x04rule\x12\x16\n" +
 	"\x06change\x18\t \x01(\tR\x06change\x12\x16\n" +
 	"\x06branch\x18\n" +
-	" \x01(\tR\x06branch\"R\n" +
+	" \x01(\tR\x06branch\x12'\n" +
+	"\x0fcheckpoint_tree\x18\v \x01(\tR\x0echeckpointTree\x12%\n" +
+	"\x0ecertified_tree\x18\f \x01(\tR\rcertifiedTree\"R\n" +
 	"\x16ListBranchRulesRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +

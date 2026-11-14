@@ -9,13 +9,10 @@ import (
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/dbreview"
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
 	"github.com/feder-cr/git-ai/internal/graft/review/store"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
-
-// greenRefPrefix is the namespace of the verification checkpoints of the
-// branches: the green references that graft-verify moves (internal/graft/verify).
-const greenRefPrefix = "refs/graft/green/"
 
 // branchGateSource gives the branch management policy the state of a branch:
 // the reviews of the repository and the verification checkpoint of the branch.
@@ -46,7 +43,29 @@ func (s *branchGateSource) BranchState(ctx context.Context, repo *gitalypb.Repos
 		return BranchGateState{}, err
 	}
 
-	return BranchGateState{Reviews: reviews, Checkpoint: checkpoint}, nil
+	certified, err := s.certifiedTree(ctx, repo, branch)
+	if err != nil {
+		return BranchGateState{}, err
+	}
+
+	// The tree of the commit the checkpoint names: the checkpoint certifies
+	// the whole commit only when the tree it certifies is this one.
+	var checkpointTree string
+	if checkpoint != "" {
+		local := s.factory.Build(repo)
+		oid, err := local.ResolveRevision(ctx, git.Revision(checkpoint+"^{tree}"))
+		if err != nil {
+			return BranchGateState{}, fmt.Errorf("reading the tree of the checkpoint %s of the branch %q: %w", checkpoint, branch, err)
+		}
+		checkpointTree = oid.String()
+	}
+
+	return BranchGateState{
+		Reviews:        reviews,
+		Checkpoint:     checkpoint,
+		CertifiedTree:  certified,
+		CheckpointTree: checkpointTree,
+	}, nil
 }
 
 // reviews returns the open reviews of the branch. In authoritative mode they
@@ -72,12 +91,27 @@ func (s *branchGateSource) reviews(ctx context.Context, repo *gitalypb.Repositor
 // points at, empty when the branch has none.
 func (s *branchGateSource) checkpoint(ctx context.Context, repo *gitalypb.Repository, branch string) (string, error) {
 	local := s.factory.Build(repo)
-	oid, err := local.ResolveReferenceExactly(ctx, git.ReferenceName(greenRefPrefix+branch))
+	oid, err := local.ResolveReferenceExactly(ctx, git.ReferenceName(greenref.Name(branch)))
 	if err != nil {
 		if errors.Is(err, git.ErrReferenceNotFound) {
 			return "", nil
 		}
 		return "", fmt.Errorf("reading the checkpoint of the branch %q: %w", branch, err)
+	}
+	return oid.String(), nil
+}
+
+// certifiedTree returns the tree the verification checkpoint of the branch
+// certifies: the tree the suite ran on. It is empty when the publisher
+// certified no tree, which is the case when the reference is absent.
+func (s *branchGateSource) certifiedTree(ctx context.Context, repo *gitalypb.Repository, branch string) (string, error) {
+	local := s.factory.Build(repo)
+	oid, err := local.ResolveReferenceExactly(ctx, git.ReferenceName(greenref.TreeName(branch)))
+	if err != nil {
+		if errors.Is(err, git.ErrReferenceNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("reading the tree the checkpoint of the branch %q certifies: %w", branch, err)
 	}
 	return oid.String(), nil
 }

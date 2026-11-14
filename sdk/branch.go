@@ -59,6 +59,10 @@ const (
 	// branch moved after the result was computed, and the land produces
 	// another commit.
 	BranchStaleResult = "stale_result"
+	// BranchNotFullTree is the code of a branch whose rule asks for the whole
+	// tree, and a checkpoint that certifies no tree or only part of one: a
+	// suite that ran on part of the tree is no evidence about the rest.
+	BranchNotFullTree = "not_full_tree"
 )
 
 // BranchDecisionOptions asks whether changes may land on a branch.

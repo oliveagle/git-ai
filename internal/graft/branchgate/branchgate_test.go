@@ -446,3 +446,88 @@ func TestDecide_missingBranch(t *testing.T) {
 	require.False(t, decision.Allowed)
 	require.Equal(t, CodeNoBranch, decision.Code)
 }
+
+// TestDecide_verificationOfTheWholeTree: a checkpoint that certifies a tree
+// the suite did not test says nothing about the commit it names. A rule that
+// asks for the whole tree refuses it, and a rule that does not ask is not
+// bothered by it.
+func TestDecide_verificationOfTheWholeTree(t *testing.T) {
+	t.Parallel()
+
+	rule := config.GraftBranchRule{Name: "main", RequireVerified: true, RequireFullTree: true}
+
+	// The checkpoint covers the tip and certifies the tree of that tip: the
+	// whole tree was tested.
+	decision := Decide(Input{
+		Rules:          []config.GraftBranchRule{rule},
+		Branch:         "main",
+		Tip:            "tip",
+		Changes:        []string{"commit"},
+		Checkpoint:     "tip",
+		CertifiedTree:  "tree-of-tip",
+		CheckpointTree: "tree-of-tip",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+
+	// The checkpoint covers the tip but certifies no tree: the suite ran on
+	// part of the tree, or the publisher said nothing about what it tested.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{rule},
+		Branch:     "main",
+		Tip:        "tip",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotFullTree, decision.Code)
+	require.Contains(t, decision.Reason, "tip")
+
+	// The checkpoint certifies another tree: the tree it certifies is not the
+	// tree of the commit it names.
+	decision = Decide(Input{
+		Rules:          []config.GraftBranchRule{rule},
+		Branch:         "main",
+		Tip:            "tip",
+		Changes:        []string{"commit"},
+		Checkpoint:     "tip",
+		CertifiedTree:  "tree-of-another-commit",
+		CheckpointTree: "tree-of-tip",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotFullTree, decision.Code)
+
+	// A branch with no checkpoint at all says so. The rule asks for the whole
+	// tree alone here: with a verified tip as well, the missing checkpoint is
+	// the nearer reason, and the answer says that.
+	decision = Decide(Input{
+		Rules:   []config.GraftBranchRule{{Name: "main", RequireFullTree: true}},
+		Branch:  "main",
+		Tip:     "tip",
+		Changes: []string{"commit"},
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotFullTree, decision.Code)
+	require.Contains(t, decision.Reason, "no verification checkpoint")
+
+	decision = Decide(Input{
+		Rules:   []config.GraftBranchRule{rule},
+		Branch:  "main",
+		Tip:     "tip",
+		Changes: []string{"commit"},
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeNotVerified, decision.Code)
+
+	// A rule that does not ask for the whole tree accepts the checkpoint of
+	// the tip: the tree it covers is not the question of that rule.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{{Name: "main", RequireVerified: true}},
+		Branch:     "main",
+		Tip:        "tip",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+}

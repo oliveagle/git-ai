@@ -220,3 +220,30 @@ func (fx *fixture) green() string {
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
+
+// MoveAll implements greenRefs. The moves are atomic: a move that fails
+// leaves every reference as it was.
+func (g *fakeGreens) MoveAll(_ context.Context, moves []Move) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.failMove != nil {
+		return g.failMove
+	}
+	for _, move := range moves {
+		if g.refs[move.Ref] != move.Old {
+			return fmt.Errorf("reference %s is %q, not %q", move.Ref, g.refs[move.Ref], move.Old)
+		}
+	}
+	for _, move := range moves {
+		g.refs[move.Ref] = move.New
+		g.moves++
+	}
+	return nil
+}
+
+// Tree implements greenRefs. The in-memory repository has no tree objects, so
+// the tree of a commit is named after it.
+func (g *fakeGreens) Tree(_ context.Context, rev string) (string, error) {
+	return "tree-of-" + rev, nil
+}

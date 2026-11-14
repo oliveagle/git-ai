@@ -52,6 +52,10 @@ const (
 	// the commit the update produces, and a result the branch would no longer
 	// write: the branch moved after the result was computed.
 	CodeStaleResult = "stale_result"
+	// CodeNotFullTree is the code of a rule that demands the checkpoint
+	// certify the whole tree of the commit it names, and a checkpoint that
+	// certifies no tree or only part of one.
+	CodeNotFullTree = "not_full_tree"
 )
 
 // Input is the state one decision is made with.
@@ -86,6 +90,14 @@ type Input struct {
 	// from the repository, where the tip of the branch is no longer an
 	// ancestor of the result. It is false when the caller named no result.
 	ResultStale bool
+	// CertifiedTree is the tree the verification checkpoint certifies: the
+	// tree the suite ran on. It is empty when the checkpoint certifies no
+	// tree, and it differs from the tree of the checkpoint commit when the
+	// suite ran on part of the tree.
+	CertifiedTree string
+	// CheckpointTree is the tree of the commit the checkpoint names. The
+	// checkpoint certifies the whole commit when CertifiedTree is this tree.
+	CheckpointTree string
 	// Direct tells whether the update is a direct update of the branch, such
 	// as a push, rather than a land.
 	Direct bool
@@ -138,7 +150,10 @@ func Rule(rules []config.GraftBranchRule, branch string) *config.GraftBranchRule
 // queue, and refuses a caller that does not name that commit. A result the
 // branch would no longer write, because the branch moved after it was
 // computed, is refused as stale: the land writes another commit, and no
-// checkpoint covers it.
+// checkpoint covers it. A rule that asks for the whole tree
+// (RequireFullTree) refuses a checkpoint that does not certify the tree of
+// the commit it names: a suite that ran on part of the tree is no evidence
+// about the rest.
 func Decide(in Input) Decision {
 	rule := Rule(in.Rules, in.Branch)
 	if rule == nil {
@@ -213,7 +228,26 @@ func Decide(in Input) Decision {
 			in.Branch, in.Tip, in.Result)
 	}
 
+	if rule.RequireFullTree {
+		if in.Checkpoint == "" {
+			return deny(rule, "", CodeNotFullTree,
+				"the branch %q has no verification checkpoint, and its rule requires one that certifies the whole tree of the commit it names",
+				in.Branch)
+		}
+		if !in.fullTree() {
+			return deny(rule, "", CodeNotFullTree,
+				"the checkpoint of the branch %q does not certify the whole tree of the commit %s it names: a suite that ran on part of the tree is no evidence about the rest",
+				in.Branch, in.Checkpoint)
+		}
+	}
+
 	return allow(rule, "", "")
+}
+
+// fullTree tells whether the checkpoint certifies the whole tree of the
+// commit it names: the tree the suite ran on is the tree of that commit.
+func (in Input) fullTree() bool {
+	return in.CertifiedTree != "" && in.CertifiedTree == in.CheckpointTree
 }
 
 // verified reports whether the verification checkpoint of the branch covers the

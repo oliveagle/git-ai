@@ -98,19 +98,26 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		Result:      req.GetResult(),
 		ResultStale: stale,
 		Direct:      req.GetDirect(),
+		// The tree the checkpoint certifies, and the tree of the commit it
+		// names: the checkpoint certifies the whole commit when they are the
+		// same tree, which is what a rule that asks for the whole tree wants.
+		CertifiedTree:  state.CertifiedTree,
+		CheckpointTree: state.CheckpointTree,
 	})
 
 	return &gitalypb.GetBranchDecisionResponse{
-		Branch:     branch,
-		Allowed:    decision.Allowed,
-		Code:       decision.Code,
-		Reason:     decision.Reason,
-		Managed:    decision.Rule != nil,
-		Tip:        tip,
-		Checkpoint: state.Checkpoint,
-		Reviews:    uint32(len(state.Reviews)),
-		Rule:       protoRule(decision.Rule),
-		Change:     decision.Change,
+		Branch:         branch,
+		Allowed:        decision.Allowed,
+		Code:           decision.Code,
+		Reason:         decision.Reason,
+		Managed:        decision.Rule != nil,
+		Tip:            tip,
+		Checkpoint:     state.Checkpoint,
+		CheckpointTree: state.CheckpointTree,
+		CertifiedTree:  state.CertifiedTree,
+		Reviews:        uint32(len(state.Reviews)),
+		Rule:           protoRule(decision.Rule),
+		Change:         decision.Change,
 	}, nil
 }
 
@@ -194,5 +201,6 @@ func protoRule(rule *config.GraftBranchRule) *gitalypb.BranchRule {
 		// The proto carries the stricter rule of a merge queue too, so a CI
 		// reads the rules the server enforces, not a subset of them.
 		RequireVerifiedResult: rule.RequireVerifiedResult,
+		RequireFullTree:       rule.RequireFullTree,
 	}
 }

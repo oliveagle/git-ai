@@ -22,6 +22,12 @@ type BranchGateState struct {
 	// at, the green reference of graft-verify. It is empty when the branch has
 	// no checkpoint.
 	Checkpoint string
+	// CertifiedTree is the tree the checkpoint certifies: the tree the suite
+	// ran on. It is empty when the checkpoint certifies no tree, and it
+	// differs from CheckpointTree when the suite ran on part of the tree.
+	CertifiedTree string
+	// CheckpointTree is the tree of the commit the checkpoint names.
+	CheckpointTree string
 }
 
 // BranchGateSource gives the branch gate the state of a branch. The server
@@ -154,6 +160,8 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 
 	var reviews []*gitalypb.Review
 	var checkpoint string
+	var certifiedTree string
+	var checkpointTree string
 	if m.branchGate != nil {
 		state, err := m.branchGate.BranchState(ctx, payload.Repo, branch)
 		if err != nil {
@@ -161,6 +169,8 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 		}
 		reviews = state.Reviews
 		checkpoint = state.Checkpoint
+		certifiedTree = state.CertifiedTree
+		checkpointTree = state.CheckpointTree
 	}
 
 	return branchgate.Decide(branchgate.Input{
@@ -171,11 +181,13 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 		Tip:         update.OldOID,
 		// The update produces the commit git is about to write, so the gate
 		// knows it: a checkpoint on that commit is a verified result.
-		Result:     update.NewOID,
-		Reviews:    reviews,
-		Checkpoint: checkpoint,
-		Direct:     !land,
-		Creation:   creation,
-		Deletion:   deletion,
+		Result:         update.NewOID,
+		Reviews:        reviews,
+		Checkpoint:     checkpoint,
+		CertifiedTree:  certifiedTree,
+		CheckpointTree: checkpointTree,
+		Direct:         !land,
+		Creation:       creation,
+		Deletion:       deletion,
 	}), nil
 }

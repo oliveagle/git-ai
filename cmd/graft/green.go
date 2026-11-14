@@ -9,6 +9,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
+	"github.com/feder-cr/git-ai/internal/graft/workspace"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
@@ -31,8 +33,17 @@ does not cover the tip the land builds on.
   compare-and-swap: the move fails when the checkpoint moved since it was read,
   so that two CIs cannot overwrite each other. The commit must exist in the
   repository.
-- green show prints the commit the checkpoint of the branch points at, and the
-  tip of the branch, so that a CI can tell whether the branch is green.
+- The checkpoint certifies a tree: the tree the suite ran on, which
+  refs/graft/green-tree/<branch> names. green set publishes the tree of the
+  commit it names, which is the tree a suite has to test for the checkpoint to
+  mean anything. Run it in the workspace that was tested: a sparse workspace, a
+  workspace of another commit, or a workspace with a tracked file changed
+  tested a tree that is not the tree of the commit, and the move is refused.
+  A branch whose rule asks for the whole tree (require_full_tree) takes no land
+  while the checkpoint certifies no tree.
+- green show prints the commit the checkpoint of the branch points at, the
+  tree it certifies and the tip of the branch, so that a CI can tell whether
+  the branch is green.
 
 The command needs the shared token: the checkpoint is the trust anchor of the
 branch management policy, and only an operator may move it. graft-verify moves
@@ -40,10 +51,6 @@ it by itself when it runs the tests.
 
 Exit status: 0 when the checkpoint was moved or read, 1 when the move was
 refused, 2 when the command line is wrong.`
-
-// greenRefPrefix is the namespace of the verification checkpoints of the
-// branches, the green references that graft-verify moves.
-const greenRefPrefix = "refs/graft/green/"
 
 // greenFlags holds the flags of the green command.
 type greenFlags struct {
@@ -58,12 +65,22 @@ type greenResult struct {
 	Branch string `json:"branch"`
 	// Ref is the reference that holds the checkpoint.
 	Ref string `json:"ref"`
+	// TreeRef is the reference that holds the tree the checkpoint certifies.
+	TreeRef string `json:"tree_ref"`
 	// Checkpoint is the commit the checkpoint points at, empty when the
 	// branch has none.
 	Checkpoint string `json:"checkpoint,omitempty"`
 	// Previous is the commit the checkpoint pointed at before the move,
 	// empty when it had none.
 	Previous string `json:"previous,omitempty"`
+	// Tree is the tree of the commit the checkpoint names.
+	Tree string `json:"tree,omitempty"`
+	// CertifiedTree is the tree the checkpoint certifies: the tree the suite
+	// ran on. It is empty when the checkpoint certifies no tree.
+	CertifiedTree string `json:"certified_tree,omitempty"`
+	// FullTree tells whether the checkpoint certifies the whole tree of the
+	// commit it names.
+	FullTree bool `json:"full_tree"`
 	// Tip is the commit the branch points at.
 	Tip string `json:"tip,omitempty"`
 	// Green tells whether the checkpoint covers the tip of the branch.
@@ -122,9 +139,10 @@ func cmdGreen(ctx context.Context, out io.Writer, o *options, f *greenFlags, arg
 	}
 }
 
-// greenSet moves the checkpoint of the branch to the commit.
+// greenSet moves the checkpoint of the branch to the commit, and publishes the
+// tree the checkpoint certifies.
 func greenSet(ctx context.Context, out io.Writer, o *options, f *greenFlags) error {
-	repo, err := greenRepo(ctx, o, f)
+	repo, backend, root, err := greenRepo(ctx, o, f)
 	if err != nil {
 		return err
 	}
@@ -136,58 +154,140 @@ func greenSet(ctx context.Context, out io.Writer, o *options, f *greenFlags) err
 		return fmt.Errorf("the commit %q: %w", f.commit, err)
 	}
 
-	name := greenRefPrefix + strings.TrimPrefix(f.branch, "refs/heads/")
+	// The tree the checkpoint certifies is the tree of the commit it names.
+	// The workspace the command runs in is the one that was tested, and it
+	// says whether that tree is the tree of the commit: a sparse workspace,
+	// a workspace of another commit, or a workspace with a tracked file
+	// changed tested something else.
+	if root != "" {
+		if err := greenWholeTree(root, backend, commit); err != nil {
+			return err
+		}
+	}
+
+	tree, err := repo.TreeID(ctx, commit)
+	if err != nil {
+		return fmt.Errorf("reading the tree of the commit %s: %w", commit, err)
+	}
+
+	name := greenref.Name(f.branch)
+	treeName := greenref.TreeName(f.branch)
 	previous, err := repo.ReferenceValue(ctx, name)
 	if err != nil {
 		return fmt.Errorf("reading the checkpoint of the branch %q: %w", f.branch, err)
 	}
+	previousTree, err := repo.ReferenceValue(ctx, treeName)
+	if err != nil {
+		return fmt.Errorf("reading the tree the checkpoint of the branch %q certifies: %w", f.branch, err)
+	}
 
-	if err := repo.UpdateReference(ctx, name, previous, commit); err != nil {
+	// The tree moves first, so that the checkpoint is the last reference to
+	// move: a reader that sees the new checkpoint also sees the tree it
+	// certifies, and a reader that sees only the tree sees a checkpoint that
+	// certifies no tree.
+	if err := repo.UpdateReferences(ctx, []sdk.ReferenceUpdate{
+		{Name: treeName, Old: previousTree, New: tree},
+		{Name: name, Old: previous, New: commit},
+	}); err != nil {
 		return fmt.Errorf("moving the checkpoint of the branch %q to %s: %w", f.branch, commit, err)
 	}
 
-	res := greenResult{Branch: f.branch, Ref: name, Checkpoint: commit, Previous: previous, Moved: true}
+	res := greenResult{
+		Branch:        f.branch,
+		Ref:           name,
+		TreeRef:       treeName,
+		Checkpoint:    commit,
+		Previous:      previous,
+		Tree:          tree,
+		CertifiedTree: tree,
+		FullTree:      true,
+		Moved:         true,
+	}
 	res.Tip, _ = greenTip(ctx, repo, f.branch)
 	res.Green = res.Tip != "" && res.Tip == res.Checkpoint
 
 	return printGreen(out, o.jsonOut, res)
 }
 
-// greenShow prints the checkpoint of the branch and the tip of the branch.
-func greenShow(ctx context.Context, out io.Writer, o *options, f *greenFlags) error {
-	repo, err := greenRepo(ctx, o, f)
+// greenWholeTree refuses a checkpoint that would certify a tree the suite did
+// not test. The workspace the command runs in is the one that was tested.
+func greenWholeTree(root string, backend workspace.Backend, commit string) error {
+	ws, err := workspace.Open(root, backend)
 	if err != nil {
 		return err
 	}
 
-	name := greenRefPrefix + strings.TrimPrefix(f.branch, "refs/heads/")
+	summary := ws.Summary()
+	if len(summary.Sparse) > 0 {
+		return fmt.Errorf("the workspace holds only %s: a checkpoint would certify a tree the suite did not test. Test the whole tree (graft clone without --sparse), or publish the checkpoint from the workspace that was tested",
+			strings.Join(summary.Sparse, ", "))
+	}
+	if summary.Base != commit {
+		return fmt.Errorf("the workspace holds %s, not %s: publish the checkpoint from the workspace that was tested",
+			summary.Base, commit)
+	}
+
+	// A tracked file that changed is a file the suite tested as it is on
+	// disk, not as it is in the commit. A file the suite wrote is not part of
+	// the tree of the commit, and says nothing about it.
+	changes, err := ws.Status()
+	if err != nil {
+		return fmt.Errorf("reading the state of the workspace: %w", err)
+	}
+	for _, change := range changes {
+		if change.Kind == workspace.ChangeModified || change.Kind == workspace.ChangeDeleted {
+			return fmt.Errorf("the workspace changed the tracked file %s: the suite would test a tree that is not the tree of %s. Publish the checkpoint from a workspace that holds the commit as it is",
+				change.Path, commit)
+		}
+	}
+
+	return nil
+}
+
+// greenShow prints the checkpoint of the branch and the tip of the branch.
+func greenShow(ctx context.Context, out io.Writer, o *options, f *greenFlags) error {
+	repo, _, _, err := greenRepo(ctx, o, f)
+	if err != nil {
+		return err
+	}
+
+	name := greenref.Name(f.branch)
 	checkpoint, err := repo.ReferenceValue(ctx, name)
 	if err != nil {
 		return fmt.Errorf("reading the checkpoint of the branch %q: %w", f.branch, err)
 	}
 
-	res := greenResult{Branch: f.branch, Ref: name, Checkpoint: checkpoint}
+	res := greenResult{Branch: f.branch, Ref: name, TreeRef: greenref.TreeName(f.branch), Checkpoint: checkpoint}
+	res.CertifiedTree, err = repo.ReferenceValue(ctx, res.TreeRef)
+	if err != nil {
+		return fmt.Errorf("reading the tree the checkpoint of the branch %q certifies: %w", f.branch, err)
+	}
+	if checkpoint != "" {
+		res.Tree, _ = repo.TreeID(ctx, checkpoint)
+	}
+	res.FullTree = res.CertifiedTree != "" && res.CertifiedTree == res.Tree
 	res.Tip, _ = greenTip(ctx, repo, f.branch)
 	res.Green = res.Tip != "" && res.Tip == res.Checkpoint
 
 	return printGreen(out, o.jsonOut, res)
 }
 
-// greenRepo returns the repository the green command works on.
-func greenRepo(ctx context.Context, o *options, f *greenFlags) (*sdk.Repo, error) {
-	t, _, err := resolveTarget(o, f.repo, "green")
+// greenRepo returns the repository the green command works on, the backend of
+// the workspace and the root of the workspace (empty when there is none).
+func greenRepo(ctx context.Context, o *options, f *greenFlags) (*sdk.Repo, workspace.Backend, string, error) {
+	t, root, err := resolveTarget(o, f.repo, "green")
 	if err != nil {
-		return nil, err
+		return nil, nil, "", err
 	}
 	backend, err := backendFactory(ctx, t)
 	if err != nil {
-		return nil, err
+		return nil, nil, "", err
 	}
 	sb, ok := backend.(*sdkBackend)
 	if !ok {
-		return nil, errors.New("green: the backend cannot read a checkpoint")
+		return nil, nil, "", errors.New("green: the backend cannot read a checkpoint")
 	}
-	return sb.repo, nil
+	return sb.repo, backend, root, nil
 }
 
 // greenTip returns the commit the branch points at, empty when the branch does
@@ -218,12 +318,20 @@ func printGreen(out io.Writer, jsonOut bool, res greenResult) error {
 		} else {
 			fmt.Fprintf(out, "the checkpoint of the branch %s is now %s\n", res.Branch, res.Checkpoint)
 		}
-		return nil
-	}
-	if res.Green {
+	} else if res.Green {
 		fmt.Fprintf(out, "the checkpoint of the branch %s is %s: the branch is green\n", res.Branch, res.Checkpoint)
-		return nil
+	} else {
+		fmt.Fprintf(out, "the checkpoint of the branch %s is %s: the branch is not green\n", res.Branch, res.Checkpoint)
 	}
-	fmt.Fprintf(out, "the checkpoint of the branch %s is %s: the branch is not green\n", res.Branch, res.Checkpoint)
+
+	switch {
+	case res.FullTree:
+		fmt.Fprintf(out, "the checkpoint certifies the whole tree of the commit %s\n", res.Checkpoint)
+	case res.CertifiedTree != "":
+		fmt.Fprintf(out, "the checkpoint certifies only the tree %s of the commit %s\n", res.CertifiedTree, res.Checkpoint)
+	case res.Checkpoint != "":
+		fmt.Fprintf(out, "the checkpoint certifies no tree of the commit %s\n", res.Checkpoint)
+	}
+
 	return nil
 }

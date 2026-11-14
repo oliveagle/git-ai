@@ -349,3 +349,58 @@ func TestListBranchRules(t *testing.T) {
 		},
 	}, resp.GetRules())
 }
+
+// certifiedTree publishes the tree the checkpoint of the branch certifies:
+// the tree the suite ran on.
+func (h *harness) certifiedTree(branch string, commit git.ObjectID) {
+	h.t.Helper()
+
+	tree := gittest.Exec(h.t, h.cfg, "-C", h.repoPath, "rev-parse", commit.String()+"^{tree}")
+	gittest.Exec(h.t, h.cfg, "-C", h.repoPath, "update-ref", "refs/graft/green-tree/"+branch, strings.TrimSpace(string(tree)))
+}
+
+// TestGetBranchDecision_WholeTree checks the rule that asks for the whole
+// tree: a checkpoint that certifies no tree is refused, one that certifies the
+// tree of the commit it names is accepted, and one that certifies the tree of
+// another commit is refused as well.
+func TestGetBranchDecision_WholeTree(t *testing.T) {
+	h := newHarness(t, config.GraftBranchRule{Name: "main", RequireVerified: true, RequireFullTree: true})
+
+	commit := h.write("", "main", map[string]string{"a": "1"})
+	other := h.write("", "", map[string]string{"b": "2"})
+	h.checkpoint("main", commit)
+
+	// The checkpoint certifies no tree: the publisher said nothing about what
+	// it tested.
+	resp := h.decide("main")
+	requireDecision(t, resp, "not_full_tree")
+	require.Empty(t, resp.GetCertifiedTree())
+	require.NotEmpty(t, resp.GetCheckpointTree())
+
+	// The checkpoint certifies the tree of the commit it names: the whole
+	// tree was tested.
+	h.certifiedTree("main", commit)
+	resp = h.decide("main")
+	requireDecision(t, resp, "allowed")
+	require.Equal(t, resp.GetCheckpointTree(), resp.GetCertifiedTree())
+
+	// The checkpoint certifies the tree of another commit: the tree it
+	// certifies is not the tree of the commit it names.
+	h.certifiedTree("main", other)
+	resp = h.decide("main")
+	requireDecision(t, resp, "not_full_tree")
+	require.NotEqual(t, resp.GetCheckpointTree(), resp.GetCertifiedTree())
+}
+
+// TestGetBranchDecision_WholeTreeIsOptional checks that a branch whose rule
+// does not ask for the whole tree accepts a checkpoint that certifies no tree.
+func TestGetBranchDecision_WholeTreeIsOptional(t *testing.T) {
+	h := newHarness(t, config.GraftBranchRule{Name: "main", RequireVerified: true})
+
+	commit := h.write("", "main", map[string]string{"a": "1"})
+	h.checkpoint("main", commit)
+
+	resp := h.decide("main")
+	requireDecision(t, resp, "allowed")
+	require.Empty(t, resp.GetCertifiedTree())
+}
