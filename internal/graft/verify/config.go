@@ -9,6 +9,8 @@ import (
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
+
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
 )
 
 const (
@@ -99,6 +101,12 @@ type TestConfig struct {
 	Env []string `toml:"env"`
 	// Timeout bounds one run of the command.
 	Timeout Duration `toml:"timeout"`
+	// Suites are the names of the suites the command runs. The verifier
+	// publishes them next to the checkpoint, each in a reference of its own,
+	// so that the rule of the branch may demand them (require_suites): a
+	// checkpoint that certifies no suite carries no land of a branch that
+	// names them.
+	Suites []string `toml:"suites"`
 	// AllowSparse permits the command to run on a work tree that Sparse leaves
 	// partial. Without it a configuration with a sparse set is refused: a test
 	// that passes on part of the tree is no evidence about the rest, and the
@@ -222,6 +230,11 @@ func (c Config) Validate() error {
 	for _, prefix := range c.Sparse {
 		if prefix == "" {
 			fail("sparse entries must not be empty")
+		}
+	}
+	for _, suite := range c.Test.Suites {
+		if !greenref.ValidSuiteName(suite) {
+			fail("test.suites entry %q is not a valid suite name", suite)
 		}
 	}
 	if len(c.Sparse) > 0 && !c.Test.AllowSparse {

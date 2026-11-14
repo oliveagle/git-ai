@@ -63,6 +63,13 @@ message BranchRule {
   // rest, so a checkpoint that certifies no tree, or only part of one, is
   // refused.
   bool require_full_tree = 8;
+  // require_suites demands that the verification checkpoint certify every
+  // named suite: the publisher says which suites ran on the tree it
+  // certifies (graft green set --suite), and a checkpoint that certifies
+  // only some of them is refused. It is the rule of a project whose change
+  // needs its unit suite and its integration suite: a unit suite alone does
+  // not carry a land.
+  repeated string require_suites = 9;
 }
 
 // BranchGateError is the refusal of an update by the branch management
@@ -132,6 +139,10 @@ message GetBranchDecisionResponse {
   // and it differs from checkpoint_tree when the suite ran on part of the
   // tree.
   string certified_tree = 12;
+  // checkpoint_suites are the suites the verification checkpoint certifies,
+  // among the ones the rule of the branch requires: the answer says which of
+  // them the rule is missing.
+  repeated string checkpoint_suites = 13;
 }
 
 // ListBranchRulesRequest is a request for ListBranchRules.

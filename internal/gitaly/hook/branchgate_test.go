@@ -30,11 +30,17 @@ const (
 type branchGateStub struct {
 	reviews    []*gitalypb.Review
 	checkpoint string
+	// suites are the suites the checkpoint certifies, keyed by name.
+	suites map[string]string
+	// asked records the suites a decision asked for, so that a test can
+	// check the rule of the branch drove the question.
+	asked []string
 }
 
 // BranchState implements BranchGateSource.
-func (s *branchGateStub) BranchState(ctx context.Context, repo *gitalypb.Repository, branch string) (BranchGateState, error) {
-	return BranchGateState{Reviews: s.reviews, Checkpoint: s.checkpoint}, nil
+func (s *branchGateStub) BranchState(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (BranchGateState, error) {
+	s.asked = suites
+	return BranchGateState{Reviews: s.reviews, Checkpoint: s.checkpoint, Suites: s.suites}, nil
 }
 
 // branchGateEnv returns the hook environment of an update performed by actor.

@@ -55,8 +55,15 @@ type BranchRule struct {
 	// rest, so a checkpoint that certifies no tree, or only part of one, is
 	// refused.
 	RequireFullTree bool `protobuf:"varint,8,opt,name=require_full_tree,json=requireFullTree,proto3" json:"require_full_tree,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// require_suites demands that the verification checkpoint certify every
+	// named suite: the publisher says which suites ran on the tree it
+	// certifies (graft green set --suite), and a checkpoint that certifies
+	// only some of them is refused. It is the rule of a project whose change
+	// needs its unit suite and its integration suite: a unit suite alone does
+	// not carry a land.
+	RequireSuites []string `protobuf:"bytes,9,rep,name=require_suites,json=requireSuites,proto3" json:"require_suites,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BranchRule) Reset() {
@@ -143,6 +150,13 @@ func (x *BranchRule) GetRequireFullTree() bool {
 		return x.RequireFullTree
 	}
 	return false
+}
+
+func (x *BranchRule) GetRequireSuites() []string {
+	if x != nil {
+		return x.RequireSuites
+	}
+	return nil
 }
 
 // BranchGateError is the refusal of an update by the branch management
@@ -335,8 +349,12 @@ type GetBranchDecisionResponse struct {
 	// and it differs from checkpoint_tree when the suite ran on part of the
 	// tree.
 	CertifiedTree string `protobuf:"bytes,12,opt,name=certified_tree,json=certifiedTree,proto3" json:"certified_tree,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// checkpoint_suites are the suites the verification checkpoint certifies,
+	// among the ones the rule of the branch requires: the answer says which of
+	// them the rule is missing.
+	CheckpointSuites []string `protobuf:"bytes,13,rep,name=checkpoint_suites,json=checkpointSuites,proto3" json:"checkpoint_suites,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetBranchDecisionResponse) Reset() {
@@ -453,6 +471,13 @@ func (x *GetBranchDecisionResponse) GetCertifiedTree() string {
 	return ""
 }
 
+func (x *GetBranchDecisionResponse) GetCheckpointSuites() []string {
+	if x != nil {
+		return x.CheckpointSuites
+	}
+	return nil
+}
+
 // ListBranchRulesRequest is a request for ListBranchRules.
 type ListBranchRulesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -550,7 +575,7 @@ var File_branch_proto protoreflect.FileDescriptor
 const file_branch_proto_rawDesc = "" +
 	"\n" +
 	"\fbranch.proto\x12\x06gitaly\x1a\n" +
-	"lint.proto\x1a\fshared.proto\"\xdd\x02\n" +
+	"lint.proto\x1a\fshared.proto\"\x84\x03\n" +
 	"\n" +
 	"BranchRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
@@ -560,7 +585,8 @@ const file_branch_proto_rawDesc = "" +
 	"\x13allow_direct_update\x18\x05 \x01(\bR\x11allowDirectUpdate\x12)\n" +
 	"\x10require_verified\x18\x06 \x01(\bR\x0frequireVerified\x126\n" +
 	"\x17require_verified_result\x18\a \x01(\bR\x15requireVerifiedResult\x12*\n" +
-	"\x11require_full_tree\x18\b \x01(\bR\x0frequireFullTree\"U\n" +
+	"\x11require_full_tree\x18\b \x01(\bR\x0frequireFullTree\x12%\n" +
+	"\x0erequire_suites\x18\t \x03(\tR\rrequireSuites\"U\n" +
 	"\x0fBranchGateError\x12\x16\n" +
 	"\x06branch\x18\x01 \x01(\tR\x06branch\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x16\n" +
@@ -572,7 +598,7 @@ const file_branch_proto_rawDesc = "" +
 	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x18\n" +
 	"\acommits\x18\x03 \x03(\tR\acommits\x12\x16\n" +
 	"\x06direct\x18\x04 \x01(\bR\x06direct\x12\x16\n" +
-	"\x06result\x18\x05 \x01(\tR\x06result\"\xef\x02\n" +
+	"\x06result\x18\x05 \x01(\tR\x06result\"\x9c\x03\n" +
 	"\x19GetBranchDecisionResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x16\n" +
@@ -588,7 +614,8 @@ const file_branch_proto_rawDesc = "" +
 	"\x06branch\x18\n" +
 	" \x01(\tR\x06branch\x12'\n" +
 	"\x0fcheckpoint_tree\x18\v \x01(\tR\x0echeckpointTree\x12%\n" +
-	"\x0ecertified_tree\x18\f \x01(\tR\rcertifiedTree\"R\n" +
+	"\x0ecertified_tree\x18\f \x01(\tR\rcertifiedTree\x12+\n" +
+	"\x11checkpoint_suites\x18\r \x03(\tR\x10checkpointSuites\"R\n" +
 	"\x16ListBranchRulesRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +

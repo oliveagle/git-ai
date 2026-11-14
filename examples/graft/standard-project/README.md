@@ -50,7 +50,8 @@ make test-unit                          # 1. cheap, local
 graft land --dry-run --timestamp "$T"   # 2. the commit the land would produce
 graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
 make test                               # 4. both suites, on that tree
-graft green set --branch main --commit "$M"          # 5. the checkpoint
+graft green set --branch main --commit "$M" \
+      --suite unit --suite integration                 # 5. the checkpoint
 graft gate check --branch main --result "$M"         #    the status check
 graft land --timestamp "$T" --expect "$M"   # 6. the land of that exact commit
 ```
@@ -78,7 +79,9 @@ gate check and the land
   `require_verified_result`), not only the tip it builds on;
 - and refuses a checkpoint that certifies only part of the tree
   (`require_full_tree`): the suites have to run on the whole tree of the
-  result, so a unit suite alone never carries a land.
+  result;
+- and refuses a checkpoint that certifies only some of the suites
+  (`require_suites`): the unit suite alone never carries a land.
 
 `require_verified_result` is what makes the queue the only way in rather than a
 strong habit: a checkpoint on the tip says the branch *was* green, and this rule
@@ -86,6 +89,12 @@ does not take that for the result of the next land. A land whose result nobody
 published is refused with `not_verified`, and a caller that does not name the
 result at all with `result_unknown` — so the server, not the CI's discipline,
 decides whether the result was tested.
+
+`require_suites` says which suites the result needs. The queue publishes them
+with the checkpoint (`graft green set --suite unit --suite integration`), and
+the server refuses a land whose checkpoint certifies only some of them, with
+`suites_missing`: the unit suite of the workspace is a pre-check of the agent,
+not the evidence the branch takes.
 
 The result the queue computed belongs to the tip it computed on. When the
 branch moves while the suite runs, the result is `stale_result`: the land would

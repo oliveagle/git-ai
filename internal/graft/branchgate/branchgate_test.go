@@ -531,3 +531,66 @@ func TestDecide_verificationOfTheWholeTree(t *testing.T) {
 	require.True(t, decision.Allowed)
 	require.Equal(t, CodeAllowed, decision.Code)
 }
+
+// TestDecideRequiresTheSuites checks the rule of a project whose change needs
+// more than one suite: the checkpoint has to certify every suite the rule
+// names, on the commit the checkpoint names.
+func TestDecideRequiresTheSuites(t *testing.T) {
+	t.Parallel()
+
+	rule := config.GraftBranchRule{
+		Name:          "main",
+		RequireSuites: []string{"unit", "integration"},
+	}
+
+	// The checkpoint certifies both suites, on the commit it names.
+	decision := Decide(Input{
+		Rules:            []config.GraftBranchRule{rule},
+		Branch:           "main",
+		Tip:              "tip",
+		Changes:          []string{"commit"},
+		Checkpoint:       "tip",
+		CheckpointSuites: map[string]string{"unit": "tip", "integration": "tip"},
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+
+	// The unit suite alone does not carry the land: the rule names the
+	// integration suite too.
+	decision = Decide(Input{
+		Rules:            []config.GraftBranchRule{rule},
+		Branch:           "main",
+		Tip:              "tip",
+		Changes:          []string{"commit"},
+		Checkpoint:       "tip",
+		CheckpointSuites: map[string]string{"unit": "tip"},
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeSuitesMissing, decision.Code)
+	require.Contains(t, decision.Reason, "integration")
+	require.NotContains(t, decision.Reason, "unit,")
+
+	// A suite that ran on another commit says nothing about the one the
+	// checkpoint names.
+	decision = Decide(Input{
+		Rules:            []config.GraftBranchRule{rule},
+		Branch:           "main",
+		Tip:              "tip",
+		Changes:          []string{"commit"},
+		Checkpoint:       "tip",
+		CheckpointSuites: map[string]string{"unit": "tip", "integration": "another-commit"},
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeSuitesMissing, decision.Code)
+
+	// A rule that names no suite takes the checkpoint it has.
+	decision = Decide(Input{
+		Rules:      []config.GraftBranchRule{{Name: "main", RequireVerified: true}},
+		Branch:     "main",
+		Tip:        "tip",
+		Changes:    []string{"commit"},
+		Checkpoint: "tip",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
+}

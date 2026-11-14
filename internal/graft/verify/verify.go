@@ -348,17 +348,27 @@ func (v *Verifier) advanceGreen(ctx context.Context, tip string) (bool, error) {
 		return false, fmt.Errorf("read the tree the checkpoint certifies: %w", err)
 	}
 
-	if current == tip && (tree == "" || currentTree == tree) {
+	if current == tip && (tree == "" || currentTree == tree) && v.suitesPublished(ctx, tip) {
 		v.green = tip
 		return false, nil
 	}
 
-	// The tree moves first, so that the checkpoint is the last reference to
-	// move: a reader that sees the new checkpoint also sees the tree it
-	// certifies.
+	// The tree moves first, then the suites, so that the checkpoint is the
+	// last reference to move: a reader that sees the new checkpoint also sees
+	// the tree it certifies and the suites that ran on it.
 	var moves []Move
 	if tree != "" && currentTree != tree {
 		moves = append(moves, Move{Ref: treeRef, Old: currentTree, New: tree})
+	}
+	for _, suite := range v.cfg.Test.Suites {
+		ref := greenref.SuitesName(suite, v.cfg.Branch)
+		old, err := v.greens.Current(ctx, ref)
+		if err != nil {
+			return false, fmt.Errorf("read the commit the suite %q certified: %w", suite, err)
+		}
+		if old != tip {
+			moves = append(moves, Move{Ref: ref, Old: old, New: tip})
+		}
 	}
 	if current != tip {
 		moves = append(moves, Move{Ref: v.cfg.GreenRef, Old: current, New: tip})
@@ -368,6 +378,21 @@ func (v *Verifier) advanceGreen(ctx context.Context, tip string) (bool, error) {
 	}
 	v.green = tip
 	return current != tip, nil
+}
+
+// suitesPublished reports whether every suite the configuration names already
+// certifies the tip: the verifier publishes them with the checkpoint, and a
+// checkpoint that certifies no suite carries no land of a branch that names
+// them.
+func (v *Verifier) suitesPublished(ctx context.Context, tip string) bool {
+	for _, suite := range v.cfg.Test.Suites {
+		ref := greenref.SuitesName(suite, v.cfg.Branch)
+		current, err := v.greens.Current(ctx, ref)
+		if err != nil || current != tip {
+			return false
+		}
+	}
+	return true
 }
 
 // certifiedTree returns the tree the verification of the tip covered, empty

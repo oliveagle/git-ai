@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
 )
 
 // Graft configures the Graft extensions: the changes that turn Gitaly into a
@@ -605,6 +607,16 @@ func (g Graft) ValidateBranches() error {
 		if rule.RequireApprovals < 0 {
 			return fmt.Errorf("graft branch rule %d: require_approvals must not be negative", i+1)
 		}
+		suites := make(map[string]bool, len(rule.RequireSuites))
+		for _, suite := range rule.RequireSuites {
+			if !greenref.ValidSuiteName(suite) {
+				return fmt.Errorf("graft branch rule %d: suite %q is not a valid suite name", i+1, suite)
+			}
+			if suites[suite] {
+				return fmt.Errorf("graft branch rule %d: suite %q is required twice", i+1, suite)
+			}
+			suites[suite] = true
+		}
 		if seen[rule.Name] {
 			return fmt.Errorf("graft branch rule %d: branch %q has more than one rule", i+1, rule.Name)
 		}
@@ -891,6 +903,14 @@ type GraftBranchRule struct {
 	// refused. It is the rule of a project whose tests must see everything,
 	// and it goes with RequireVerifiedResult in a merge queue.
 	RequireFullTree bool `json:"require_full_tree" toml:"require_full_tree,omitempty"`
+	// RequireSuites demands that the verification checkpoint certify every
+	// named suite: the publisher says which suites ran on the tree it
+	// certifies (graft green set --suite), and a rule that names suites
+	// refuses a land whose checkpoint certifies only some of them. It is the
+	// rule of a project whose change needs its unit suite and its integration
+	// suite, and it goes with RequireVerifiedResult in a merge queue: the
+	// suites are the ones that ran on the commit the land writes.
+	RequireSuites []string `json:"require_suites" toml:"require_suites,omitempty"`
 }
 
 // GraftAgent is one agent credential.

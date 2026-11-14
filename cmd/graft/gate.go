@@ -82,6 +82,10 @@ type gateRule struct {
 	// RequireFullTree demands a checkpoint that certifies the whole tree of
 	// the commit it names.
 	RequireFullTree bool `json:"require_full_tree"`
+	// RequireSuites are the suites the checkpoint has to certify: the
+	// publisher says which suites ran on the tree it certifies, and a
+	// checkpoint that certifies only some of them does not carry a land.
+	RequireSuites []string `json:"require_suites,omitempty"`
 }
 
 // gateResult is the JSON output of graft gate check.
@@ -110,6 +114,9 @@ type gateResult struct {
 	// FullTree tells whether the checkpoint certifies the whole tree of the
 	// commit it names.
 	FullTree bool `json:"full_tree"`
+	// CheckpointSuites are the suites the checkpoint certifies, among the ones
+	// the rule of the branch requires.
+	CheckpointSuites []string `json:"checkpoint_suites,omitempty"`
 	// Reviews is the number of open reviews of the branch.
 	Reviews int `json:"reviews"`
 	// Allowed tells whether the change may land.
@@ -202,21 +209,22 @@ func gateCheck(ctx context.Context, out io.Writer, o *options, f *gateFlags) err
 	}
 
 	res := gateResult{
-		Branch:         answer.GetBranch(),
-		Managed:        answer.GetManaged(),
-		Commit:         commit,
-		Direct:         f.direct,
-		Result:         f.result,
-		Tip:            answer.GetTip(),
-		Checkpoint:     answer.GetCheckpoint(),
-		CheckpointTree: answer.GetCheckpointTree(),
-		CertifiedTree:  answer.GetCertifiedTree(),
-		FullTree:       answer.GetCertifiedTree() != "" && answer.GetCertifiedTree() == answer.GetCheckpointTree(),
-		Reviews:        int(answer.GetReviews()),
-		Allowed:        answer.GetAllowed(),
-		Code:           answer.GetCode(),
-		Reason:         answer.GetReason(),
-		Rule:           ruleOf(answer.GetRule()),
+		Branch:           answer.GetBranch(),
+		Managed:          answer.GetManaged(),
+		Commit:           commit,
+		Direct:           f.direct,
+		Result:           f.result,
+		Tip:              answer.GetTip(),
+		Checkpoint:       answer.GetCheckpoint(),
+		CheckpointTree:   answer.GetCheckpointTree(),
+		CertifiedTree:    answer.GetCertifiedTree(),
+		FullTree:         answer.GetCertifiedTree() != "" && answer.GetCertifiedTree() == answer.GetCheckpointTree(),
+		CheckpointSuites: answer.GetCheckpointSuites(),
+		Reviews:          int(answer.GetReviews()),
+		Allowed:          answer.GetAllowed(),
+		Code:             answer.GetCode(),
+		Reason:           answer.GetReason(),
+		Rule:             ruleOf(answer.GetRule()),
 	}
 
 	if o.jsonOut {
@@ -322,6 +330,7 @@ func ruleOf(rule *sdk.BranchRule) *gateRule {
 		// sees what the server will refuse.
 		RequireVerifiedResult: rule.GetRequireVerifiedResult(),
 		RequireFullTree:       rule.GetRequireFullTree(),
+		RequireSuites:         rule.GetRequireSuites(),
 	}
 }
 
@@ -349,6 +358,9 @@ func describeGateRule(rule *gateRule) string {
 	}
 	if rule.RequireFullTree {
 		parts = append(parts, "the verification checkpoint must certify the whole tree of the commit it names")
+	}
+	if len(rule.RequireSuites) > 0 {
+		parts = append(parts, fmt.Sprintf("the verification checkpoint must certify the suites %s", strings.Join(rule.RequireSuites, ", ")))
 	}
 	return strings.Join(parts, "; ")
 }
@@ -390,5 +402,9 @@ func printGateCheck(out io.Writer, res gateResult) {
 		default:
 			fmt.Fprintf(out, "the checkpoint of the branch %s certifies no tree of the commit %s\n", res.Branch, res.Checkpoint)
 		}
+	}
+
+	for _, suite := range res.CheckpointSuites {
+		fmt.Fprintf(out, "the checkpoint of the branch %s certifies the suite %s\n", res.Branch, suite)
 	}
 }

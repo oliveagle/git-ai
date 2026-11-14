@@ -65,7 +65,12 @@ say "5/6 publish the checkpoint, and ask the gate the question the land asks"
 # result as it is, and it certifies the whole tree of it. A workspace that
 # held part of the tree would certify a tree the suites never saw, and the
 # server would refuse the land.
-( cd "$work/verify" && operator "$graft" green set --branch "$branch" --commit "$result" )
+#
+# The suites are published with it: the rule of the branch asks for the unit
+# suite and the integration suite, and a checkpoint that certifies only the
+# unit suite does not carry the land.
+( cd "$work/verify" && operator "$graft" green set --branch "$branch" --commit "$result" \
+	--suite unit --suite integration )
 if ! answer=$("$graft" gate check --branch "$branch" --result "$result" --json); then
   # The gate refused the land, and its code says what to do: when the result
   # is stale, the branch moved while the suite ran, and the queue computes the

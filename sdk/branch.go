@@ -63,6 +63,10 @@ const (
 	// tree, and a checkpoint that certifies no tree or only part of one: a
 	// suite that ran on part of the tree is no evidence about the rest.
 	BranchNotFullTree = "not_full_tree"
+	// BranchSuitesMissing is the code of a branch whose rule asks for the
+	// suites a change needs, and a checkpoint that certifies only some of
+	// them: the unit suite ran, the integration suite did not.
+	BranchSuitesMissing = "suites_missing"
 )
 
 // BranchGateDenial returns the refusal of the branch management policy: the

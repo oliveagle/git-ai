@@ -28,6 +28,10 @@ type BranchGateState struct {
 	CertifiedTree string
 	// CheckpointTree is the tree of the commit the checkpoint names.
 	CheckpointTree string
+	// Suites are the suites the checkpoint certifies, by name: each one is
+	// the commit the suite ran on. It holds the suites the rule of the branch
+	// requires, the ones the gate has to judge.
+	Suites map[string]string
 }
 
 // BranchGateSource gives the branch gate the state of a branch. The server
@@ -36,8 +40,11 @@ type BranchGateState struct {
 // gate without reviews and without a checkpoint, so that a rule that asks for
 // one refuses every land.
 type BranchGateSource interface {
-	// BranchState returns the state of the branch of the repository.
-	BranchState(ctx context.Context, repo *gitalypb.Repository, branch string) (BranchGateState, error)
+	// BranchState returns the state of the branch of the repository. The
+	// suites are the ones the rule of the branch requires: the state says
+	// which of them the checkpoint of the branch certifies, and on which
+	// commit.
+	BranchState(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (BranchGateState, error)
 }
 
 // BranchGateDenial is the refusal of an update by the branch management policy.
@@ -170,8 +177,15 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 	var checkpoint string
 	var certifiedTree string
 	var checkpointTree string
+	var suites map[string]string
 	if m.branchGate != nil {
-		state, err := m.branchGate.BranchState(ctx, payload.Repo, branch)
+		// The rule says which suites the branch requires: the state says
+		// which of them the checkpoint certifies.
+		var required []string
+		if rule := policy.Rule(branch); rule != nil {
+			required = rule.RequireSuites
+		}
+		state, err := m.branchGate.BranchState(ctx, payload.Repo, branch, required)
 		if err != nil {
 			return branchgate.Decision{}, fmt.Errorf("reading the state of the branch %q: %w", branch, err)
 		}
@@ -179,6 +193,7 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 		checkpoint = state.Checkpoint
 		certifiedTree = state.CertifiedTree
 		checkpointTree = state.CheckpointTree
+		suites = state.Suites
 	}
 
 	return branchgate.Decide(branchgate.Input{
@@ -189,13 +204,14 @@ func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *bran
 		Tip:         update.OldOID,
 		// The update produces the commit git is about to write, so the gate
 		// knows it: a checkpoint on that commit is a verified result.
-		Result:         update.NewOID,
-		Reviews:        reviews,
-		Checkpoint:     checkpoint,
-		CertifiedTree:  certifiedTree,
-		CheckpointTree: checkpointTree,
-		Direct:         !land,
-		Creation:       creation,
-		Deletion:       deletion,
+		Result:           update.NewOID,
+		Reviews:          reviews,
+		Checkpoint:       checkpoint,
+		CertifiedTree:    certifiedTree,
+		CheckpointTree:   checkpointTree,
+		CheckpointSuites: suites,
+		Direct:           !land,
+		Creation:         creation,
+		Deletion:         deletion,
 	}), nil
 }

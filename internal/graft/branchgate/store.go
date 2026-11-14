@@ -1,6 +1,7 @@
 package branchgate
 
 import (
+	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -108,7 +109,9 @@ func sameRules(a, b []config.GraftBranchRule) bool {
 		return false
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		// The rule holds a slice of the suites it requires, so the rules are
+		// compared field by field, not with the == operator.
+		if !reflect.DeepEqual(a[i], b[i]) {
 			return false
 		}
 	}

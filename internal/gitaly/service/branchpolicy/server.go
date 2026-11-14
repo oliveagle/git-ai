@@ -12,6 +12,7 @@ package branchpolicy
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/feder-cr/git-ai/internal/git"
@@ -66,7 +67,16 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		return nil, err
 	}
 
-	state, err := s.source.BranchState(ctx, req.GetRepository(), branch)
+	policy := s.policy.Current()
+
+	// The rule says which suites the branch requires: the state says which
+	// of them the checkpoint certifies, and on which commit.
+	var required []string
+	if rule := policy.Rule(branch); rule != nil {
+		required = rule.RequireSuites
+	}
+
+	state, err := s.source.BranchState(ctx, req.GetRepository(), branch, required)
 	if err != nil {
 		return nil, structerr.NewInternal("reading the state of the branch %q: %w", branch, err)
 	}
@@ -83,7 +93,6 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		s.deps.GetLogger().WithError(err).WithField("branch", branch).Warn("graft: the staleness of the result of a branch decision is unknown")
 	}
 
-	policy := s.policy.Current()
 	decision := branchgate.Decide(branchgate.Input{
 		Rules:       policy.Rules,
 		ReviewRules: policy.ReviewRules,
@@ -103,21 +112,25 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		// same tree, which is what a rule that asks for the whole tree wants.
 		CertifiedTree:  state.CertifiedTree,
 		CheckpointTree: state.CheckpointTree,
+		// The suites the checkpoint certifies, among the ones the rule
+		// requires: the answer says which of them the rule is missing.
+		CheckpointSuites: state.Suites,
 	})
 
 	return &gitalypb.GetBranchDecisionResponse{
-		Branch:         branch,
-		Allowed:        decision.Allowed,
-		Code:           decision.Code,
-		Reason:         decision.Reason,
-		Managed:        decision.Rule != nil,
-		Tip:            tip,
-		Checkpoint:     state.Checkpoint,
-		CheckpointTree: state.CheckpointTree,
-		CertifiedTree:  state.CertifiedTree,
-		Reviews:        uint32(len(state.Reviews)),
-		Rule:           protoRule(decision.Rule),
-		Change:         decision.Change,
+		Branch:           branch,
+		Allowed:          decision.Allowed,
+		Code:             decision.Code,
+		Reason:           decision.Reason,
+		Managed:          decision.Rule != nil,
+		Tip:              tip,
+		Checkpoint:       state.Checkpoint,
+		CheckpointTree:   state.CheckpointTree,
+		CertifiedTree:    state.CertifiedTree,
+		CheckpointSuites: certifiedSuites(state.Suites),
+		Reviews:          uint32(len(state.Reviews)),
+		Rule:             protoRule(decision.Rule),
+		Change:           decision.Change,
 	}, nil
 }
 
@@ -186,6 +199,21 @@ func branchName(name string) (string, error) {
 
 // protoRule returns the rule as the API carries it, nil when the branch is not
 // managed.
+// certifiedSuites returns the names of the suites the checkpoint certifies, in
+// the order of the names, so that the answer of the server does not depend on
+// the order the suites were read in.
+func certifiedSuites(suites map[string]string) []string {
+	if len(suites) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(suites))
+	for name := range suites {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func protoRule(rule *config.GraftBranchRule) *gitalypb.BranchRule {
 	if rule == nil {
 		return nil
@@ -202,5 +230,6 @@ func protoRule(rule *config.GraftBranchRule) *gitalypb.BranchRule {
 		// reads the rules the server enforces, not a subset of them.
 		RequireVerifiedResult: rule.RequireVerifiedResult,
 		RequireFullTree:       rule.RequireFullTree,
+		RequireSuites:         rule.RequireSuites,
 	}
 }

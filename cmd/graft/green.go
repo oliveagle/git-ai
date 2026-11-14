@@ -33,6 +33,11 @@ does not cover the tip the land builds on.
   compare-and-swap: the move fails when the checkpoint moved since it was read,
   so that two CIs cannot overwrite each other. The commit must exist in the
   repository.
+- --suite names a suite that ran on the tree the checkpoint certifies, and may
+  be repeated. Each suite is published in its own reference, next to the
+  checkpoint, naming the commit it ran on: the rule of the branch may demand
+  the suites a change needs (require_suites), and a checkpoint that certifies
+  only some of them does not carry a land.
 - The checkpoint certifies a tree: the tree the suite ran on, which
   refs/graft/green-tree/<branch> names. green set publishes the tree of the
   commit it names, which is the tree a suite has to test for the checkpoint to
@@ -42,8 +47,8 @@ does not cover the tip the land builds on.
   A branch whose rule asks for the whole tree (require_full_tree) takes no land
   while the checkpoint certifies no tree.
 - green show prints the commit the checkpoint of the branch points at, the
-  tree it certifies and the tip of the branch, so that a CI can tell whether
-  the branch is green.
+  tree it certifies, the suites it certifies and the tip of the branch, so that
+  a CI can tell whether the branch is green.
 
 The command needs the shared token: the checkpoint is the trust anchor of the
 branch management policy, and only an operator may move it. graft-verify moves
@@ -57,6 +62,23 @@ type greenFlags struct {
 	branch string
 	commit string
 	repo   string
+	suites suiteList
+}
+
+// suiteList is a repeatable string flag: the suites that ran on the tree the
+// checkpoint certifies.
+type suiteList []string
+
+func (s *suiteList) String() string {
+	if s == nil {
+		return ""
+	}
+	return strings.Join(*s, ",")
+}
+
+func (s *suiteList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
 }
 
 // greenResult is the JSON output of the green command.
@@ -81,12 +103,25 @@ type greenResult struct {
 	// FullTree tells whether the checkpoint certifies the whole tree of the
 	// commit it names.
 	FullTree bool `json:"full_tree"`
+	// Suites are the suites the checkpoint certifies, among the ones the rule
+	// of the branch requires. A suite with no commit certified none: the
+	// suite did not run on the commit the checkpoint names.
+	Suites []greenSuite `json:"suites,omitempty"`
 	// Tip is the commit the branch points at.
 	Tip string `json:"tip,omitempty"`
 	// Green tells whether the checkpoint covers the tip of the branch.
 	Green bool `json:"green"`
 	// Moved tells whether the checkpoint was moved.
 	Moved bool `json:"moved"`
+}
+
+// greenSuite is one suite the checkpoint of a branch certifies.
+type greenSuite struct {
+	// Name is the name of the suite, such as "unit".
+	Name string `json:"suite"`
+	// Commit is the commit the suite ran on, empty when the checkpoint
+	// certifies no run of the suite.
+	Commit string `json:"commit,omitempty"`
 }
 
 // greenCommand returns the green command, the verification checkpoint of a
@@ -102,6 +137,7 @@ func greenCommand() command {
 			fs.StringVar(&f.branch, "branch", "", "branch whose checkpoint is moved or read")
 			fs.StringVar(&f.commit, "commit", "", "commit the checkpoint is moved to")
 			fs.StringVar(&f.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
+			fs.Var(&f.suites, "suite", "suite that ran on the tree the checkpoint certifies (repeatable)")
 			fs.BoolVar(&o.jsonOut, "json", false, "print the checkpoint as one JSON object")
 		},
 		run: func(ctx context.Context, out io.Writer, o *options, args []string) error {
@@ -127,6 +163,11 @@ func cmdGreen(ctx context.Context, out io.Writer, o *options, f *greenFlags, arg
 		}
 		if f.commit == "" {
 			return usagef("green set requires --commit OID")
+		}
+		for _, suite := range f.suites {
+			if !greenref.ValidSuiteName(suite) {
+				return usagef("green set: %q is not a valid suite name: a suite names a reference component, without a slash", suite)
+			}
 		}
 		return greenSet(ctx, out, o, f)
 	case "show":
@@ -181,14 +222,22 @@ func greenSet(ctx context.Context, out io.Writer, o *options, f *greenFlags) err
 		return fmt.Errorf("reading the tree the checkpoint of the branch %q certifies: %w", f.branch, err)
 	}
 
-	// The tree moves first, so that the checkpoint is the last reference to
-	// move: a reader that sees the new checkpoint also sees the tree it
-	// certifies, and a reader that sees only the tree sees a checkpoint that
-	// certifies no tree.
-	if err := repo.UpdateReferences(ctx, []sdk.ReferenceUpdate{
-		{Name: treeName, Old: previousTree, New: tree},
-		{Name: name, Old: previous, New: commit},
-	}); err != nil {
+	// The tree moves first, then the suites, so that the checkpoint is the
+	// last reference to move: a reader that sees the new checkpoint also sees
+	// the tree it certifies and the suites that ran on it, and a reader that
+	// sees only the tree sees a checkpoint that certifies no tree.
+	updates := []sdk.ReferenceUpdate{{Name: treeName, Old: previousTree, New: tree}}
+	for _, suite := range f.suites {
+		suiteName := greenref.SuitesName(suite, f.branch)
+		previousSuite, err := repo.ReferenceValue(ctx, suiteName)
+		if err != nil {
+			return fmt.Errorf("reading the commit the suite %q certified on the branch %q: %w", suite, f.branch, err)
+		}
+		updates = append(updates, sdk.ReferenceUpdate{Name: suiteName, Old: previousSuite, New: commit})
+	}
+	updates = append(updates, sdk.ReferenceUpdate{Name: name, Old: previous, New: commit})
+
+	if err := repo.UpdateReferences(ctx, updates); err != nil {
 		return fmt.Errorf("moving the checkpoint of the branch %q to %s: %w", f.branch, commit, err)
 	}
 
@@ -202,6 +251,9 @@ func greenSet(ctx context.Context, out io.Writer, o *options, f *greenFlags) err
 		CertifiedTree: tree,
 		FullTree:      true,
 		Moved:         true,
+	}
+	for _, suite := range f.suites {
+		res.Suites = append(res.Suites, greenSuite{Name: suite, Commit: commit})
 	}
 	res.Tip, _ = greenTip(ctx, repo, f.branch)
 	res.Green = res.Tip != "" && res.Tip == res.Checkpoint
@@ -262,6 +314,10 @@ func greenShow(ctx context.Context, out io.Writer, o *options, f *greenFlags) er
 	if err != nil {
 		return fmt.Errorf("reading the tree the checkpoint of the branch %q certifies: %w", f.branch, err)
 	}
+	res.Suites, err = greenSuites(ctx, repo, f.branch)
+	if err != nil {
+		return err
+	}
 	if checkpoint != "" {
 		res.Tree, _ = repo.TreeID(ctx, checkpoint)
 	}
@@ -270,6 +326,36 @@ func greenShow(ctx context.Context, out io.Writer, o *options, f *greenFlags) er
 	res.Green = res.Tip != "" && res.Tip == res.Checkpoint
 
 	return printGreen(out, o.jsonOut, res)
+}
+
+// greenSuites returns the suites the checkpoint of the branch certifies: the
+// rule of the branch says which suites it requires, and each of them has a
+// reference that names the commit the suite ran on. A suite with no reference
+// certifies no run of the suite.
+func greenSuites(ctx context.Context, repo *sdk.Repo, branch string) ([]greenSuite, error) {
+	rules, err := repo.BranchRules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the rules of the server: %w", err)
+	}
+
+	name := strings.TrimPrefix(branch, "refs/heads/")
+	var required []string
+	for _, rule := range rules {
+		if strings.TrimPrefix(rule.GetName(), "refs/heads/") == name {
+			required = rule.GetRequireSuites()
+			break
+		}
+	}
+
+	var suites []greenSuite
+	for _, suite := range required {
+		commit, err := repo.ReferenceValue(ctx, greenref.SuitesName(suite, branch))
+		if err != nil {
+			return nil, fmt.Errorf("reading the commit the suite %q certified on the branch %q: %w", suite, branch, err)
+		}
+		suites = append(suites, greenSuite{Name: suite, Commit: commit})
+	}
+	return suites, nil
 }
 
 // greenRepo returns the repository the green command works on, the backend of
@@ -331,6 +417,14 @@ func printGreen(out io.Writer, jsonOut bool, res greenResult) error {
 		fmt.Fprintf(out, "the checkpoint certifies only the tree %s of the commit %s\n", res.CertifiedTree, res.Checkpoint)
 	case res.Checkpoint != "":
 		fmt.Fprintf(out, "the checkpoint certifies no tree of the commit %s\n", res.Checkpoint)
+	}
+
+	for _, suite := range res.Suites {
+		if suite.Commit == "" {
+			fmt.Fprintf(out, "the checkpoint certifies no run of the suite %s\n", suite.Name)
+			continue
+		}
+		fmt.Fprintf(out, "the checkpoint certifies the suite %s on %s\n", suite.Name, suite.Commit)
 	}
 
 	return nil

@@ -8,6 +8,7 @@ package branchgate
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -56,6 +57,11 @@ const (
 	// certify the whole tree of the commit it names, and a checkpoint that
 	// certifies no tree or only part of one.
 	CodeNotFullTree = "not_full_tree"
+	// CodeSuitesMissing is the code of a rule that demands the checkpoint
+	// certify every suite it names, and a checkpoint that certifies only some
+	// of them: a unit suite alone does not carry a land whose rule asks for
+	// the integration suite too.
+	CodeSuitesMissing = "suites_missing"
 )
 
 // Input is the state one decision is made with.
@@ -98,6 +104,11 @@ type Input struct {
 	// CheckpointTree is the tree of the commit the checkpoint names. The
 	// checkpoint certifies the whole commit when CertifiedTree is this tree.
 	CheckpointTree string
+	// CheckpointSuites are the suites the verification checkpoint certifies,
+	// by name: each one is the commit the suite ran on. A suite that ran on
+	// another commit says nothing about the one the checkpoint names, so a
+	// rule that requires a suite wants the commit to be the checkpoint's.
+	CheckpointSuites map[string]string
 	// Direct tells whether the update is a direct update of the branch, such
 	// as a push, rather than a land.
 	Direct bool
@@ -153,7 +164,10 @@ func Rule(rules []config.GraftBranchRule, branch string) *config.GraftBranchRule
 // checkpoint covers it. A rule that asks for the whole tree
 // (RequireFullTree) refuses a checkpoint that does not certify the tree of
 // the commit it names: a suite that ran on part of the tree is no evidence
-// about the rest.
+// about the rest. A rule that names the suites a change needs
+// (RequireSuites) refuses a checkpoint that certifies only some of them: a
+// unit suite alone does not carry a land whose rule asks for the integration
+// suite too.
 func Decide(in Input) Decision {
 	rule := Rule(in.Rules, in.Branch)
 	if rule == nil {
@@ -241,7 +255,52 @@ func Decide(in Input) Decision {
 		}
 	}
 
+	if len(rule.RequireSuites) > 0 {
+		// The rule of a project whose change needs more than one suite: the
+		// publisher says which suites ran on the tree it certifies, and a
+		// checkpoint that certifies only some of them does not carry the land.
+		// A suite that ran on another commit says nothing about the one the
+		// checkpoint names, so it counts for nothing here.
+		if missing := missingSuites(rule, in); len(missing) > 0 {
+			return deny(rule, "", CodeSuitesMissing,
+				"the checkpoint of the branch %q certifies not every suite its rule requires: %s (the checkpoint certifies %s)",
+				in.Branch, strings.Join(missing, ", "), describeSuites(in))
+		}
+	}
+
 	return allow(rule, "", "")
+}
+
+// missingSuites returns the suites the rule of the branch requires and the
+// checkpoint of the branch does not certify: the ones the checkpoint names no
+// commit for, and the ones it certifies on another commit.
+func missingSuites(rule *config.GraftBranchRule, in Input) []string {
+	var missing []string
+	for _, suite := range rule.RequireSuites {
+		if in.CheckpointSuites[suite] != in.Checkpoint {
+			missing = append(missing, suite)
+		}
+	}
+	return missing
+}
+
+// describeSuites describes the suites the checkpoint certifies, for the
+// reason of a refusal: the suites it certifies, with the commit each one ran
+// on.
+func describeSuites(in Input) string {
+	if len(in.CheckpointSuites) == 0 {
+		return "no suite at all"
+	}
+	names := make([]string, 0, len(in.CheckpointSuites))
+	for name := range in.CheckpointSuites {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	described := make([]string, 0, len(names))
+	for _, name := range names {
+		described = append(described, fmt.Sprintf("%s on %s", name, in.CheckpointSuites[name]))
+	}
+	return strings.Join(described, ", ")
 }
 
 // fullTree tells whether the checkpoint certifies the whole tree of the

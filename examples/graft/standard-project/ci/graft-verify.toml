@@ -17,6 +17,10 @@ state_file = "@WORK@/verify-post.cursor"
 # The same command the merge queue runs, on the same tree, after the fact.
 command = ["make", "test"]
 timeout = "10m"
+# The suites that command runs. The verifier publishes them next to the
+# checkpoint, so that the rule of the branch (require_suites) is satisfied by
+# the tip as well as by the result of a land.
+suites = ["unit", "integration"]
 
 [revert]
 enabled = false

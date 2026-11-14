@@ -23,6 +23,10 @@ const Prefix = "refs/graft/green/"
 // TreePrefix is the namespace of the trees the checkpoints certify.
 const TreePrefix = "refs/graft/green-tree/"
 
+// SuitesPrefix is the namespace of the suites a checkpoint certifies: one
+// reference per suite and branch, each naming the commit the suite ran on.
+const SuitesPrefix = "refs/graft/green-suite/"
+
 // Name returns the name of the checkpoint reference of the branch.
 func Name(branch string) string {
 	return Prefix + strings.TrimPrefix(branch, "refs/heads/")
@@ -38,4 +42,32 @@ func TreeName(branch string) string {
 // moves a checkpoint under another name moves the tree of that name with it.
 func TreeNameFor(checkpointRef string) string {
 	return strings.Replace(checkpointRef, Prefix, TreePrefix, 1)
+}
+
+// ValidSuiteName reports whether name is usable as a suite name: a reference
+// path component, without a slash, that names a suite of a project. The suite
+// is the first component of the reference that holds it, so a name with a
+// slash in it would name a branch instead.
+func ValidSuiteName(name string) bool {
+	if name == "" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".lock") {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[\\/", r) {
+			return false
+		}
+	}
+	return true
+}
+
+// SuitesName returns the name of the reference that holds the commit the
+// suite certified on the branch.
+//
+// The suite is the first component of the name and the branch is the rest, so
+// a branch whose name holds a slash does not make two suites one: the suite
+// "unit" on the branch "feature/x" is refs/graft/green-suite/unit/feature/x,
+// and the suite "unit" on the branch "feature" is
+// refs/graft/green-suite/unit/feature.
+func SuitesName(suite, branch string) string {
+	return SuitesPrefix + suite + "/" + strings.TrimPrefix(branch, "refs/heads/")
 }

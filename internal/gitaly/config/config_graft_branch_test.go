@@ -53,6 +53,25 @@ func TestGraft_validateBranches(t *testing.T) {
 			expectErr: "require_approvals must not be negative",
 		},
 		{
+			desc:     "a rule that requires suites is valid",
+			branches: []GraftBranchRule{{Name: "main", RequireSuites: []string{"unit", "integration"}}},
+		},
+		{
+			desc:      "a suite with a slash is refused",
+			branches:  []GraftBranchRule{{Name: "main", RequireSuites: []string{"unit/one"}}},
+			expectErr: "is not a valid suite name",
+		},
+		{
+			desc:      "an empty suite is refused",
+			branches:  []GraftBranchRule{{Name: "main", RequireSuites: []string{""}}},
+			expectErr: "is not a valid suite name",
+		},
+		{
+			desc:      "the same suite twice is refused",
+			branches:  []GraftBranchRule{{Name: "main", RequireSuites: []string{"unit", "unit"}}},
+			expectErr: "is required twice",
+		},
+		{
 			desc:      "two rules of one branch are refused",
 			branches:  []GraftBranchRule{{Name: "main"}, {Name: "main", AllowDirectUpdate: true}},
 			expectErr: "has more than one rule",

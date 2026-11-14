@@ -32,7 +32,7 @@ func NewBranchGateSource(core *corestore.Core, factory localrepo.Factory) Branch
 }
 
 // BranchState implements BranchGateSource.
-func (s *branchGateSource) BranchState(ctx context.Context, repo *gitalypb.Repository, branch string) (BranchGateState, error) {
+func (s *branchGateSource) BranchState(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (BranchGateState, error) {
 	reviews, err := s.reviews(ctx, repo, branch)
 	if err != nil {
 		return BranchGateState{}, err
@@ -44,6 +44,11 @@ func (s *branchGateSource) BranchState(ctx context.Context, repo *gitalypb.Repos
 	}
 
 	certified, err := s.certifiedTree(ctx, repo, branch)
+	if err != nil {
+		return BranchGateState{}, err
+	}
+
+	certifiedSuites, err := s.suites(ctx, repo, branch, suites)
 	if err != nil {
 		return BranchGateState{}, err
 	}
@@ -65,7 +70,33 @@ func (s *branchGateSource) BranchState(ctx context.Context, repo *gitalypb.Repos
 		Checkpoint:     checkpoint,
 		CertifiedTree:  certified,
 		CheckpointTree: checkpointTree,
+		Suites:         certifiedSuites,
 	}, nil
+}
+
+// suites returns the commit each of the suites certified on the branch: the
+// reference of a suite names the commit the suite ran on. A suite the branch
+// has no reference for is absent from the map, and a suite that ran on
+// another commit than the checkpoint names says nothing about it.
+func (s *branchGateSource) suites(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (map[string]string, error) {
+	if len(suites) == 0 {
+		return nil, nil
+	}
+
+	local := s.factory.Build(repo)
+	certified := make(map[string]string, len(suites))
+	for _, suite := range suites {
+		name := greenref.SuitesName(suite, branch)
+		oid, err := local.ResolveReferenceExactly(ctx, git.ReferenceName(name))
+		if err != nil {
+			if errors.Is(err, git.ErrReferenceNotFound) {
+				continue
+			}
+			return nil, fmt.Errorf("reading the commit the suite %q certified on the branch %q: %w", suite, branch, err)
+		}
+		certified[suite] = oid.String()
+	}
+	return certified, nil
 }
 
 // reviews returns the open reviews of the branch. In authoritative mode they

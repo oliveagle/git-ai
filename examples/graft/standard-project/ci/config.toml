@@ -71,3 +71,8 @@ require_verified_result = true
 # suite that ran on part of the tree says nothing about the rest, so the
 # server refuses the land of a change whose tree was not tested whole.
 require_full_tree = true
+# And it has to certify both suites of the project: the unit suite alone is
+# a pre-check of the agent, not the evidence the branch takes. The queue
+# names the suites that ran (graft green set --suite), and the server refuses
+# a land whose checkpoint certifies only some of them.
+require_suites = ["unit", "integration"]

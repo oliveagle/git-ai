@@ -317,9 +317,14 @@ Git hooks use private.
   verification checkpoint of the branch covers the update: the tip it builds
   on, or the commit the land produces when the caller names it. With
   `require_verified_result` it asks only the second, so a land cannot stand on a
-  tip that was green before it. What the checkpoint means is what the verifier
-  recorded (graft-verify, or a CI with `graft green set`); a server without a
-  verifier has no checkpoint, and every land of such a branch is refused.
+  tip that was green before it. With `require_suites` it asks which of the
+  suites the rule names the checkpoint certifies: the publisher says what ran
+  (`graft green set --suite`), and a checkpoint that certifies only some of
+  them is refused with `suites_missing`. What the checkpoint means is what the
+  verifier recorded (graft-verify, or a CI with `graft green set`); a server
+  without a verifier has no checkpoint, and every land of such a branch is
+  refused. The gate believes the publisher: a suite that says it ran and did
+  not is not caught by the server.
 - A dry-run land names the commit a land would produce, and the checkpoint may
   cover that commit. The name holds only while the request and the tip hold: a
   land whose tip moved produces another commit, which the checkpoint does not

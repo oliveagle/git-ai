@@ -215,7 +215,8 @@ make test-unit                          # 1. cheap, local
 graft land --dry-run --timestamp "$T"   # 2. the commit the land would produce
 graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
 (cd DIR && make test)                   # 4. both suites, on that tree
-(cd DIR && graft green set --branch main --commit "$M")   # 5. the checkpoint
+(cd DIR && graft green set --branch main --commit "$M" \
+      --suite unit --suite integration)                    # 5. the checkpoint
 graft gate check --branch main --result "$M"  #    the status check
 graft land --timestamp "$T" --expect "$M"   # 6. land exactly the commit that was tested
 ```
@@ -224,6 +225,11 @@ The checkpoint is published in the workspace the suites ran on, because it
 certifies the tree that was tested: a sparse or changed workspace certifies a
 tree the suites never saw, and a branch that asks for the whole tree
 (`require_full_tree`) refuses the land.
+
+`--suite` says which suites ran on that tree, and a branch whose rule names
+the suites a change needs (`require_suites = ["unit", "integration"]`) refuses
+a land whose checkpoint certifies only some of them: the unit suite alone
+never carries the land.
 
 `--expect` holds the land to the commit the suites ran on: the server refuses
 to write another one, so a branch that moved while the suites ran takes
