@@ -5,13 +5,14 @@ import (
 	"net"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryhandler"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proxy"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/interop/grpc_testing"
+
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryhandler"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proxy"
 )
 
 func newListener(tb testing.TB) net.Listener {

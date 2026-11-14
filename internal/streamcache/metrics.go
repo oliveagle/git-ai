@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
 var cacheIndexSizeGauge = promauto.NewGaugeVec(

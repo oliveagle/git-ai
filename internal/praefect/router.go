@@ -3,8 +3,9 @@ package praefect
 import (
 	"context"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 const (

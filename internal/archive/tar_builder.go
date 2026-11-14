@@ -10,8 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode/permission"
 	"golang.org/x/sys/unix"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode/permission"
 )
 
 // TarFileMode is the minimum file permission given to files in tar archives in

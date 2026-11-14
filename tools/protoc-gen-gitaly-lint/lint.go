@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/protoutil"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
+
+	"github.com/feder-cr/git-ai/internal/protoutil"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // ensureMethodOpType will ensure that method includes the op_type option.

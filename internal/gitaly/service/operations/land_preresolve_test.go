@@ -60,8 +60,9 @@ func writeMoves(t *testing.T, dir string, fx resolveFixture, moves ...git.Object
 func answerOf(paths ...string) resolver.Response {
 	resp := resolver.Response{Version: resolver.ProtocolVersion, Resolver: "graft-resolve/fake"}
 	for _, p := range paths {
-		resp.Files = append(resp.Files, resolver.ResponseFile{Origin: resolver.OriginRule,
-			Path: p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
+		resp.Files = append(resp.Files, resolver.ResponseFile{
+			Origin: resolver.OriginRule,
+			Path:   p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
 		})
 	}
 	return resp

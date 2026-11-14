@@ -10,6 +10,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/feder-cr/git-ai/client"
 	"github.com/feder-cr/git-ai/internal/cache"
 	"github.com/feder-cr/git-ai/internal/git"
@@ -28,12 +35,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/internal/x509"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/miekg/dns"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestConnectivity(t *testing.T) {

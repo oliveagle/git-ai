@@ -19,12 +19,13 @@ import (
 	"testing/iotest"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/cgroups"
-	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/cgroups"
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestNew_environment(t *testing.T) {

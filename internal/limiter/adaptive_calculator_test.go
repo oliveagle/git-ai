@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/helper"
-	"github.com/feder-cr/git-ai/internal/loadmonitor"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/helper"
+	"github.com/feder-cr/git-ai/internal/loadmonitor"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestAdaptiveCalculator_alreadyStarted(t *testing.T) {

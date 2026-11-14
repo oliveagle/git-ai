@@ -5,8 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // MockManager mocks the Manager interface for Git hooks (e.g. pre-receive, post-receive)

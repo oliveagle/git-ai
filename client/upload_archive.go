@@ -4,9 +4,10 @@ import (
 	"context"
 	"io"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/gitalyclient"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 // UploadArchive proxies an SSH git-upload-archive (git archive --remote) session to Gitaly

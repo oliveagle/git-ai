@@ -6,10 +6,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestRun(t *testing.T) {

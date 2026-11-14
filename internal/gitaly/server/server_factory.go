@@ -3,6 +3,8 @@ package server
 import (
 	"sync"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/cache"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
@@ -10,7 +12,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/grpc/middleware/limithandler"
 	mvccmiddleware "github.com/feder-cr/git-ai/internal/grpc/middleware/mvcc"
 	"github.com/feder-cr/git-ai/internal/log"
-	"google.golang.org/grpc"
 )
 
 // GitalyServerFactory is a factory of gitaly grpc servers

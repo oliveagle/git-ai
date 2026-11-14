@@ -11,10 +11,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	gitaly_metadata "github.com/feder-cr/git-ai/internal/grpc/metadata"
-	"google.golang.org/grpc/metadata"
 )
 
 const (

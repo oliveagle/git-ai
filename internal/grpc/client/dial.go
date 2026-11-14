@@ -7,10 +7,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	gitalyx509 "github.com/feder-cr/git-ai/internal/x509"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	grpccorrelation "gitlab.com/gitlab-org/labkit/correlation/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -21,6 +17,11 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	gitalyx509 "github.com/feder-cr/git-ai/internal/x509"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 type connectionType int

@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 // TestUpdater_parseStderr checks that lock errors are classified per reference backend. The MVCC

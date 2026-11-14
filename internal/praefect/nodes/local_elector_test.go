@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/promtest"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 func setupElector(t *testing.T) (*localElector, []*nodeStatus, *grpc.ClientConn) {

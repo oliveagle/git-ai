@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/git/trace2"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
+
+	"github.com/feder-cr/git-ai/internal/git/trace2"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestLogExporter_Handle(t *testing.T) {

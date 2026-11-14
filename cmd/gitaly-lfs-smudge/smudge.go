@@ -9,12 +9,13 @@ import (
 	"io"
 	"net/url"
 
+	"github.com/git-lfs/git-lfs/v3/lfs"
+
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/feder-cr/git-ai/internal/git/smudge"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
 	"github.com/feder-cr/git-ai/internal/gitlab"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/git-lfs/git-lfs/v3/lfs"
 )
 
 func filter(ctx context.Context, cfg smudge.Config, to io.Writer, from io.Reader, logger log.Logger) (returnedErr error) {

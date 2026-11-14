@@ -3,11 +3,12 @@ package praefect
 import (
 	"fmt"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 // WalkReposHandler implements an interceptor for the WalkRepos RPC, invoked when calling

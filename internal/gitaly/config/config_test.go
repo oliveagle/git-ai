@@ -12,6 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
@@ -20,9 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/helper/duration"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/pelletier/go-toml/v2"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBinaryPath(t *testing.T) {

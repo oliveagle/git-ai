@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/pelletier/go-toml/v2"
-	"github.com/stretchr/testify/require"
 )
 
 type stubFlag struct{}

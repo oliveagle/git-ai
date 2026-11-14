@@ -2,9 +2,14 @@ package changeset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
@@ -13,9 +18,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const zeroOID = "0000000000000000000000000000000000000000"
@@ -36,7 +38,7 @@ func listAll(tb testing.TB, ctx context.Context, client gitalypb.ChangesetServic
 	)
 	for {
 		resp, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return changesets, messages, nil
 		}
 		if err != nil {

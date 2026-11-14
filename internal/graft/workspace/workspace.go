@@ -1302,8 +1302,8 @@ func (w *Workspace) desiredTree(ctx context.Context, base string, sparse []strin
 }
 
 func normalizeMode(mode uint32) uint32 {
-	switch {
-	case mode == modeExec:
+	switch mode {
+	case modeExec:
 		return modeExec
 	default:
 		return modeRegular

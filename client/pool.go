@@ -3,8 +3,9 @@ package client
 import (
 	"context"
 
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/grpc/client"
 )
 
 // PoolOption is an option that can be passed to NewPoolWithOptions.

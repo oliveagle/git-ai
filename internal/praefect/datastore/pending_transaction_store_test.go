@@ -3,9 +3,10 @@ package datastore
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPostgresPendingTransactionStore(t *testing.T) {

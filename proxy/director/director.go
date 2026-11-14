@@ -11,13 +11,14 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/feder-cr/git-ai/proxy"
-	"github.com/feder-cr/git-ai/proxy/grant"
-	"github.com/feder-cr/git-ai/proxy/policy"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/proxy"
+	"github.com/feder-cr/git-ai/proxy/grant"
+	"github.com/feder-cr/git-ai/proxy/policy"
 )
 
 // Dialer connects to the Gitaly coordinates authorized by a grant.

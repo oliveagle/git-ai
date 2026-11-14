@@ -15,11 +15,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/log"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"golang.org/x/sync/errgroup"
 )
 
 // closeWrapper wraps the snapshot to run custom logic on Close.

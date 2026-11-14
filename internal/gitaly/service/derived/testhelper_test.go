@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -19,8 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 func TestMain(m *testing.M) {
@@ -174,7 +176,7 @@ func readBlame(tb testing.TB, ctx context.Context, client gitalypb.DerivedDataSe
 	var responses []*gitalypb.BlameResponse
 	for {
 		response, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return responses
 		}
 		require.NoError(tb, err)
@@ -209,7 +211,7 @@ func readPathHistory(tb testing.TB, ctx context.Context, client gitalypb.Derived
 	var batches [][]string
 	for {
 		response, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return batches
 		}
 		require.NoError(tb, err)

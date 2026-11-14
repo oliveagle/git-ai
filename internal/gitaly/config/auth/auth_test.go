@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 )
 
 func TestConfig_Validate(t *testing.T) {

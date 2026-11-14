@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/mvcc"
@@ -23,7 +25,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/transaction/txinfo"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (

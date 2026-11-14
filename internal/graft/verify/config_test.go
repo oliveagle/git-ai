@@ -258,8 +258,10 @@ func TestDurationMarshalRoundTrip(t *testing.T) {
 
 func TestValidRefName(t *testing.T) {
 	valid := []string{"main", "a/b", "v1.2.3", "x-y_z", "release/1.0"}
-	invalid := []string{"", "/a", "a/", "a//b", "a..b", "a.", "a b", "a~b", "a^b", "a:b",
-		"a?b", "a*b", "a[b", "a\\b", "a@{b", "a.lock", "a/.hidden", "a/b.lock", "a\x01b", "./a", "a/./b"}
+	invalid := []string{
+		"", "/a", "a/", "a//b", "a..b", "a.", "a b", "a~b", "a^b", "a:b",
+		"a?b", "a*b", "a[b", "a\\b", "a@{b", "a.lock", "a/.hidden", "a/b.lock", "a\x01b", "./a", "a/./b",
+	}
 
 	for _, name := range valid {
 		require.True(t, validRefName(name), "%q should be valid", name)

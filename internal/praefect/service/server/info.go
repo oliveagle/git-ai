@@ -4,10 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/feder-cr/git-ai/internal/grpc/metadata"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/grpc/metadata"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // filesystemIDNamespace is the UUID that is used as the namespace component when generating the UUIDv5 filesystem

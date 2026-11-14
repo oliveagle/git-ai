@@ -7,8 +7,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 func TestKey(t *testing.T) {

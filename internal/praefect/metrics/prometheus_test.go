@@ -3,10 +3,11 @@ package metrics
 import (
 	"testing"
 
-	gitalycfgprom "github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
-	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	gitalycfgprom "github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
+	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 )
 
 func TestRegisterReplicationDelay(t *testing.T) {

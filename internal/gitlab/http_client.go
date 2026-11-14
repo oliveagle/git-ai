@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	gitalycfgprom "github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
 	"github.com/feder-cr/git-ai/internal/gitlab/client"
@@ -19,7 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/prometheus/metrics"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var glIDRegex = regexp.MustCompile(`\A[0-9]+\z`)

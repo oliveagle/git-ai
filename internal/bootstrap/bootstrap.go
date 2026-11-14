@@ -10,11 +10,12 @@ import (
 	"syscall"
 
 	"github.com/cloudflare/tableflip"
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sys/unix"
+
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/helper/env"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/sys/unix"
 )
 
 const (

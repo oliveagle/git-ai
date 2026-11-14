@@ -5,6 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/sirupsen/logrus"
+	grpccorrelation "gitlab.com/gitlab-org/labkit/correlation/grpc"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	expcredentials "google.golang.org/grpc/experimental/credentials"
+	"google.golang.org/grpc/keepalive"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
 	"github.com/feder-cr/git-ai/internal/graft/requestdefaults"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
@@ -25,18 +38,6 @@ import (
 	gitalylog "github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/tracing"
-	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
-	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	"github.com/sirupsen/logrus"
-	grpccorrelation "gitlab.com/gitlab-org/labkit/correlation/grpc"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	expcredentials "google.golang.org/grpc/experimental/credentials"
-	"google.golang.org/grpc/keepalive"
 )
 
 type serverConfig struct {

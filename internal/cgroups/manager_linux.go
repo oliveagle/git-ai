@@ -18,9 +18,10 @@ import (
 	"time"
 
 	cgrps "github.com/containerd/cgroups/v3"
+	"github.com/opencontainers/runtime-spec/specs-go"
+
 	cgroupscfg "github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // cfs_period_us hardcoded to be 100ms.

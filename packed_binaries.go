@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 )
 
 // buildDir is the directory path where our build target places the built binaries.

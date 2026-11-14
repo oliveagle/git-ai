@@ -3,8 +3,9 @@ package git
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 func TestReferenceBackendProtoConversion(t *testing.T) {

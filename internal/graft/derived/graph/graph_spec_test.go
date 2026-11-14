@@ -11,12 +11,15 @@ package graph
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os/exec"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
@@ -27,7 +30,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 // specRepo is a repository plus the recorded DAG used as ground truth.
@@ -115,7 +117,8 @@ func gitRun(t *testing.T, cfg config.Cfg, repoPath string, args ...string) (stri
 	cmd := gittest.NewCommand(t, cfg, append([]string{"-C", repoPath}, args...)...)
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
 			return strings.TrimSpace(string(out)), exitErr.ExitCode()
 		}
 		require.NoError(t, err)

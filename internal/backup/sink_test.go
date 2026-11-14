@@ -15,11 +15,11 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/stretchr/testify/require"
+	_ "gocloud.dev/blob/memblob"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
-
-	_ "gocloud.dev/blob/memblob"
 )
 
 func TestResolveSink(t *testing.T) {

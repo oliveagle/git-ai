@@ -11,12 +11,13 @@ import (
 	"slices"
 	"time"
 
+	cli "github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/backup"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	cli "github.com/urfave/cli/v3"
 )
 
 type serverRepository struct {

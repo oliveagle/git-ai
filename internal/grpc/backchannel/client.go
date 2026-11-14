@@ -6,9 +6,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	hashicorpyamux "github.com/hashicorp/yamux"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // Server is the interface of a backchannel server.

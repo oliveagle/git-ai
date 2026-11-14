@@ -262,7 +262,9 @@ const (
 )
 
 func (e landTreeEntry) isGitlink() bool { return e.mode&landTreeModeTypeMask == landTreeModeGitlink }
+
 func (e landTreeEntry) isSymlink() bool { return e.mode&landTreeModeTypeMask == landTreeModeSymlink }
+
 func (e landTreeEntry) isRegular() bool { return e.mode&landTreeModeTypeMask == landTreeModeRegular }
 
 // landMaxPathBytes bounds the memory a checkout keeps for the paths it has seen, counted as the
@@ -376,7 +378,7 @@ func landCheckoutTreeThen(ctx context.Context, repo *localrepo.Repo, tree git.Ob
 	if writeErr == nil && feedErr == nil {
 		// Nothing else may follow the last blob.
 		if _, err := batch.ReadByte(); !errors.Is(err, io.EOF) {
-			writeErr = fmt.Errorf("git-cat-file(1) answered more than the blobs asked for: %v", err)
+			writeErr = fmt.Errorf("git-cat-file(1) answered more than the blobs asked for: %w", err)
 		}
 	}
 	lsWait, catWait := ls.Wait(), cat.Wait()

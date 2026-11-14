@@ -17,11 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/grpc/metadata"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proxy"
 	"github.com/getsentry/sentry-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -30,6 +25,12 @@ import (
 	"google.golang.org/grpc/interop/grpc_testing"
 	grpc_metadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/grpc/metadata"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proxy"
 )
 
 const (

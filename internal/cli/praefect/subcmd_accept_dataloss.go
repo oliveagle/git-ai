@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/urfave/cli/v3"
+
 	glcli "github.com/feder-cr/git-ai/internal/cli"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/urfave/cli/v3"
 )
 
 func newAcceptDatalossCommand() *cli.Command {

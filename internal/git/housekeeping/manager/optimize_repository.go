@@ -8,6 +8,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/sirupsen/logrus"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/grpc/codes"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
@@ -21,11 +27,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/sirupsen/logrus"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/grpc/codes"
 )
 
 // OptimizeRepositoryConfig is the configuration used by OptimizeRepository that is computed by

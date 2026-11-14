@@ -14,11 +14,12 @@ import (
 	"io"
 	"math"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 // seedHeader is the first line of a seed file. The whole file is gzip-compressed,

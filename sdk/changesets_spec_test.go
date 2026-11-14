@@ -18,8 +18,8 @@ func TestSpecSDKChangesetExposesMembers(t *testing.T) {
 		{OriginalCommitId: "aa", CommitId: "bb", Actor: "agent-1", Rewritten: true},
 	}
 
-	if len(c.Members) != 1 || c.Members[0].GetActor() != "agent-1" {
-		t.Fatalf("SDK Changeset did not keep members: %+v", c.Members)
+	if len(c.GetMembers()) != 1 || c.GetMembers()[0].GetActor() != "agent-1" {
+		t.Fatalf("SDK Changeset did not keep members: %+v", c.GetMembers())
 	}
 }
 

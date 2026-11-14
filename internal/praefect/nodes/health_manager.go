@@ -7,11 +7,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // HealthClients contains HealthClients for every physical storage by virtual storage.

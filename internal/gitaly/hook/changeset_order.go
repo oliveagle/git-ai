@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/internal/graft/changelog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/graft/changelog"
 )
 
 // changesetTicketTimeout bounds how long recording waits for a reference transaction that was

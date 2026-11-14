@@ -1,6 +1,7 @@
 package localrepo
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -93,7 +94,8 @@ func FuzzParseMergeTreeError(f *testing.F) {
 			t.Fatalf("non-deterministic error: %v != %v", err1, err2)
 		}
 
-		if conflictErr, ok := err1.(*MergeTreeConflictError); ok {
+		conflictErr := &MergeTreeConflictError{}
+		if errors.As(err1, &conflictErr) {
 			checkAcceptedMergeTreeError(t, output, cfg, string(oid1), conflictErr)
 		}
 	})

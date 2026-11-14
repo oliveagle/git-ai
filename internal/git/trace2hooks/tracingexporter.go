@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/git/trace2"
-	"github.com/feder-cr/git-ai/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
+
+	"github.com/feder-cr/git-ai/internal/git/trace2"
+	"github.com/feder-cr/git-ai/internal/tracing"
 )
 
 // NewTracingExporter initializes TracingExporter, which is a hook to convert Trace2 events to

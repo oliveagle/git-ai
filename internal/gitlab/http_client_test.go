@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	grpcmetadata "google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
@@ -16,9 +20,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/promtest"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	grpcmetadata "google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 )
 
 type postReceiveRequest struct {

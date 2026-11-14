@@ -3,8 +3,9 @@ package text_test
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/helper/text"
 )
 
 func TestChompBytes(t *testing.T) {

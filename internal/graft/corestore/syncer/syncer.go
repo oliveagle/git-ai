@@ -1893,7 +1893,7 @@ func (s *Syncer) runSeed(ctx context.Context, repo *gitalypb.Repository, r cores
 	}
 	if checkErr := s.checkSeedDeadline(context.WithoutCancel(ctx), r, cp); checkErr != nil {
 		// The cause is reported as text: the code is that of checkErr.
-		return fmt.Errorf("%w (the seed failed with: %v)", checkErr, err)
+		return fmt.Errorf("%w (the seed failed with: %w)", checkErr, err)
 	}
 	return err
 }

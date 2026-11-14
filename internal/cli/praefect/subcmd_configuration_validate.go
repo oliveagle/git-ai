@@ -4,10 +4,11 @@ import (
 	"context"
 	"io"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/cmd"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/config"
-	"github.com/urfave/cli/v3"
 )
 
 const validationErrorCode = 2

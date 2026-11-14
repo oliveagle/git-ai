@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
-	"github.com/stretchr/testify/require"
 )
 
 // useMemoryBackend routes every command to mem for the duration of the test.

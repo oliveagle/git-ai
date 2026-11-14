@@ -7,11 +7,12 @@ import (
 	"io"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/service"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/assert"
-	"github.com/urfave/cli/v3"
 )
 
 func TestCheckSubcommand(t *testing.T) {

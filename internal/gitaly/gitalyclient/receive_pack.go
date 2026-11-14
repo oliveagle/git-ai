@@ -4,10 +4,11 @@ import (
 	"context"
 	"io"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/stream"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/grpc"
 )
 
 // ReceivePack proxies an SSH git-receive-pack (git push) session to Gitaly

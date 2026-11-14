@@ -3,12 +3,13 @@ package loghandler
 import (
 	"context"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // FieldsProducer returns fields that need to be added into the logging context. error argument is

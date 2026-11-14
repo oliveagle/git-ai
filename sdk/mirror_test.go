@@ -1,6 +1,7 @@
 package sdk_test
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -22,7 +23,7 @@ type fakeRemote struct {
 func (f *fakeRemote) UpdateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMirrorServer) error {
 	for {
 		req, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

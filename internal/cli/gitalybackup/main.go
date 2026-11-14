@@ -3,8 +3,9 @@ package gitalybackup
 import (
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/version"
 	"github.com/urfave/cli/v3"
+
+	"github.com/feder-cr/git-ai/internal/version"
 )
 
 func init() {

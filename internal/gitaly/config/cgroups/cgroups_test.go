@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 )
 
 func TestFallbackToOldVersion(t *testing.T) {

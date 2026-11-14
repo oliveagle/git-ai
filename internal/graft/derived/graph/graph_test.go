@@ -11,9 +11,10 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/graft/derived"
-	"github.com/stretchr/testify/require"
 )
 
 // fakeSource is an in-memory history. It counts the reads of parents, and it can fail

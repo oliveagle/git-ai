@@ -7,8 +7,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 // modelWalker answers from a history held in memory. Its List adds to the exact range a random part

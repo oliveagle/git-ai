@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"gocloud.dev/blob"
 	"gocloud.dev/blob/azureblob"
 	"gocloud.dev/blob/fileblob"
@@ -18,6 +17,8 @@ import (
 	"gocloud.dev/blob/memblob"
 	"gocloud.dev/blob/s3blob"
 	"gocloud.dev/gcerrors"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 )
 
 // ResolveSink returns a sink implementation based on the provided uri.

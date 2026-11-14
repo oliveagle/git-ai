@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/grpc/metadata"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
@@ -13,9 +17,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/middleware"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/proto"
 )
 
 // MetadataKeySnapshotRelativePath is the header key that contains the snapshot's relative path. Rails relays

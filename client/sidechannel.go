@@ -4,13 +4,14 @@ import (
 	"context"
 	"io"
 
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // SidechannelRegistry associates sidechannel callbacks with outbound

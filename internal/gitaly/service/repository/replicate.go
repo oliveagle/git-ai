@@ -13,6 +13,9 @@ import (
 	"strings"
 	"syscall"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -28,8 +31,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/tempdir"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // ErrInvalidSourceRepository is returned when attempting to replicate from an invalid source repository.

@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/gitalyclient"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (

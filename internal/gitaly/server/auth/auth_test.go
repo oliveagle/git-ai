@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestIsAuthenticated(t *testing.T) {

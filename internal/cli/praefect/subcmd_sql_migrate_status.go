@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v3"
+
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 )
 
 const sqlMigrateStatusCmdName = "sql-migrate-status"

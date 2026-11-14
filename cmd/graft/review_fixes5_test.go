@@ -7,8 +7,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/graft/workspace"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/graft/workspace"
 )
 
 // failedWatchBackend returns a watch in the state a backend leaves it in when it

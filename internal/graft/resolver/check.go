@@ -322,7 +322,7 @@ func (c *Client) check(ctx context.Context, req Request) (*CheckResponse, error)
 	defer cancel()
 
 	// The answer is a verdict per file, without content.
-	limit := int64(maxEnvelopeBytes) + int64(len(req.Resolution))*(maxCheckVerdictBytes)
+	limit := int64(maxEnvelopeBytes) + int64(len(req.Resolution))*maxCheckVerdictBytes
 
 	var raw []byte
 	if c.url != "" {

@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 )
 
 func TestSendPack_Parse(t *testing.T) {

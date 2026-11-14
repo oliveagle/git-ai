@@ -1,8 +1,9 @@
 package commit
 
 import (
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 type commitsSender struct {

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	hashicorpyamux "github.com/hashicorp/yamux"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 func hashicorpMuxConfig(logger log.Logger, cfg Configuration) *hashicorpyamux.Config {

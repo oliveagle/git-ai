@@ -8,6 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/service/repository"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr"
@@ -17,10 +22,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	prommetrics "github.com/feder-cr/git-ai/internal/prometheus/metrics"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 // Replicator performs the actual replication logic between two nodes

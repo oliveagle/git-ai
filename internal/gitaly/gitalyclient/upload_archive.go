@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"io"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/stream"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/grpc"
 )
 
 // UploadArchive proxies an SSH git-upload-archive (git archive --remote) session to Gitaly

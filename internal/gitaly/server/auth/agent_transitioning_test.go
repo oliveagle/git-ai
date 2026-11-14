@@ -3,9 +3,10 @@ package auth
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/stretchr/testify/require"
 )
 
 // TestInterceptors_TransitioningWithAgentsFailsAtStartup checks that transitioning

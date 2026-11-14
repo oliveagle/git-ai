@@ -3,6 +3,7 @@ package cachetier
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -11,12 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // noReadLimit lets a test read any object from the disk store.
@@ -227,7 +229,7 @@ func readTree(stream grpc.ServerStreamingClient[gitalypb.GetTreeResponse]) ([]*g
 	var messages []*gitalypb.GetTreeResponse
 	for {
 		msg, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return entries, messages, nil
 		}
 		if err != nil {

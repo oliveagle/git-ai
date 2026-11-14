@@ -400,7 +400,7 @@ func TestRefNameConflictProbeUsesThePrimaryKey(t *testing.T) {
 					values[i] = new(any)
 				}
 				require.NoError(t, planRows.Scan(values...))
-				fmt.Fprintln(&plan, *(values[len(values)-1].(*any)))
+				fmt.Fprintln(&plan, *values[len(values)-1].(*any))
 			}
 			require.NoError(t, planRows.Err())
 			return plan.String()

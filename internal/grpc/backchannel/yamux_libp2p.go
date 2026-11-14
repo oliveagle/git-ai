@@ -4,10 +4,11 @@ import (
 	"context"
 	"net"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus/ctxlogrus"
 	libp2pyamux "github.com/libp2p/go-yamux/v5"
 	"github.com/sirupsen/logrus"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 func libp2pMuxConfig(logger log.Logger, cfg Configuration) *libp2pyamux.Config {

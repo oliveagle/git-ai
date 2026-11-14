@@ -3,11 +3,12 @@ package housekeeping
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping/config"
 	"github.com/feder-cr/git-ai/internal/git/stats"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 // mvccInfo returns a RepositoryInfo whose reference backend is MVCC.

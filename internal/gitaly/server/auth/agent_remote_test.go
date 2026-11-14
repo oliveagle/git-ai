@@ -5,15 +5,16 @@ import (
 	"testing"
 	"time"
 
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // TestInterceptors_AgentCannotUpdateRemoteMirror checks that an agent may not

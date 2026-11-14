@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/relational/migrations"
+	_ "github.com/mattn/go-sqlite3" // SQL driver registration
 	migrate "github.com/rubenv/sql-migrate"
 
-	_ "github.com/mattn/go-sqlite3" // SQL driver registration
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/relational/migrations"
 )
 
 // SQLitePoolStore is a SQLite-backed implementation of PoolStore.

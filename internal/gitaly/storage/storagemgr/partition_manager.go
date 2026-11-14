@@ -14,6 +14,9 @@ import (
 	"sync"
 
 	"github.com/dgraph-io/badger/v4"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/keyvalue"
@@ -22,8 +25,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/feder-cr/git-ai/internal/structerr"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ErrPartitionManagerClosed is returned when the PartitionManager stops processing transactions.

@@ -3,9 +3,10 @@ package testhelper_test
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestSetCtxGrpcMethod(t *testing.T) {

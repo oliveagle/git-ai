@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/backup"
 	"github.com/feder-cr/git-ai/internal/bundleuri"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -13,7 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type server struct {

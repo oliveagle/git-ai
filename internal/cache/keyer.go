@@ -13,6 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
@@ -20,9 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/feder-cr/git-ai/internal/version"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/google/uuid"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 var (

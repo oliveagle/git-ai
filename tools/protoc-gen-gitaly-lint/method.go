@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/protoutil"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
+
+	"github.com/feder-cr/git-ai/internal/protoutil"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 type methodLinter struct {

@@ -49,7 +49,7 @@ func (s *server) GetStorageState(ctx context.Context, req *gitalypb.GetStorageSt
 	switch {
 	case err != nil:
 		s.deps.GetLogger().WithError(err).Warn("storage core: reading the local watermark")
-	case ok && w.RepoID == resp.RepositoryId:
+	case ok && w.RepoID == resp.GetRepositoryId():
 		resp.AppliedSequence = w.Seq
 	}
 

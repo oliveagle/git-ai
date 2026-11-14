@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // GetTag looks up a commit by tagID using an existing catfile.Batch instance. Note: we pass

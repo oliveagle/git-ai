@@ -11,6 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"golang.org/x/time/rate"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
@@ -24,9 +28,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/tracing"
-	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	"golang.org/x/time/rate"
 )
 
 func TestGitCommandProxy(t *testing.T) {

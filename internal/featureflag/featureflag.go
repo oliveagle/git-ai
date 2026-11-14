@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/helper/env"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/helper/env"
 )
 
 var (

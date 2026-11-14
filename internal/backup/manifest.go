@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 )
 
 // ManifestLoader reads and writes manifest files from a Sink. Manifest files

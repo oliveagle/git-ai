@@ -17,9 +17,10 @@ import (
 	"fmt"
 	"sort"
 
+	lru "github.com/hashicorp/golang-lru/v2"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/graft/derived"
-	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 const (

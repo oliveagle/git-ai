@@ -5,6 +5,11 @@ import (
 	"slices"
 	"sync"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git/housekeeping"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping/config"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping/manager"
@@ -16,10 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/middleware"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // OperationThreshold defines when a specific operation should be triggered.

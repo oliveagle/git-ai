@@ -76,7 +76,7 @@ func (r *OperationReverter) Revert(ctx context.Context, req RevertRequest) (stri
 		// When the branch no longer points to the expected tip, that is the
 		// cause, and the caller retries onto the new tip.
 		if r.branchMoved(ctx, req) {
-			return "", fmt.Errorf("%w: %v", ErrBranchMoved, err)
+			return "", fmt.Errorf("%w: %w", ErrBranchMoved, err)
 		}
 		return "", fmt.Errorf("user revert: %w", err)
 	}

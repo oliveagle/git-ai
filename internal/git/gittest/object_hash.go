@@ -4,8 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 // DefaultObjectHash is the default object hash used for running tests.

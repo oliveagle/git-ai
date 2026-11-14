@@ -3,9 +3,10 @@ package praefect
 import (
 	"context"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes"
-	"github.com/urfave/cli/v3"
 )
 
 func newDialNodesCommand() *cli.Command {

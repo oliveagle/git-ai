@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/graft/corestore"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // prepareReview returns a copy of r stored under id, without the computed

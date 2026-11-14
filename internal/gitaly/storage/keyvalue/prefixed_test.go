@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestPrefixedTransactioner(t *testing.T) {

@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // TestInterceptors_AgentMethodAuthorization checks that callers authenticated

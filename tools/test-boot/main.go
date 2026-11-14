@@ -13,8 +13,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/urfave/cli/v3"
+
+	"github.com/feder-cr/git-ai/internal/grpc/client"
 )
 
 type gitalyConfig struct {

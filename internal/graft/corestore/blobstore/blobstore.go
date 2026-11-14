@@ -73,15 +73,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/azureblob" // register Azure driver
 	"gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/gcsblob" // register Google Cloud driver
+	_ "gocloud.dev/blob/memblob" // register in-memory driver
 	"gocloud.dev/blob/s3blob"
 	"gocloud.dev/gcerrors"
 
-	_ "gocloud.dev/blob/azureblob" // register Azure driver
-	_ "gocloud.dev/blob/gcsblob"   // register Google Cloud driver
-	_ "gocloud.dev/blob/memblob"   // register in-memory driver
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
 )
 
 // Store is a bucket of the storage core.

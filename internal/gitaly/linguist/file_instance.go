@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-enry/go-enry/v2"
+
 	"github.com/feder-cr/git-ai/internal/git/gitattributes"
 	"github.com/feder-cr/git-ai/internal/git/gitpipe"
-	"github.com/go-enry/go-enry/v2"
 )
 
 const (

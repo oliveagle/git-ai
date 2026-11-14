@@ -11,10 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 type revisionPath struct{ revision, path string }

@@ -3,10 +3,11 @@ package tracing
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestCreateSpan(t *testing.T) {

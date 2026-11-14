@@ -11,6 +11,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"golang.org/x/time/rate"
+
 	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/featureflag"
@@ -23,9 +27,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/tracing"
-	"github.com/prometheus/client_golang/prometheus"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"golang.org/x/time/rate"
 )
 
 const (

@@ -7,8 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 )
 
 const (

@@ -856,14 +856,14 @@ func TestUserLand_reland(t *testing.T) {
 		t.Parallel()
 
 		for name, mutate := range map[string]func(*gitalypb.LandResolution){
-			"a path missing":         func(r *gitalypb.LandResolution) { r.Files = r.Files[:1] },
+			"a path missing":         func(r *gitalypb.LandResolution) { r.Files = r.GetFiles()[:1] },
 			"a path twice":           func(r *gitalypb.LandResolution) { r.Files[1].Path = []byte("a") },
 			"a path not in conflict": func(r *gitalypb.LandResolution) { r.Files[1].Path = []byte("c") },
 		} {
 			fx := newResolveFixture(t, config.GraftResolver{})
 			req := fx.request("Land")
 			req.Resolution = resolutionOf(fx, "agent-a\n", "agent-b\n")
-			mutate(req.Resolution)
+			mutate(req.GetResolution())
 
 			_, err := fx.client.UserLand(fx.ctx, req)
 			pkg := landConflictDetail(err)

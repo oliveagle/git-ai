@@ -11,6 +11,12 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/urfave/cli/v3"
+	"gitlab.com/gitlab-org/labkit/monitoring"
+
 	"github.com/feder-cr/git-ai/internal/bootstrap"
 	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/sentry"
@@ -33,11 +39,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/praefect/transactions"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/urfave/cli/v3"
-	"gitlab.com/gitlab-org/labkit/monitoring"
 )
 
 func newServeCommand() *cli.Command {

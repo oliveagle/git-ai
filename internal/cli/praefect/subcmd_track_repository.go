@@ -9,6 +9,10 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/urfave/cli/v3"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/grpc/metadata"
+
 	glcli "github.com/feder-cr/git-ai/internal/cli"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/log"
@@ -17,9 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/urfave/cli/v3"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/grpc/metadata"
 )
 
 const (

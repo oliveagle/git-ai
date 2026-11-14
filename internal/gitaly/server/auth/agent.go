@@ -10,12 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/internal/graft/agentrefs"
-	"github.com/feder-cr/git-ai/internal/graft/identity"
 	grpcmwauth "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,6 +17,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/graft/agentrefs"
+	"github.com/feder-cr/git-ai/internal/graft/identity"
 )
 
 // sharedTokenIdentityName is the identity name of callers authenticated with

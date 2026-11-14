@@ -123,24 +123,32 @@ func TestLandResolutionLandsTheResolvedFiles(t *testing.T) {
 	tip := b.Put("main", "a.txt", []byte("remote"))
 	committer := Signature{Name: "Ada", Email: "ada@example.com"}
 
-	_, err = ws.LandResolution(context.Background(), "", committer, &Resolution{Tip: "stale", Commit: pending,
-		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}}})
+	_, err = ws.LandResolution(context.Background(), "", committer, &Resolution{
+		Tip: "stale", Commit: pending,
+		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}},
+	})
 	require.ErrorIs(t, err, ErrMergeConflict, "a resolution against another tip")
 
-	_, err = ws.LandResolution(context.Background(), "", committer, &Resolution{Tip: tip, Commit: pending,
-		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}, {Path: "b.txt", Mode: "100644", Content: []byte("x")}}})
+	_, err = ws.LandResolution(context.Background(), "", committer, &Resolution{
+		Tip: tip, Commit: pending,
+		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}, {Path: "b.txt", Mode: "100644", Content: []byte("x")}},
+	})
 	require.ErrorIs(t, err, ErrMergeConflict, "a resolution of a path without a conflict")
 	require.NotNil(t, ws.state.Pending, "a failed land keeps the commit pending")
 
 	_, err = ws.LandResolution(context.Background(), "", committer, &Resolution{Tip: tip, Commit: "other", Files: nil})
 	require.ErrorContains(t, err, "not the pending commit")
 	// The backend refuses it too, as the server does, for a caller that goes around the workspace.
-	_, err = b.Land(context.Background(), LandOptions{Branch: "main", Commit: pending, Strategy: StrategyMerge, Committer: committer,
-		Resolution: &Resolution{Tip: tip, Commit: "other", Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}}}})
+	_, err = b.Land(context.Background(), LandOptions{
+		Branch: "main", Commit: pending, Strategy: StrategyMerge, Committer: committer,
+		Resolution: &Resolution{Tip: tip, Commit: "other", Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}}},
+	})
 	require.ErrorContains(t, err, `the resolution is for commit "other"`)
 
-	res, err := ws.LandResolution(context.Background(), "", committer, &Resolution{Tip: tip, Commit: pending,
-		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}}})
+	res, err := ws.LandResolution(context.Background(), "", committer, &Resolution{
+		Tip: tip, Commit: pending,
+		Files: []ResolvedFile{{Path: "a.txt", Mode: "100644", Content: []byte("both")}},
+	})
 	require.NoError(t, err)
 	require.True(t, res.Rewritten)
 	require.Equal(t, "both", readRemote(t, b, "main", "a.txt"))

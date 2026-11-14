@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
 func TestConfigFromEnvironment(t *testing.T) {

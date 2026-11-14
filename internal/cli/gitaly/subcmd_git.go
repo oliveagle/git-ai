@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/feder-cr/git-ai"
+	"github.com/urfave/cli/v3"
+
+	gitaly "github.com/feder-cr/git-ai"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/urfave/cli/v3"
 )
 
 func gitalyConfigFlag() *cli.StringFlag {

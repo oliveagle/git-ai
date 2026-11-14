@@ -4,10 +4,11 @@ import (
 	"context"
 	"io"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/internal/stream"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 // UploadPackResult wraps ExitCode and PackfileNegotiationStatistics.

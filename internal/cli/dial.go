@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/grpc"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/tracing"
-	"google.golang.org/grpc"
 )
 
 // Dial creates a gRPC connection to a Gitaly or Praefect server with the specified timeout and options.

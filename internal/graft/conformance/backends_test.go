@@ -10,6 +10,7 @@ package conformance
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -187,7 +188,8 @@ func runStock(ctx context.Context, t *testing.T, dir string, env []string, stdin
 
 	err := cmd.Run()
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
+		exitError := &exec.ExitError{}
+		if errors.As(err, &exitError) {
 			require.NoError(t, err, "running git %v", args)
 		}
 	}

@@ -5,8 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // certPoolWithCustomTLSCertificate returns an x509.CertPool with certFile appended to it. This

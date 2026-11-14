@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestExtractGitalyServers(t *testing.T) {

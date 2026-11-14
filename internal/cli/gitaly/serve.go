@@ -8,7 +8,16 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/feder-cr/git-ai"
+	"github.com/go-enry/go-license-detector/v4/licensedb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/urfave/cli/v3"
+	"gitlab.com/gitlab-org/labkit/fips"
+	"gitlab.com/gitlab-org/labkit/monitoring"
+	"go.uber.org/automaxprocs/maxprocs"
+	"google.golang.org/grpc"
+
+	gitaly "github.com/feder-cr/git-ai"
 	gitalyclient "github.com/feder-cr/git-ai/client"
 	"github.com/feder-cr/git-ai/internal/backup"
 	"github.com/feder-cr/git-ai/internal/bootstrap"
@@ -69,15 +78,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/tempdir"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/go-enry/go-license-detector/v4/licensedb"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/urfave/cli/v3"
-	"gitlab.com/gitlab-org/labkit/fips"
-	"gitlab.com/gitlab-org/labkit/monitoring"
-	"go.uber.org/automaxprocs/maxprocs"
-	"google.golang.org/grpc"
-
 	// Import to register the proxy codec with gRPC.
 	_ "github.com/feder-cr/git-ai/proxy"
 )

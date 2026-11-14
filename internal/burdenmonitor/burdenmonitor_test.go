@@ -5,13 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/featureflag"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/featureflag"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // mockServerStream is a minimal grpc.ServerStream for use in interceptor tests.

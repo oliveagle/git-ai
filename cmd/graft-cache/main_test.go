@@ -4,9 +4,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/cachetier"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseOptions(t *testing.T) {

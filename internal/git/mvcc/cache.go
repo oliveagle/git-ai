@@ -15,9 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/feder-cr/git-ai/internal/structerr"
-	"golang.org/x/sync/errgroup"
 )
 
 const (

@@ -255,7 +255,7 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 			printConflict(out, pkg)
 			if o.conflictsDir != "" {
 				if werr := writeConflicts(ctx, ws, pkg, o.conflictsDir, out); werr != nil {
-					return fmt.Errorf("%w (and writing the conflicts failed: %v)", err, werr)
+					return fmt.Errorf("%w (and writing the conflicts failed: %w)", err, werr)
 				}
 				fmt.Fprintf(out, "wrote the conflicts to %s: edit the files, then run graft land --resolved %s\n", o.conflictsDir, o.conflictsDir)
 			}

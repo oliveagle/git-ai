@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/resolver"
+
 	"github.com/feder-cr/git-ai/internal/backoff"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/structerr"
-	"google.golang.org/grpc/resolver"
 )
 
 type dnsResolver struct {

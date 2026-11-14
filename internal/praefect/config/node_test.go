@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 )
 
 func TestNode_MarshalJSON(t *testing.T) {

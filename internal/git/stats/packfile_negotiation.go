@@ -9,11 +9,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Pipeline IDs are database IDs. Bound them to signed 64-bit decimal string

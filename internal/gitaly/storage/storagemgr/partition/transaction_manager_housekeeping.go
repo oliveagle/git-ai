@@ -15,6 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"gocloud.dev/gcerrors"
+	"golang.org/x/exp/maps"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping"
@@ -29,9 +33,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/google/uuid"
-	"gocloud.dev/gcerrors"
-	"golang.org/x/exp/maps"
 )
 
 const (

@@ -3,9 +3,10 @@ package verify
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
-	"github.com/stretchr/testify/require"
 )
 
 // commitBranch commits path on a new branch named branch, started from main,

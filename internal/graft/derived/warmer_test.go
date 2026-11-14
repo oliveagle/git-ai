@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 // registerToyWarmer registers fn under name for the duration of the test. Warmers

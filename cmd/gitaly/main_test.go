@@ -6,10 +6,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestGitalyCLI(t *testing.T) {

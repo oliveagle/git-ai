@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
-	"github.com/urfave/cli/v3"
 )
 
 const sqlPingCmdName = "sql-ping"

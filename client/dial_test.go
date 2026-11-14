@@ -13,10 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
-	internalclient "github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/miekg/dns"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -35,6 +31,11 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/status"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
+	internalclient "github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 var proxyEnvironmentKeys = []string{"http_proxy", "https_proxy", "no_proxy"}

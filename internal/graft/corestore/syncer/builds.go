@@ -45,7 +45,7 @@ func lockBuild(dir string, afterOpen func(path string)) (*os.File, error) {
 	current, err := os.Stat(path)
 	if err != nil || !os.SameFile(locked, current) {
 		_ = f.Close()
-		return nil, fmt.Errorf("lock: the build directory was removed before its lock was taken (%v)", err)
+		return nil, fmt.Errorf("lock: the build directory was removed before its lock was taken (%w)", err)
 	}
 	return f, nil
 }

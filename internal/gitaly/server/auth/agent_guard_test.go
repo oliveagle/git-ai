@@ -2,17 +2,19 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
 
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // guardAgentRPCs allows the SSH RPCs through [graft] agent_rpcs, so that the
@@ -123,7 +125,7 @@ func TestAgentRequestGuard(t *testing.T) {
 			func(_ any, ss grpc.ServerStream) error {
 				for {
 					if err := ss.RecvMsg(&gitalypb.SSHReceivePackRequest{}); err != nil {
-						if err == io.EOF {
+						if errors.Is(err, io.EOF) {
 							return nil
 						}
 						return err

@@ -4,9 +4,10 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/git/trace2"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var packObjectsStats = map[string]struct {

@@ -11,8 +11,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	lru "github.com/hashicorp/golang-lru/v2"
+
+	"github.com/feder-cr/git-ai/internal/git/localrepo"
 )
 
 // Generator is a function that computes a cacheable value for a repository based on the given key.

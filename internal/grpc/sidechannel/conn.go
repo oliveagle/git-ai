@@ -6,11 +6,12 @@ import (
 	"io"
 	"net"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/grpc"
 )
 
 // ServerConn and ClientConn implement an asymmetric framing protocol to

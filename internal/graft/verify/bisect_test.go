@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // fakeCommits lists n commits c0..c(n-1), oldest first.

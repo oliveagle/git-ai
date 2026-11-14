@@ -78,7 +78,7 @@ func TestSpecTargetLatencyZeroMeansNoAdaptation(t *testing.T) {
 
 	// TargetLatency is a time.Duration (Go duration, e.g. 500ms).
 	cfg.TargetLatency = 500 * time.Millisecond
-	var _ time.Duration = cfg.TargetLatency
+	_ = cfg.TargetLatency
 	if cfg.TargetLatency != 500*time.Millisecond {
 		t.Fatalf("TargetLatency = %v, want 500ms", cfg.TargetLatency)
 	}

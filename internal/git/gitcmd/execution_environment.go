@@ -8,10 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	"golang.org/x/sys/unix"
 )
 
 var (

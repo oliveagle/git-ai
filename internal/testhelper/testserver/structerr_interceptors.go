@@ -5,11 +5,12 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // StructErrUnaryInterceptor is an interceptor for unary RPC calls that injects error metadata as detailed

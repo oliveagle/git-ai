@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 func TestNewSignature(t *testing.T) {

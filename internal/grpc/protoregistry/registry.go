@@ -5,11 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/protoutil"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/reflect/protodesc"
 	protoreg "google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
+
+	"github.com/feder-cr/git-ai/internal/protoutil"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // GitalyProtoPreregistered is a proto registry pre-registered with all

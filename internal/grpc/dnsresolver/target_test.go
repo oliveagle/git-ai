@@ -5,10 +5,11 @@ import (
 	"net"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestFindDNSLookup_default(t *testing.T) {

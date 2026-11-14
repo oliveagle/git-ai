@@ -8,14 +8,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -201,7 +202,7 @@ func TestEnforceGraftPolicy_Concurrent(t *testing.T) {
 
 			err := m.enforceGraftPolicy(context.Background(), policyEnv(t, "agent-a", true), policyChanges(ref))
 			if status.Code(err) != wantCode {
-				errs <- fmt.Errorf("ref %s: got %v", ref, err)
+				errs <- fmt.Errorf("ref %s: got %w", ref, err)
 			}
 		}(i)
 	}

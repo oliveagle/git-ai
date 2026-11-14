@@ -3,10 +3,11 @@ package middleware
 import (
 	"context"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/metrics"
-	"google.golang.org/grpc"
 )
 
 // MethodTypeUnaryInterceptor returns a Unary Interceptor that records the method type of incoming RPC requests

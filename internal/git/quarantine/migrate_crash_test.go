@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // TestMigrateCrashChild is the child process of TestMigrateCrashLeavesAPrefixOfTheLinks. It migrates
@@ -101,7 +102,7 @@ func TestMigrateCrashLeavesAPrefixOfTheLinks(t *testing.T) {
 		require.NoError(t, err)
 		relOrder = append(relOrder, rel)
 	}
-	var idx, pack int = -1, -1
+	idx, pack := -1, -1
 	for i, rel := range relOrder {
 		switch {
 		case strings.HasSuffix(rel, ".pack"):

@@ -6,15 +6,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/praefect/config"
-	"github.com/feder-cr/git-ai/internal/praefect/nodes"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/praefect/config"
+	"github.com/feder-cr/git-ai/internal/praefect/nodes"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestDialNodes(t *testing.T) {

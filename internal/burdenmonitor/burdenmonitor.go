@@ -6,13 +6,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/requestinfohandler"
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gitlab.com/gitlab-org/labkit/correlation"
+
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/requestinfohandler"
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 var activeRPCsGauge = promauto.NewGauge(

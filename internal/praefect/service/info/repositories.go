@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"golang.org/x/sync/errgroup"
 )
 
 // RepositoryReplicas returns a list of repositories that includes the checksum of the primary as well as the replicas

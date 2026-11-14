@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 // RecoverPendingTransactions runs on Praefect startup to reconcile any

@@ -3,8 +3,9 @@ package nodes
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/praefect/config"
 )
 
 func TestNewPingSet(t *testing.T) {

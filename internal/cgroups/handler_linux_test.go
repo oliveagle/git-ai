@@ -15,10 +15,11 @@ import (
 
 	cgrps "github.com/containerd/cgroups/v3"
 	"github.com/containerd/cgroups/v3/cgroup2"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 func defaultCgroupsConfig() cgroups.Config {

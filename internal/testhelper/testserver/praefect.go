@@ -13,12 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/require"
+
 	gitalycfg "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/pelletier/go-toml/v2"
-	"github.com/stretchr/testify/require"
 )
 
 // PraefectServer encapsulates information of a running Praefect server.

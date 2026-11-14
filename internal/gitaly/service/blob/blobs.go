@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gitpipe"
@@ -14,7 +16,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/protobuf/proto"
 )
 
 func verifyListBlobsRequest(ctx context.Context, locator storage.Locator, req *gitalypb.ListBlobsRequest) error {

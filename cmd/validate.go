@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 )
 
 // Validate invokes validator and processes the result. If there are any errors returned

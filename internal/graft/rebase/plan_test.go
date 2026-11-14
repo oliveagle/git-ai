@@ -7,13 +7,14 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/ancestry"
 	"github.com/feder-cr/git-ai/internal/graft/derived"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPlanLanding(t *testing.T) {

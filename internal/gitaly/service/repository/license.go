@@ -10,6 +10,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-enry/go-license-detector/v4/licensedb"
+	"github.com/go-enry/go-license-detector/v4/licensedb/api"
+	"github.com/go-enry/go-license-detector/v4/licensedb/filer"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -17,9 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/internal/unarycache"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/go-enry/go-license-detector/v4/licensedb"
-	"github.com/go-enry/go-license-detector/v4/licensedb/api"
-	"github.com/go-enry/go-license-detector/v4/licensedb/filer"
 )
 
 // The `github.com/go-enry/go-license-detector` package uses https://spdx.org/licenses/

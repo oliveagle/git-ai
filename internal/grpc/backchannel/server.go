@@ -7,13 +7,14 @@ import (
 	"io"
 	"net"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	hashicorpyamux "github.com/hashicorp/yamux"
 	libp2pyamux "github.com/libp2p/go-yamux/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // ErrNonMultiplexedConnection is returned when attempting to get the peer id of a non-multiplexed

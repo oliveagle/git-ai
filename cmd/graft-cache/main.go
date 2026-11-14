@@ -27,10 +27,11 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/cachetier"
 	"github.com/feder-cr/git-ai/internal/log"
-	"google.golang.org/grpc"
 )
 
 const defaultMaxBytes = 256 << 20

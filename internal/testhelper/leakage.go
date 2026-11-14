@@ -11,9 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	"go.uber.org/goleak"
+
 	"github.com/feder-cr/git-ai/internal/command/commandcounter"
 	"github.com/feder-cr/git-ai/internal/helper/text"
-	"go.uber.org/goleak"
 )
 
 // mustHaveNoGoroutines panics if it finds any Goroutines running.

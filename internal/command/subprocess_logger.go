@@ -8,9 +8,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/sirupsen/logrus"
 	"gitlab.com/gitlab-org/labkit/correlation"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 const (

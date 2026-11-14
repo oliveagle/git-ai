@@ -1,9 +1,10 @@
 package partition
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/git/housekeeping"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr/partition/snapshot"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Metrics contains the metrics collected across all TransactionManagers.

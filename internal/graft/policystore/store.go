@@ -21,8 +21,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
 // Snapshot is one version of the policy. It is never changed once published.

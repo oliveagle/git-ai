@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/advisorylock"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const logBatchSize = 25

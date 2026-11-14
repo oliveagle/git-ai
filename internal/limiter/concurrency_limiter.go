@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"go.opentelemetry.io/otel/attribute"
-	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // semaphorer is an interface of a specific-purpose semaphore used for concurrency control.

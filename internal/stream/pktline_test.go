@@ -5,8 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git/pktline"
 )
 
 // fakeConn implements Conn. The response (server -> client) is read from the

@@ -3,8 +3,9 @@ package permission_test
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode/permission"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode/permission"
 )
 
 func TestOwnerRead(t *testing.T) {

@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-enry/go-enry/v2"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/helper/chunk"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/go-enry/go-enry/v2"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 )
 
 func (s *server) CheckBlobsGenerated(stream gitalypb.AnalysisService_CheckBlobsGeneratedServer) (returnedErr error) {

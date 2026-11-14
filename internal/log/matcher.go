@@ -4,8 +4,9 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/feder-cr/git-ai/internal/helper/env"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
+
+	"github.com/feder-cr/git-ai/internal/helper/env"
 )
 
 const (

@@ -309,7 +309,7 @@ func TestIntegration_ListTree(t *testing.T) {
 		require.False(t, entries[0].IsDir())
 		require.True(t, entries[1].IsDir())
 		require.NotEmpty(t, entries[0].OID)
-		require.Equal(t, int32(0100644), entries[0].Mode)
+		require.Equal(t, int32(0o100644), entries[0].Mode)
 	})
 
 	t.Run("root, recursive", func(t *testing.T) {

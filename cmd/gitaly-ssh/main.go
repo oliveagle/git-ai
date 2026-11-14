@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/grpc"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/tracing"
-	"google.golang.org/grpc"
 )
 
 type packFn func(context.Context, *grpc.ClientConn, *sidechannel.Registry, string) (int32, error)
