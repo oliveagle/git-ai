@@ -193,3 +193,36 @@ same tip is a typical example.
 - [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces interact.
 - [CONFIGURATION.md](CONFIGURATION.md) lists the `[graft]` keys and the CLI settings.
 - [LIMITATIONS.md](LIMITATIONS.md) lists what is not done yet.
+
+## Testing a project
+
+Graft runs none of a project's tests. A project keeps its own suites and tells
+Graft two things: the command that runs them, and the commit that command was
+run on (the checkpoint). A suite attaches to the place whose question it
+answers:
+
+| Suite | Where it runs | What it decides |
+|---|---|---|
+| unit (seconds, no service) | the workspace of the agent before it asks for a land; again in the CI, on the result | the change is right |
+| integration (a database, containers, minutes) | the CI, on the commit the dry run named | the change is right once it is on the branch |
+| end to end, slow or flaky | `graft-verify` after the land, or a nightly job | a broken tip is found and reverted, rather than blocking every queue entry |
+
+The queue of one change is six commands, and the checkpoint is the only trust
+anchor of the policy:
+
+```
+make test-unit                          # 1. cheap, local
+graft land --dry-run --timestamp "$T"   # 2. the commit the land would produce
+graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
+make test                               # 4. both suites, on that tree
+graft green set --branch main --commit "$M"   # 5. the checkpoint
+graft gate check --branch main --result "$M"  #    the status check
+graft land --timestamp "$T"             # 6. land exactly the commit that was tested
+```
+
+[BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
+decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and
+[`examples/graft/standard-project`](../../examples/graft/standard-project) is a
+project with a unit suite and an integration suite, the queue that lands it and
+the rules that keep `main` the ref of the CI. `run.sh` there runs the whole
+loop against a real server in a temporary directory.
