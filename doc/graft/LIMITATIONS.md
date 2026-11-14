@@ -659,6 +659,16 @@ commitment.
    queue. It does not run real tests, and its conflict rate is a stress setting,
    not a forecast. See [BENCH](BENCH.md).
 
+## A mirror is not a second authority
+
+`graft mirror push` can publish selected branches to another Git host for a
+traditional CI ([MIRROR.md](MIRROR.md)). It is a one-way reconciliation, on a
+schedule: a failed push does not undo a Graft land, and the next run publishes
+what it missed. A divergent branch on the mirror is kept and the command fails
+unless `--force` is explicit. A CI result at the mirror is evidence for people,
+not a Graft branch rule; the managed branch still takes only the checkpoint its
+rule asks for.
+
 ## Reporting problems
 
 Open an issue in the repository that contains this fork. Include the Graft

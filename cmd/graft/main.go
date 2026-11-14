@@ -117,6 +117,7 @@ func commandTable() map[string]command {
 		"policy":  policyCommand(),
 		"gate":    gateCommand(),
 		"green":   greenCommand(),
+		"mirror":  mirrorCommand(),
 	}
 }
 
@@ -314,6 +315,9 @@ commands:
                          server enforces (--repo, --json)
   green SUBCOMMAND       publish or read the verification checkpoint of a branch: set --branch B --commit OID,
                          show --branch B (--repo, --json)
+  mirror push            publish selected branches to another Git server (Gitee, GitHub, GitLab...)
+                         as a mirror for the workflows that still run there (--repo, --url, --branch,
+                         --token-env, --username, --ssh-key, --known-hosts, --force, --json)
 
 environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
 
