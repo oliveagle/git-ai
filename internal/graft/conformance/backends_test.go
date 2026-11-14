@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -166,6 +167,13 @@ func stockEnv(home string) []string {
 // runStock runs the stock git in dir and returns its exit code, standard output and standard error.
 func runStock(ctx context.Context, t *testing.T, dir string, env []string, stdin []byte, args ...string) (int, string, string) {
 	t.Helper()
+
+	// Every repository the harness creates has to land on the object hash the
+	// run uses: a SHA-1 client cannot push to a SHA-256 server, and that
+	// mismatch would fail the row before the compared behaviour is reached.
+	if len(args) > 0 && args[0] == "init" && !slices.Contains(args, "--object-format="+gittest.DefaultObjectHash.Format) {
+		args = append(slices.Clip(args[:len(args):len(args)]), "--object-format="+gittest.DefaultObjectHash.Format)
+	}
 
 	cmd := exec.CommandContext(ctx, stockGit(t), args...)
 	cmd.Dir = dir

@@ -3,8 +3,10 @@ package backup
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -237,6 +239,13 @@ ref_path = 'path/to/real/001.refs'
 custom_hooks_path = 'path/to/real/001.custom_hooks.tar'
 `,
 				})
+				// ReadLatestManifest picks the newest modification time, and two
+				// files written in one call can land in either order on a coarse
+				// clock: pin the real manifest as the newer one.
+				require.NoError(t, os.Chtimes(
+					filepath.Join(sinkRoot, "manifests/default/my/cool/repo.git/20260101120000.toml"),
+					time.Now().Add(time.Minute), time.Now().Add(time.Minute),
+				))
 			},
 			expectedManifest: &Backup{
 				ID: "20260101120000",

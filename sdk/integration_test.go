@@ -25,11 +25,13 @@ import (
 	"github.com/feder-cr/git-ai/sdk"
 )
 
-// zeroOID is the all-zero SHA-1 object ID, used by Git for "no object".
-const zeroOID = "0000000000000000000000000000000000000000"
+// zeroOID is the all-zero object ID of the hash the run uses, used by Git for
+// "no object".
+var zeroOID = gittest.DefaultObjectHash.ZeroOID.String()
 
-// missingOID is a well-formed object ID that does not exist in test repositories.
-const missingOID = "0123456789abcdef0123456789abcdef01234567"
+// missingOID is a well-formed object ID that does not exist in test
+// repositories, cut to the length of the hash the run uses.
+var missingOID = strings.Repeat("0123456789abcdef", 4)[:gittest.DefaultObjectHash.EncodedLen()]
 
 // integrationEnv is a real Gitaly server with every service registered, one
 // repository on it, and an SDK client connected to it.

@@ -680,7 +680,8 @@ func TestPushOfAClientThatKeepsItsStreamOpen(t *testing.T) {
 
 			emptyPack := gittest.ExecOpts(t, s.cfg, gittest.ExecConfig{Stdin: strings.NewReader("")},
 				"-C", s.repoPath, "pack-objects", "--stdout", "-q")
-			pkt := fmt.Sprintf("%s %s refs/heads/pushed\x00 report-status atomic\n", stale, second)
+			pkt := fmt.Sprintf("%s %s refs/heads/pushed\x00 report-status atomic object-format=%s\n",
+				stale, second, gittest.DefaultObjectHash.Format)
 			var body bytes.Buffer
 			fmt.Fprintf(&body, "%04x%s0000", len(pkt)+4, pkt)
 			body.Write(emptyPack)
@@ -719,7 +720,8 @@ func TestStalePushReleasesTheAdmission(t *testing.T) {
 				emptyPack := gittest.ExecOpts(t, s.cfg, gittest.ExecConfig{Stdin: strings.NewReader("")},
 					"-C", s.repoPath, "pack-objects", "--stdout", "-q")
 				body := func(capabilities string) []byte {
-					line := fmt.Sprintf("%s %s refs/heads/pushed\x00 %s\n", stale, second, capabilities)
+					line := fmt.Sprintf("%s %s refs/heads/pushed\x00 %s object-format=%s\n",
+						stale, second, capabilities, gittest.DefaultObjectHash.Format)
 					var buf bytes.Buffer
 					fmt.Fprintf(&buf, "%04x%s0000", len(line)+4, line)
 					buf.Write(emptyPack)

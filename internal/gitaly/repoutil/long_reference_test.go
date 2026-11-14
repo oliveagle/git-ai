@@ -47,6 +47,7 @@ func TestCreate_longReferenceNames(t *testing.T) {
 				gittest.SeedPackedReference(t, seedPath, gittest.ReferenceNameOfLength(t, "refs/heads/", nameLength), commitID)
 				return nil
 			},
+			WithObjectHash(gittest.DefaultObjectHash),
 		)
 
 		return filepath.Join(cfg.Storages[0].Path, repo.GetRelativePath()), err
@@ -74,6 +75,7 @@ func TestCreate_longReferenceNames(t *testing.T) {
 				target := gittest.ReferenceNameOfLength(t, "refs/heads/", targetLength)
 				return os.WriteFile(filepath.Join(seedPath, "HEAD"), []byte("ref: "+target.String()+"\n"), 0o644)
 			},
+			WithObjectHash(gittest.DefaultObjectHash),
 		)
 
 		return filepath.Join(cfg.Storages[0].Path, repo.GetRelativePath()), err
@@ -104,6 +106,7 @@ func TestCreate_longReferenceNames(t *testing.T) {
 				gittest.SeedPackedReference(t, seedPath, gittest.ReferenceNameOfLength(t, "refs/remotes/origin/", 1039), commitID)
 				return nil
 			},
+			WithObjectHash(gittest.DefaultObjectHash),
 		)
 		require.NoError(t, err)
 	})

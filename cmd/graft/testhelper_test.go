@@ -22,7 +22,9 @@ func TestMain(m *testing.M) {
 }
 
 // missingOID is a well-formed object ID that does not exist in test repositories.
-const missingOID = "0123456789abcdef0123456789abcdef01234567"
+// missingOID is built from the hex pattern, cut to the length of the object
+// hash the run uses.
+var missingOID = strings.Repeat("0123456789abcdef", 4)[:gittest.DefaultObjectHash.EncodedLen()]
 
 // serverEnv is a real Gitaly server with every service registered and one
 // empty repository on it.

@@ -5,9 +5,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
 	"github.com/stretchr/testify/require"
 )
@@ -23,6 +25,12 @@ func useMemoryBackend(t *testing.T, mem *workspace.MemoryBackend) {
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
+	// A repository the tests create through the CLI has to land on the object
+	// hash the run uses, or the helpers that write commits into it fail on the
+	// format mismatch before the tested behaviour is reached.
+	if len(args) > 1 && args[0] == "repo" && args[1] == "create" && !slices.Contains(args, "--object-format") {
+		args = append(slices.Clip(args[:len(args):len(args)]), "--object-format", gittest.DefaultObjectHash.Format)
+	}
 	var stdout, stderr bytes.Buffer
 	code := run(args, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()

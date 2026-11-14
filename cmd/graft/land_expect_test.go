@@ -35,7 +35,7 @@ func TestLandExpect(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "land", "-C", dir, "--dry-run", "--timestamp", timestamp)
 	require.Equal(t, exitOK, code, stderr)
 	verified := strings.TrimSpace(stdout)
-	require.Len(t, verified, 40)
+	require.Len(t, verified, gittest.DefaultObjectHash.EncodedLen())
 
 	// The date is part of the identity of the commit the land writes, so the
 	// land cannot write the verified commit without it.

@@ -40,7 +40,7 @@ func TestLandCommitWithoutAWorkspace(t *testing.T) {
 	}, target...)...)
 	require.Equal(t, exitOK, code, stderr)
 	produced := strings.TrimSpace(stdout)
-	require.Len(t, produced, 40, "the output is the object ID alone, for a script")
+	require.Len(t, produced, gittest.DefaultObjectHash.EncodedLen(), "the output is the object ID alone, for a script")
 	require.Equal(t, base.String(), gittest.ResolveRevision(t, env.cfg, env.repoPath, "refs/heads/main").String())
 
 	// The CI materializes the commit the dry run named: the tree it tests is the

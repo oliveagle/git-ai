@@ -45,7 +45,7 @@ func TestLandDryRun(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "land", "-C", dir, "--dry-run", "--timestamp", timestamp)
 	require.Equal(t, exitOK, code, stderr)
 	produced := strings.TrimSpace(stdout)
-	require.Len(t, produced, 40, "the output is the object ID alone, for a script")
+	require.Len(t, produced, gittest.DefaultObjectHash.EncodedLen(), "the output is the object ID alone, for a script")
 	require.Equal(t, tip.String(), gittest.ResolveRevision(t, env.cfg, env.repoPath, "refs/heads/main").String())
 
 	// The date is part of the identity of the commit the land writes: without

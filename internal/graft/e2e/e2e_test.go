@@ -713,7 +713,7 @@ func gitBlameCommits(t *testing.T, s gitalyStack, rev, path string) []string {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 3 || len(fields[0]) != 40 {
+		if len(fields) < 3 || len(fields[0]) != gittest.DefaultObjectHash.EncodedLen() {
 			continue
 		}
 		var final int

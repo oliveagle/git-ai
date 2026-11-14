@@ -24,8 +24,12 @@ func TestMirrorPushPublishesSelectedBranches(t *testing.T) {
 	// just because a scheduled retry ran.
 	remote := filepath.Join(t.TempDir(), "mirror.git")
 	seed := filepath.Join(t.TempDir(), "seed")
-	gittest.Exec(t, env.cfg, "init", "--bare", "--initial-branch=main", remote)
-	gittest.Exec(t, env.cfg, "init", "--initial-branch=main", seed)
+	// The mirror target and the seed hold the same objects as the server-side
+	// repository, so both land on the object hash the run uses.
+	gittest.Exec(t, env.cfg, "init", "--bare", "--initial-branch=main",
+		"--object-format="+gittest.DefaultObjectHash.Format, remote)
+	gittest.Exec(t, env.cfg, "init", "--initial-branch=main",
+		"--object-format="+gittest.DefaultObjectHash.Format, seed)
 	gittest.Exec(t, env.cfg, "-C", seed, "config", "user.name", "Remote")
 	gittest.Exec(t, env.cfg, "-C", seed, "config", "user.email", "remote@example.com")
 	require.NoError(t, os.WriteFile(filepath.Join(seed, "remote.txt"), []byte("remote\n"), 0o644))

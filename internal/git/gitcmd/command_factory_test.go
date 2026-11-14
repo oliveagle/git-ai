@@ -625,6 +625,7 @@ func TestExecCommandFactory_config(t *testing.T) {
 	// is no repo-level configuration that interferes with our test.
 	repo, repoDir := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{
 		SkipCreationViaService: true,
+		ObjectFormat:           gittest.DefaultObjectHash.Format,
 	})
 	require.NoError(t, os.Remove(filepath.Join(repoDir, "config")))
 
