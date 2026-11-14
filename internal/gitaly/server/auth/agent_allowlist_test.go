@@ -472,6 +472,13 @@ var operatorOnlySources = map[string][]string{
 	// management policy: only an operator may move it (`graft green set`,
 	// doc/graft/BRANCHES.md).
 	"sdk/refs.go": {"gitaly.RefService/UpdateReferences"},
+	// The CLI of that checkpoint (`graft green set`) reaches the same RPC through
+	// sdk/refs.go; it is the operator's command, not an agent's.
+	"cmd/graft/green.go": {"gitaly.RefService/UpdateReferences"},
+	// Publishing a mirror is an operator action too: it pushes the server's
+	// history to another host with a credential only the operator holds, so an
+	// agent may not run it (doc/graft/MIRROR.md).
+	"sdk/mirror.go": {"gitaly.RemoteService/UpdateRemoteMirror"},
 }
 
 // operatorScopeCovers reports whether fullMethod is the method, or a method of the
