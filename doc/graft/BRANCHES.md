@@ -43,11 +43,17 @@ require_suites = []
 | `allow_direct_update` | `false` | Accept an update of the branch that is not a land, such as a push. Without it **only a land may update the branch**. |
 | `require_verified` | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by [graft-verify](VERIFY.md)) must point at the tip the land builds on, or at the commit the land produces (see [Verifying the result of a land](#verifying-the-result-of-a-land)). |
 | `require_verified_result` | `false` | The checkpoint must cover the commit the update produces, and nothing else: the branch takes no land on the strength of a green tip. This is the rule of a merge queue — the CI asks what the land would produce, tests that commit, publishes it with `graft green set` — and it implies `require_verified`. A caller that does not name the result (the hook always does, `graft gate check --result` does) is refused with `result_unknown`. |
-| `require_full_tree` | `false` | The checkpoint must certify the **whole tree** of the commit it names: the tree the suite ran on is the tree of that commit. A checkpoint that certifies no tree, or only part of one, is refused with `not_full_tree`. A suite that ran on a sparse checkout says nothing about the files it could not see, so a branch that asks this rule takes no land whose tree was not tested whole. |
-| `require_suites` | empty | The **suites** the checkpoint must certify: the publisher names them with `graft green set --suite`, each in a reference of its own (`refs/graft/green-suite/<suite>/<branch>`), and a checkpoint that certifies only some of them is refused with `suites_missing`. It is the rule of a project whose change needs its unit suite *and* its integration suite: the unit suite alone does not carry the land. A suite that ran on another commit says nothing about the one the checkpoint names. |
+| `require_full_tree` | `false` | The checkpoint must certify the **whole tree** of the commit it names: the tree the suite ran on is the tree of that commit. A checkpoint that certifies no tree, or only part of one, is refused with `not_full_tree`. A suite that ran on a sparse checkout says nothing about the files it could not see, so a branch that asks this rule takes no land whose tree was not tested whole. It requires `require_verified` or `require_verified_result`. |
+| `require_suites` | empty | The **suites** the checkpoint must certify: the publisher names them with `graft green set --suite`, each in a reference of its own (`refs/graft/green-suite/<suite>/<branch>`), and a checkpoint that certifies only some of them is refused with `suites_missing`. It is the rule of a project whose change needs its unit suite *and* its integration suite: the unit suite alone does not carry the land. A suite that ran on another commit says nothing about the one the checkpoint names. It requires `require_full_tree`, plus `require_verified` or `require_verified_result`. |
 
 Two rules for one branch are refused when the configuration is loaded, as are a
-rule without a name and a name that is not a branch name.
+rule without a name and a name that is not a branch name. So is evidence that
+is not tied to the update: `require_full_tree` and `require_suites` require
+`require_verified` or `require_verified_result`, and `require_suites` also
+requires `require_full_tree`. A configuration that asked for suites on a sparse
+tree, or for tree evidence on a checkpoint that need not cover the branch or
+the result, would otherwise make the gate judge evidence that cannot answer its
+question.
 
 The rules are read again on SIGUSR1, with the access policy, so a branch can be
 put under management, or taken out of it, without a restart: the next update

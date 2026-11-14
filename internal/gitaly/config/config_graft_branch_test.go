@@ -53,8 +53,45 @@ func TestGraft_validateBranches(t *testing.T) {
 			expectErr: "require_approvals must not be negative",
 		},
 		{
-			desc:     "a rule that requires suites is valid",
-			branches: []GraftBranchRule{{Name: "main", RequireSuites: []string{"unit", "integration"}}},
+			desc: "a rule that verifies a whole tree is valid",
+			branches: []GraftBranchRule{{
+				Name:            "main",
+				RequireVerified: true,
+				RequireFullTree: true,
+				RequireSuites:   []string{"unit", "integration"},
+			}},
+		},
+		{
+			desc: "a rule that verifies the result of a whole tree is valid",
+			branches: []GraftBranchRule{{
+				Name:                  "main",
+				RequireVerifiedResult: true,
+				RequireFullTree:       true,
+				RequireSuites:         []string{"unit", "integration"},
+			}},
+		},
+		{
+			desc:      "tree evidence without a checkpoint that covers the update is refused",
+			branches:  []GraftBranchRule{{Name: "main", RequireFullTree: true}},
+			expectErr: "need require_verified_result or require_verified",
+		},
+		{
+			desc: "suites without tree evidence are refused",
+			branches: []GraftBranchRule{{
+				Name:                  "main",
+				RequireVerifiedResult: true,
+				RequireSuites:         []string{"unit", "integration"},
+			}},
+			expectErr: "require_suites needs require_full_tree",
+		},
+		{
+			desc: "suites without a checkpoint that covers the update are refused",
+			branches: []GraftBranchRule{{
+				Name:            "main",
+				RequireFullTree: true,
+				RequireSuites:   []string{"unit", "integration"},
+			}},
+			expectErr: "need require_verified_result or require_verified",
 		},
 		{
 			desc:      "a suite with a slash is refused",

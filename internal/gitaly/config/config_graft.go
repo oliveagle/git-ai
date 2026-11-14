@@ -617,6 +617,22 @@ func (g Graft) ValidateBranches() error {
 			}
 			suites[suite] = true
 		}
+
+		// Tree and suite evidence means nothing unless it is tied to the branch
+		// or to the result of the update. Requiring it alone would let a land
+		// through on an old checkpoint, or deny every update for a reason that
+		// no CI can repair by verifying the change.
+		if (rule.RequireFullTree || len(rule.RequireSuites) > 0) &&
+			!rule.RequireVerified && !rule.RequireVerifiedResult {
+			return fmt.Errorf("graft branch rule %d: require_full_tree and require_suites need require_verified_result or require_verified", i+1)
+		}
+
+		// A suite certified on a tree the checkpoint does not certify whole is
+		// exactly the sparse evidence a branch must not take.
+		if len(rule.RequireSuites) > 0 && !rule.RequireFullTree {
+			return fmt.Errorf("graft branch rule %d: require_suites needs require_full_tree", i+1)
+		}
+
 		if seen[rule.Name] {
 			return fmt.Errorf("graft branch rule %d: branch %q has more than one rule", i+1, rule.Name)
 		}
