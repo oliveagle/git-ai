@@ -167,6 +167,9 @@ type LandOptions struct {
 	// DryRun asks for the commit the land would produce without landing it:
 	// neither the branch nor the workspace changes.
 	DryRun bool
+	// ExpectedResult asks the server to write exactly that commit: the land
+	// fails when the commit it would produce is another one.
+	ExpectedResult string
 }
 
 // Resolution is a caller's resolution of the conflicts of landing Commit onto

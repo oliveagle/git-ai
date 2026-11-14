@@ -77,4 +77,6 @@ if ! "$graft" gate check --branch "$branch" --result "$result"; then
 fi
 
 say "6/6 land the commit that was tested, with the timestamp that names it"
-"$graft" land --timestamp "$timestamp"
+# --expect holds the land to the commit the suites ran on: the server refuses
+# to write another one, so a branch that moved in between takes nothing.
+"$graft" land --timestamp "$timestamp" --expect "$result"

@@ -309,7 +309,10 @@ Git hooks use private.
   the server when it lands, and has to run `graft gate check` itself: the
   server answers that question with the policy it enforces, so the check and
   the enforcement cannot disagree, but the server does not run the check for
-  the CI.
+  the CI. The land itself is bound to the commit the caller verified: `graft
+  land --expect <oid>` makes the server refuse a land that would write another
+  commit, so the operator credential cannot land a commit nobody tested
+  either.
 - The gate does not run the tests. With `require_verified` it asks whether the
   verification checkpoint of the branch covers the update: the tip it builds
   on, or the commit the land produces when the caller names it. With
@@ -320,9 +323,11 @@ Git hooks use private.
 - A dry-run land names the commit a land would produce, and the checkpoint may
   cover that commit. The name holds only while the request and the tip hold: a
   land whose tip moved produces another commit, which the checkpoint does not
-  cover, and the branch policy then refuses it. A dry run does not resolve
-  conflicts, and its objects stay in the repository unreferenced until the GC
-  collects them.
+  cover, and the branch policy then refuses it. A land that names the commit it
+  expects (`--expect`) is refused with the commit it would have written and the
+  tip it computed it on, so the queue knows what to compute again. A dry run
+  does not resolve conflicts, and its objects stay in the repository
+  unreferenced until the GC collects them.
 - A workspace cloned at a commit (`graft clone --at OID`) has no branch: it
   materializes the tree of the commit, which is what a merge queue tests, and
   `update` and a land without a branch name are errors. A land that names a

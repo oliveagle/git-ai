@@ -49,6 +49,19 @@ func IsNotAncestor(err error) bool {
 	return ok && e.GetNotAncestor() != nil
 }
 
+// ExpectedResultMismatch returns the detail of a Land call that would have
+// written another commit than the one the caller verified: the commit the
+// caller verified, the commit the land would have written, and the branch tip
+// it computed it on. The second return value is false when the call failed for
+// another reason.
+func ExpectedResultMismatch(err error) (*gitalypb.ExpectedResultError, bool) {
+	e, ok := LandError(err)
+	if !ok || e.GetExpectedResult() == nil {
+		return nil, false
+	}
+	return e.GetExpectedResult(), true
+}
+
 // IsReferenceUpdateConflict reports whether a Land call gave up because the
 // branch kept moving and the server exhausted its compare-and-swap attempts.
 func IsReferenceUpdateConflict(err error) bool {

@@ -330,7 +330,7 @@ graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"   # the whole tree of M
 (cd ./verify && make test)
 (cd ./verify && graft green set --branch main --commit "$M")
 graft gate check --branch main --result "$M"
-graft land --timestamp "$T"
+graft land --timestamp "$T" --expect "$M"
 ```
 
 The same loop without a workspace — the CI holds the object ID of the change:
@@ -342,7 +342,7 @@ graft clone "$GRAFT_ADDRESS" repo.git ./verify --at "$M"
 (cd ./verify && make test)
 (cd ./verify && graft green set --branch main --commit "$M")
 graft gate check --branch main --commit "$C" --result "$M"
-graft land main --commit "$C" --timestamp "$T"
+graft land main --commit "$C" --timestamp "$T" --expect "$M"
 ```
 
 `graft land --dry-run` prints the object ID alone, so the script can take it.
@@ -350,9 +350,20 @@ graft land main --commit "$C" --timestamp "$T"
 committer date is part of the identity of the commit, and a land with another
 one writes another commit, which the checkpoint would not cover.
 
+`--expect` names the commit the land writes: the server refuses to write
+another one, and the refusal carries the commit it would have written and the
+tip it computed it on. It is what holds the queue to the commit it tested,
+whichever credential the CI uses: the branch policy binds the agents, and a CI
+that lands with the operator credential has `--expect` to keep the branch on
+the commit that was verified. A branch that moved between the check and the
+land then takes nothing, instead of a commit nobody tested.
+
 If the branch moves between the dry run and the land, the land produces another
 commit: the checkpoint covers neither it nor the tip, and the land is refused.
-That is the intended answer — the queue runs again on the new tip.
+That is the intended answer — the queue runs again on the new tip. A land that
+names the commit it expects is refused with the commit it would have written
+(`expected_result` in `UserLandError`), so the queue knows what to compute
+again and does not have to read the reason out of the message.
 
 The check knows it before the land: the tip of the branch must be an ancestor
 of the result for the result to be the commit a land writes, and a result
@@ -380,5 +391,8 @@ dry run makes none.
   What the suite behind the checkpoint was is still the contract between the CI
   and the branch, and `graft green set` is the operator's signature on it.
 - The gate does not bind the operator credential on the server. A CI that
-  lands with the shared token must run `graft gate check` itself.
+  lands with the shared token must run `graft gate check` itself. The land
+  itself is bound to the commit the caller names with `--expect`, whichever
+  credential it uses: the server refuses to write another commit than the one
+  that was verified.
 - The gate does not merge. It decides; the land does the work.

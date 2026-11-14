@@ -1307,6 +1307,21 @@ message UserLandRequest {
   // (resolve_conflicts and resolution), and it is not a land: the policy is not
   // applied to it, because nothing is written.
   bool dry_run = 12;
+  // expected_result asks the server to write exactly that commit: the land
+  // fails when the commit it would produce is another one, and the failure
+  // carries the commit it would have written.
+  //
+  // It is what a merge queue needs. The CI asks for the result of the land
+  // (dry_run), verifies that commit, publishes it as the verification
+  // checkpoint of the branch, and lands that very commit: the branch then
+  // holds the tree that was tested, and nothing else. When the branch moved in
+  // between, the land refuses instead of writing a commit nobody tested, and
+  // the queue computes the result again.
+  //
+  // The server holds every caller to it, the operator credential included: the
+  // branch policy binds the agents, and a CI that lands with the operator
+  // credential has this to keep the branch on the commit that was tested.
+  string expected_result = 13;
 }
 
 // LandConflict describes the conflicts of a land that the server did not resolve, so
@@ -1580,5 +1595,19 @@ message UserLandError {
     CustomHookError custom_hook = 4;
     // access_check is set if the access check rejected the update.
     AccessCheckError access_check = 5;
+    // expected_result is set if the land would have written another commit
+    // than the one the caller verified.
+    ExpectedResultError expected_result = 6;
   }
+}
+
+// ExpectedResultError describes a land that would have written another commit
+// than the one the caller verified.
+message ExpectedResultError {
+  // expected is the commit the caller verified.
+  string expected = 1;
+  // landed is the commit the land would have written.
+  string landed = 2;
+  // tip is the branch tip the land computed the commit on.
+  string tip = 3;
 }

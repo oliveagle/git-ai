@@ -200,6 +200,18 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if o.dryRun && (o.abort || o.resolve || o.conflictsDir != "" || o.resolved != "") {
 		return usagef("land --dry-run takes neither --abort, --resolve, --conflicts-dir nor --resolved")
 	}
+	if o.expect != "" && o.dryRun {
+		return usagef("land --expect takes no --dry-run: a dry run computes the commit the land would write")
+	}
+	if o.expect != "" && (o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --expect is for a plain land: a resolved land is not reproducible")
+	}
+	if o.expect != "" && o.timestamp == "" {
+		// The committer date is part of the identity of the commit, so the
+		// land can only write the commit the caller verified when the date is
+		// the one the verification used.
+		return usagef("land --expect requires --timestamp: the commit it names is the one the land writes only when the committer date is pinned")
+	}
 	if o.dryRun && o.timestamp == "" {
 		// The commit a land produces carries the committer date, so without the
 		// date the commit the dry run names is not the one the land writes.
@@ -229,6 +241,8 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 			return rerr
 		}
 		res, err = ws.LandResolution(ctx, branch, committer, resolution)
+	case o.expect != "":
+		res, err = ws.LandVerified(ctx, branch, o.strategy, committer, timestamp, o.expect)
 	case o.timestamp != "":
 		res, err = ws.LandTimed(ctx, branch, o.strategy, committer, timestamp)
 	default:
@@ -271,12 +285,13 @@ func cmdLandCommit(ctx context.Context, out io.Writer, o *options, branch string
 	}
 
 	res, err := backend.Land(ctx, workspace.LandOptions{
-		Branch:    branch,
-		Commit:    commit,
-		Strategy:  o.strategy,
-		Committer: committer,
-		Timestamp: timestamp,
-		DryRun:    o.dryRun,
+		Branch:         branch,
+		Commit:         commit,
+		Strategy:       o.strategy,
+		Committer:      committer,
+		Timestamp:      timestamp,
+		DryRun:         o.dryRun,
+		ExpectedResult: o.expect,
 	})
 	if err != nil {
 		// The conflict package of the failed land is printed for the caller

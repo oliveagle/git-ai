@@ -4763,9 +4763,24 @@ type UserLandRequest struct {
 	// A dry run refuses what it cannot decide without resolving conflicts
 	// (resolve_conflicts and resolution), and it is not a land: the policy is not
 	// applied to it, because nothing is written.
-	DryRun        bool `protobuf:"varint,12,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	DryRun bool `protobuf:"varint,12,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	// expected_result asks the server to write exactly that commit: the land
+	// fails when the commit it would produce is another one, and the failure
+	// carries the commit it would have written.
+	//
+	// It is what a merge queue needs. The CI asks for the result of the land
+	// (dry_run), verifies that commit, publishes it as the verification
+	// checkpoint of the branch, and lands that very commit: the branch then
+	// holds the tree that was tested, and nothing else. When the branch moved in
+	// between, the land refuses instead of writing a commit nobody tested, and
+	// the queue computes the result again.
+	//
+	// The server holds every caller to it, the operator credential included: the
+	// branch policy binds the agents, and a CI that lands with the operator
+	// credential has this to keep the branch on the commit that was tested.
+	ExpectedResult string `protobuf:"bytes,13,opt,name=expected_result,json=expectedResult,proto3" json:"expected_result,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UserLandRequest) Reset() {
@@ -4880,6 +4895,13 @@ func (x *UserLandRequest) GetDryRun() bool {
 		return x.DryRun
 	}
 	return false
+}
+
+func (x *UserLandRequest) GetExpectedResult() string {
+	if x != nil {
+		return x.ExpectedResult
+	}
+	return ""
 }
 
 // LandConflict describes the conflicts of a land that the server did not resolve, so
@@ -5838,6 +5860,7 @@ type UserLandError struct {
 	//	*UserLandError_ReferenceUpdate
 	//	*UserLandError_CustomHook
 	//	*UserLandError_AccessCheck
+	//	*UserLandError_ExpectedResult
 	Error         isUserLandError_Error `protobuf_oneof:"error"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5925,6 +5948,15 @@ func (x *UserLandError) GetAccessCheck() *AccessCheckError {
 	return nil
 }
 
+func (x *UserLandError) GetExpectedResult() *ExpectedResultError {
+	if x != nil {
+		if x, ok := x.Error.(*UserLandError_ExpectedResult); ok {
+			return x.ExpectedResult
+		}
+	}
+	return nil
+}
+
 type isUserLandError_Error interface {
 	isUserLandError_Error()
 }
@@ -5957,6 +5989,12 @@ type UserLandError_AccessCheck struct {
 	AccessCheck *AccessCheckError `protobuf:"bytes,5,opt,name=access_check,json=accessCheck,proto3,oneof"`
 }
 
+type UserLandError_ExpectedResult struct {
+	// expected_result is set if the land would have written another commit
+	// than the one the caller verified.
+	ExpectedResult *ExpectedResultError `protobuf:"bytes,6,opt,name=expected_result,json=expectedResult,proto3,oneof"`
+}
+
 func (*UserLandError_MergeConflict) isUserLandError_Error() {}
 
 func (*UserLandError_NotAncestor) isUserLandError_Error() {}
@@ -5966,6 +6004,73 @@ func (*UserLandError_ReferenceUpdate) isUserLandError_Error() {}
 func (*UserLandError_CustomHook) isUserLandError_Error() {}
 
 func (*UserLandError_AccessCheck) isUserLandError_Error() {}
+
+func (*UserLandError_ExpectedResult) isUserLandError_Error() {}
+
+// ExpectedResultError describes a land that would have written another commit
+// than the one the caller verified.
+type ExpectedResultError struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// expected is the commit the caller verified.
+	Expected string `protobuf:"bytes,1,opt,name=expected,proto3" json:"expected,omitempty"`
+	// landed is the commit the land would have written.
+	Landed string `protobuf:"bytes,2,opt,name=landed,proto3" json:"landed,omitempty"`
+	// tip is the branch tip the land computed the commit on.
+	Tip           string `protobuf:"bytes,3,opt,name=tip,proto3" json:"tip,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExpectedResultError) Reset() {
+	*x = ExpectedResultError{}
+	mi := &file_operations_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExpectedResultError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExpectedResultError) ProtoMessage() {}
+
+func (x *ExpectedResultError) ProtoReflect() protoreflect.Message {
+	mi := &file_operations_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExpectedResultError.ProtoReflect.Descriptor instead.
+func (*ExpectedResultError) Descriptor() ([]byte, []int) {
+	return file_operations_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *ExpectedResultError) GetExpected() string {
+	if x != nil {
+		return x.Expected
+	}
+	return ""
+}
+
+func (x *ExpectedResultError) GetLanded() string {
+	if x != nil {
+		return x.Landed
+	}
+	return ""
+}
+
+func (x *ExpectedResultError) GetTip() string {
+	if x != nil {
+		return x.Tip
+	}
+	return ""
+}
 
 // Header contains information to compute the rebase and must be sent as
 // first message.
@@ -6005,7 +6110,7 @@ type UserRebaseConfirmableRequest_Header struct {
 
 func (x *UserRebaseConfirmableRequest_Header) Reset() {
 	*x = UserRebaseConfirmableRequest_Header{}
-	mi := &file_operations_proto_msgTypes[61]
+	mi := &file_operations_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6017,7 +6122,7 @@ func (x *UserRebaseConfirmableRequest_Header) String() string {
 func (*UserRebaseConfirmableRequest_Header) ProtoMessage() {}
 
 func (x *UserRebaseConfirmableRequest_Header) ProtoReflect() protoreflect.Message {
-	mi := &file_operations_proto_msgTypes[61]
+	mi := &file_operations_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6125,7 +6230,7 @@ type UserApplyPatchRequest_Header struct {
 
 func (x *UserApplyPatchRequest_Header) Reset() {
 	*x = UserApplyPatchRequest_Header{}
-	mi := &file_operations_proto_msgTypes[62]
+	mi := &file_operations_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6137,7 +6242,7 @@ func (x *UserApplyPatchRequest_Header) String() string {
 func (*UserApplyPatchRequest_Header) ProtoMessage() {}
 
 func (x *UserApplyPatchRequest_Header) ProtoReflect() protoreflect.Message {
-	mi := &file_operations_proto_msgTypes[62]
+	mi := &file_operations_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6543,7 +6648,7 @@ const file_operations_proto_rawDesc = "" +
 	"\x10reference_update\x18\x02 \x01(\v2\x1c.gitaly.ReferenceUpdateErrorH\x00R\x0freferenceUpdate\x122\n" +
 	"\n" +
 	"path_error\x18\x03 \x01(\v2\x11.gitaly.PathErrorH\x00R\tpathErrorB\a\n" +
-	"\x05error\"\xdc\x04\n" +
+	"\x05error\"\x85\x05\n" +
 	"\x0fUserLandRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
@@ -6561,7 +6666,8 @@ const file_operations_proto_rawDesc = "" +
 	"\n" +
 	"resolution\x18\v \x01(\v2\x16.gitaly.LandResolutionR\n" +
 	"resolution\x12\x17\n" +
-	"\adry_run\x18\f \x01(\bR\x06dryRun\"U\n" +
+	"\adry_run\x18\f \x01(\bR\x06dryRun\x12'\n" +
+	"\x0fexpected_result\x18\r \x01(\tR\x0eexpectedResult\"U\n" +
 	"\bStrategy\x12\x1f\n" +
 	"\x1bSTRATEGY_REBASE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSTRATEGY_MERGE\x10\x01\x12\x14\n" +
@@ -6657,15 +6763,20 @@ const file_operations_proto_rawDesc = "" +
 	"\x0flanded_sequence\x18\v \x01(\x04R\x0elandedSequence\x121\n" +
 	"\x15reverted_by_commit_id\x18\f \x01(\tR\x12revertedByCommitId\x122\n" +
 	"\x15already_landed_detail\x18\r \x01(\tR\x13alreadyLandedDetail\x12\x17\n" +
-	"\adry_run\x18\x0e \x01(\bR\x06dryRun\"\xe2\x02\n" +
+	"\adry_run\x18\x0e \x01(\bR\x06dryRun\"\xaa\x03\n" +
 	"\rUserLandError\x12C\n" +
 	"\x0emerge_conflict\x18\x01 \x01(\v2\x1a.gitaly.MergeConflictErrorH\x00R\rmergeConflict\x12=\n" +
 	"\fnot_ancestor\x18\x02 \x01(\v2\x18.gitaly.NotAncestorErrorH\x00R\vnotAncestor\x12I\n" +
 	"\x10reference_update\x18\x03 \x01(\v2\x1c.gitaly.ReferenceUpdateErrorH\x00R\x0freferenceUpdate\x12:\n" +
 	"\vcustom_hook\x18\x04 \x01(\v2\x17.gitaly.CustomHookErrorH\x00R\n" +
 	"customHook\x12=\n" +
-	"\faccess_check\x18\x05 \x01(\v2\x18.gitaly.AccessCheckErrorH\x00R\vaccessCheckB\a\n" +
-	"\x05error2\x90\f\n" +
+	"\faccess_check\x18\x05 \x01(\v2\x18.gitaly.AccessCheckErrorH\x00R\vaccessCheck\x12F\n" +
+	"\x0fexpected_result\x18\x06 \x01(\v2\x1b.gitaly.ExpectedResultErrorH\x00R\x0eexpectedResultB\a\n" +
+	"\x05error\"[\n" +
+	"\x13ExpectedResultError\x12\x1a\n" +
+	"\bexpected\x18\x01 \x01(\tR\bexpected\x12\x16\n" +
+	"\x06landed\x18\x02 \x01(\tR\x06landed\x12\x10\n" +
+	"\x03tip\x18\x03 \x01(\tR\x03tip2\x90\f\n" +
 	"\x10OperationService\x12]\n" +
 	"\x10UserCreateBranch\x12\x1f.gitaly.UserCreateBranchRequest\x1a .gitaly.UserCreateBranchResponse\"\x06\xfa\x97(\x02\b\x01\x12]\n" +
 	"\x10UserUpdateBranch\x12\x1f.gitaly.UserUpdateBranchRequest\x1a .gitaly.UserUpdateBranchResponse\"\x06\xfa\x97(\x02\b\x01\x12]\n" +
@@ -6700,7 +6811,7 @@ func file_operations_proto_rawDescGZIP() []byte {
 }
 
 var file_operations_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_operations_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
+var file_operations_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_operations_proto_goTypes = []any{
 	(UserRevertResponse_CreateTreeError)(0),     // 0: gitaly.UserRevertResponse.CreateTreeError
 	(UserCommitFilesActionHeader_ActionType)(0), // 1: gitaly.UserCommitFilesActionHeader.ActionType
@@ -6769,123 +6880,124 @@ var file_operations_proto_goTypes = []any{
 	(*LandResolvedFile)(nil),                    // 64: gitaly.LandResolvedFile
 	(*UserLandResponse)(nil),                    // 65: gitaly.UserLandResponse
 	(*UserLandError)(nil),                       // 66: gitaly.UserLandError
-	(*UserRebaseConfirmableRequest_Header)(nil), // 67: gitaly.UserRebaseConfirmableRequest.Header
-	(*UserApplyPatchRequest_Header)(nil),        // 68: gitaly.UserApplyPatchRequest.Header
-	(*Repository)(nil),                          // 69: gitaly.Repository
-	(*User)(nil),                                // 70: gitaly.User
-	(*Branch)(nil),                              // 71: gitaly.Branch
-	(*CustomHookError)(nil),                     // 72: gitaly.CustomHookError
-	(*AccessCheckError)(nil),                    // 73: gitaly.AccessCheckError
-	(*ReferenceUpdateError)(nil),                // 74: gitaly.ReferenceUpdateError
-	(*timestamppb.Timestamp)(nil),               // 75: google.protobuf.Timestamp
-	(*Tag)(nil),                                 // 76: gitaly.Tag
-	(*ReferenceExistsError)(nil),                // 77: gitaly.ReferenceExistsError
-	(*MergeConflictError)(nil),                  // 78: gitaly.MergeConflictError
-	(*GitCommit)(nil),                           // 79: gitaly.GitCommit
-	(*NotAncestorError)(nil),                    // 80: gitaly.NotAncestorError
-	(*ChangesAlreadyAppliedError)(nil),          // 81: gitaly.ChangesAlreadyAppliedError
-	(*IndexError)(nil),                          // 82: gitaly.IndexError
-	(*ResolveRevisionError)(nil),                // 83: gitaly.ResolveRevisionError
-	(*PathError)(nil),                           // 84: gitaly.PathError
+	(*ExpectedResultError)(nil),                 // 67: gitaly.ExpectedResultError
+	(*UserRebaseConfirmableRequest_Header)(nil), // 68: gitaly.UserRebaseConfirmableRequest.Header
+	(*UserApplyPatchRequest_Header)(nil),        // 69: gitaly.UserApplyPatchRequest.Header
+	(*Repository)(nil),                          // 70: gitaly.Repository
+	(*User)(nil),                                // 71: gitaly.User
+	(*Branch)(nil),                              // 72: gitaly.Branch
+	(*CustomHookError)(nil),                     // 73: gitaly.CustomHookError
+	(*AccessCheckError)(nil),                    // 74: gitaly.AccessCheckError
+	(*ReferenceUpdateError)(nil),                // 75: gitaly.ReferenceUpdateError
+	(*timestamppb.Timestamp)(nil),               // 76: google.protobuf.Timestamp
+	(*Tag)(nil),                                 // 77: gitaly.Tag
+	(*ReferenceExistsError)(nil),                // 78: gitaly.ReferenceExistsError
+	(*MergeConflictError)(nil),                  // 79: gitaly.MergeConflictError
+	(*GitCommit)(nil),                           // 80: gitaly.GitCommit
+	(*NotAncestorError)(nil),                    // 81: gitaly.NotAncestorError
+	(*ChangesAlreadyAppliedError)(nil),          // 82: gitaly.ChangesAlreadyAppliedError
+	(*IndexError)(nil),                          // 83: gitaly.IndexError
+	(*ResolveRevisionError)(nil),                // 84: gitaly.ResolveRevisionError
+	(*PathError)(nil),                           // 85: gitaly.PathError
 }
 var file_operations_proto_depIdxs = []int32{
-	69,  // 0: gitaly.UserCreateBranchRequest.repository:type_name -> gitaly.Repository
-	70,  // 1: gitaly.UserCreateBranchRequest.user:type_name -> gitaly.User
-	71,  // 2: gitaly.UserCreateBranchResponse.branch:type_name -> gitaly.Branch
-	72,  // 3: gitaly.UserCreateBranchError.custom_hook:type_name -> gitaly.CustomHookError
-	69,  // 4: gitaly.UserUpdateBranchRequest.repository:type_name -> gitaly.Repository
-	70,  // 5: gitaly.UserUpdateBranchRequest.user:type_name -> gitaly.User
-	69,  // 6: gitaly.UserDeleteBranchRequest.repository:type_name -> gitaly.Repository
-	70,  // 7: gitaly.UserDeleteBranchRequest.user:type_name -> gitaly.User
-	73,  // 8: gitaly.UserDeleteBranchError.access_check:type_name -> gitaly.AccessCheckError
-	74,  // 9: gitaly.UserDeleteBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	72,  // 10: gitaly.UserDeleteBranchError.custom_hook:type_name -> gitaly.CustomHookError
-	69,  // 11: gitaly.UserDeleteTagRequest.repository:type_name -> gitaly.Repository
-	70,  // 12: gitaly.UserDeleteTagRequest.user:type_name -> gitaly.User
-	69,  // 13: gitaly.UserCreateTagRequest.repository:type_name -> gitaly.Repository
-	70,  // 14: gitaly.UserCreateTagRequest.user:type_name -> gitaly.User
-	75,  // 15: gitaly.UserCreateTagRequest.timestamp:type_name -> google.protobuf.Timestamp
-	76,  // 16: gitaly.UserCreateTagResponse.tag:type_name -> gitaly.Tag
-	73,  // 17: gitaly.UserCreateTagError.access_check:type_name -> gitaly.AccessCheckError
-	74,  // 18: gitaly.UserCreateTagError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	72,  // 19: gitaly.UserCreateTagError.custom_hook:type_name -> gitaly.CustomHookError
-	77,  // 20: gitaly.UserCreateTagError.reference_exists:type_name -> gitaly.ReferenceExistsError
-	69,  // 21: gitaly.UserMergeBranchRequest.repository:type_name -> gitaly.Repository
-	70,  // 22: gitaly.UserMergeBranchRequest.user:type_name -> gitaly.User
-	75,  // 23: gitaly.UserMergeBranchRequest.timestamp:type_name -> google.protobuf.Timestamp
+	70,  // 0: gitaly.UserCreateBranchRequest.repository:type_name -> gitaly.Repository
+	71,  // 1: gitaly.UserCreateBranchRequest.user:type_name -> gitaly.User
+	72,  // 2: gitaly.UserCreateBranchResponse.branch:type_name -> gitaly.Branch
+	73,  // 3: gitaly.UserCreateBranchError.custom_hook:type_name -> gitaly.CustomHookError
+	70,  // 4: gitaly.UserUpdateBranchRequest.repository:type_name -> gitaly.Repository
+	71,  // 5: gitaly.UserUpdateBranchRequest.user:type_name -> gitaly.User
+	70,  // 6: gitaly.UserDeleteBranchRequest.repository:type_name -> gitaly.Repository
+	71,  // 7: gitaly.UserDeleteBranchRequest.user:type_name -> gitaly.User
+	74,  // 8: gitaly.UserDeleteBranchError.access_check:type_name -> gitaly.AccessCheckError
+	75,  // 9: gitaly.UserDeleteBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	73,  // 10: gitaly.UserDeleteBranchError.custom_hook:type_name -> gitaly.CustomHookError
+	70,  // 11: gitaly.UserDeleteTagRequest.repository:type_name -> gitaly.Repository
+	71,  // 12: gitaly.UserDeleteTagRequest.user:type_name -> gitaly.User
+	70,  // 13: gitaly.UserCreateTagRequest.repository:type_name -> gitaly.Repository
+	71,  // 14: gitaly.UserCreateTagRequest.user:type_name -> gitaly.User
+	76,  // 15: gitaly.UserCreateTagRequest.timestamp:type_name -> google.protobuf.Timestamp
+	77,  // 16: gitaly.UserCreateTagResponse.tag:type_name -> gitaly.Tag
+	74,  // 17: gitaly.UserCreateTagError.access_check:type_name -> gitaly.AccessCheckError
+	75,  // 18: gitaly.UserCreateTagError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	73,  // 19: gitaly.UserCreateTagError.custom_hook:type_name -> gitaly.CustomHookError
+	78,  // 20: gitaly.UserCreateTagError.reference_exists:type_name -> gitaly.ReferenceExistsError
+	70,  // 21: gitaly.UserMergeBranchRequest.repository:type_name -> gitaly.Repository
+	71,  // 22: gitaly.UserMergeBranchRequest.user:type_name -> gitaly.User
+	76,  // 23: gitaly.UserMergeBranchRequest.timestamp:type_name -> google.protobuf.Timestamp
 	27,  // 24: gitaly.UserMergeBranchResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	73,  // 25: gitaly.UserMergeBranchError.access_check:type_name -> gitaly.AccessCheckError
-	74,  // 26: gitaly.UserMergeBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	72,  // 27: gitaly.UserMergeBranchError.custom_hook:type_name -> gitaly.CustomHookError
-	78,  // 28: gitaly.UserMergeBranchError.merge_conflict:type_name -> gitaly.MergeConflictError
-	69,  // 29: gitaly.UserMergeToRefRequest.repository:type_name -> gitaly.Repository
-	70,  // 30: gitaly.UserMergeToRefRequest.user:type_name -> gitaly.User
-	75,  // 31: gitaly.UserMergeToRefRequest.timestamp:type_name -> google.protobuf.Timestamp
-	78,  // 32: gitaly.UserMergeToRefError.merge_conflict:type_name -> gitaly.MergeConflictError
-	69,  // 33: gitaly.UserRebaseToRefRequest.repository:type_name -> gitaly.Repository
-	70,  // 34: gitaly.UserRebaseToRefRequest.user:type_name -> gitaly.User
-	75,  // 35: gitaly.UserRebaseToRefRequest.timestamp:type_name -> google.protobuf.Timestamp
-	72,  // 36: gitaly.UserFFBranchError.custom_hook:type_name -> gitaly.CustomHookError
-	74,  // 37: gitaly.UserFFBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	69,  // 38: gitaly.UserFFBranchRequest.repository:type_name -> gitaly.Repository
-	70,  // 39: gitaly.UserFFBranchRequest.user:type_name -> gitaly.User
+	74,  // 25: gitaly.UserMergeBranchError.access_check:type_name -> gitaly.AccessCheckError
+	75,  // 26: gitaly.UserMergeBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	73,  // 27: gitaly.UserMergeBranchError.custom_hook:type_name -> gitaly.CustomHookError
+	79,  // 28: gitaly.UserMergeBranchError.merge_conflict:type_name -> gitaly.MergeConflictError
+	70,  // 29: gitaly.UserMergeToRefRequest.repository:type_name -> gitaly.Repository
+	71,  // 30: gitaly.UserMergeToRefRequest.user:type_name -> gitaly.User
+	76,  // 31: gitaly.UserMergeToRefRequest.timestamp:type_name -> google.protobuf.Timestamp
+	79,  // 32: gitaly.UserMergeToRefError.merge_conflict:type_name -> gitaly.MergeConflictError
+	70,  // 33: gitaly.UserRebaseToRefRequest.repository:type_name -> gitaly.Repository
+	71,  // 34: gitaly.UserRebaseToRefRequest.user:type_name -> gitaly.User
+	76,  // 35: gitaly.UserRebaseToRefRequest.timestamp:type_name -> google.protobuf.Timestamp
+	73,  // 36: gitaly.UserFFBranchError.custom_hook:type_name -> gitaly.CustomHookError
+	75,  // 37: gitaly.UserFFBranchError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	70,  // 38: gitaly.UserFFBranchRequest.repository:type_name -> gitaly.Repository
+	71,  // 39: gitaly.UserFFBranchRequest.user:type_name -> gitaly.User
 	27,  // 40: gitaly.UserFFBranchResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	69,  // 41: gitaly.UserCherryPickRequest.repository:type_name -> gitaly.Repository
-	70,  // 42: gitaly.UserCherryPickRequest.user:type_name -> gitaly.User
-	79,  // 43: gitaly.UserCherryPickRequest.commit:type_name -> gitaly.GitCommit
-	69,  // 44: gitaly.UserCherryPickRequest.start_repository:type_name -> gitaly.Repository
-	75,  // 45: gitaly.UserCherryPickRequest.timestamp:type_name -> google.protobuf.Timestamp
+	70,  // 41: gitaly.UserCherryPickRequest.repository:type_name -> gitaly.Repository
+	71,  // 42: gitaly.UserCherryPickRequest.user:type_name -> gitaly.User
+	80,  // 43: gitaly.UserCherryPickRequest.commit:type_name -> gitaly.GitCommit
+	70,  // 44: gitaly.UserCherryPickRequest.start_repository:type_name -> gitaly.Repository
+	76,  // 45: gitaly.UserCherryPickRequest.timestamp:type_name -> google.protobuf.Timestamp
 	27,  // 46: gitaly.UserCherryPickResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	78,  // 47: gitaly.UserCherryPickError.cherry_pick_conflict:type_name -> gitaly.MergeConflictError
-	80,  // 48: gitaly.UserCherryPickError.target_branch_diverged:type_name -> gitaly.NotAncestorError
-	81,  // 49: gitaly.UserCherryPickError.changes_already_applied:type_name -> gitaly.ChangesAlreadyAppliedError
-	73,  // 50: gitaly.UserCherryPickError.access_check:type_name -> gitaly.AccessCheckError
-	69,  // 51: gitaly.UserRevertRequest.repository:type_name -> gitaly.Repository
-	70,  // 52: gitaly.UserRevertRequest.user:type_name -> gitaly.User
-	79,  // 53: gitaly.UserRevertRequest.commit:type_name -> gitaly.GitCommit
-	69,  // 54: gitaly.UserRevertRequest.start_repository:type_name -> gitaly.Repository
-	75,  // 55: gitaly.UserRevertRequest.timestamp:type_name -> google.protobuf.Timestamp
+	79,  // 47: gitaly.UserCherryPickError.cherry_pick_conflict:type_name -> gitaly.MergeConflictError
+	81,  // 48: gitaly.UserCherryPickError.target_branch_diverged:type_name -> gitaly.NotAncestorError
+	82,  // 49: gitaly.UserCherryPickError.changes_already_applied:type_name -> gitaly.ChangesAlreadyAppliedError
+	74,  // 50: gitaly.UserCherryPickError.access_check:type_name -> gitaly.AccessCheckError
+	70,  // 51: gitaly.UserRevertRequest.repository:type_name -> gitaly.Repository
+	71,  // 52: gitaly.UserRevertRequest.user:type_name -> gitaly.User
+	80,  // 53: gitaly.UserRevertRequest.commit:type_name -> gitaly.GitCommit
+	70,  // 54: gitaly.UserRevertRequest.start_repository:type_name -> gitaly.Repository
+	76,  // 55: gitaly.UserRevertRequest.timestamp:type_name -> google.protobuf.Timestamp
 	27,  // 56: gitaly.UserRevertResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
 	0,   // 57: gitaly.UserRevertResponse.create_tree_error_code:type_name -> gitaly.UserRevertResponse.CreateTreeError
-	78,  // 58: gitaly.UserRevertError.merge_conflict:type_name -> gitaly.MergeConflictError
-	81,  // 59: gitaly.UserRevertError.changes_already_applied:type_name -> gitaly.ChangesAlreadyAppliedError
-	72,  // 60: gitaly.UserRevertError.custom_hook:type_name -> gitaly.CustomHookError
-	80,  // 61: gitaly.UserRevertError.not_ancestor:type_name -> gitaly.NotAncestorError
+	79,  // 58: gitaly.UserRevertError.merge_conflict:type_name -> gitaly.MergeConflictError
+	82,  // 59: gitaly.UserRevertError.changes_already_applied:type_name -> gitaly.ChangesAlreadyAppliedError
+	73,  // 60: gitaly.UserRevertError.custom_hook:type_name -> gitaly.CustomHookError
+	81,  // 61: gitaly.UserRevertError.not_ancestor:type_name -> gitaly.NotAncestorError
 	1,   // 62: gitaly.UserCommitFilesActionHeader.action:type_name -> gitaly.UserCommitFilesActionHeader.ActionType
 	37,  // 63: gitaly.UserCommitFilesAction.header:type_name -> gitaly.UserCommitFilesActionHeader
-	69,  // 64: gitaly.UserCommitFilesRequestHeader.repository:type_name -> gitaly.Repository
-	70,  // 65: gitaly.UserCommitFilesRequestHeader.user:type_name -> gitaly.User
-	69,  // 66: gitaly.UserCommitFilesRequestHeader.start_repository:type_name -> gitaly.Repository
-	75,  // 67: gitaly.UserCommitFilesRequestHeader.timestamp:type_name -> google.protobuf.Timestamp
+	70,  // 64: gitaly.UserCommitFilesRequestHeader.repository:type_name -> gitaly.Repository
+	71,  // 65: gitaly.UserCommitFilesRequestHeader.user:type_name -> gitaly.User
+	70,  // 66: gitaly.UserCommitFilesRequestHeader.start_repository:type_name -> gitaly.Repository
+	76,  // 67: gitaly.UserCommitFilesRequestHeader.timestamp:type_name -> google.protobuf.Timestamp
 	39,  // 68: gitaly.UserCommitFilesRequest.header:type_name -> gitaly.UserCommitFilesRequestHeader
 	38,  // 69: gitaly.UserCommitFilesRequest.action:type_name -> gitaly.UserCommitFilesAction
 	27,  // 70: gitaly.UserCommitFilesResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	73,  // 71: gitaly.UserCommitFilesError.access_check:type_name -> gitaly.AccessCheckError
-	82,  // 72: gitaly.UserCommitFilesError.index_update:type_name -> gitaly.IndexError
-	72,  // 73: gitaly.UserCommitFilesError.custom_hook:type_name -> gitaly.CustomHookError
-	67,  // 74: gitaly.UserRebaseConfirmableRequest.header:type_name -> gitaly.UserRebaseConfirmableRequest.Header
-	69,  // 75: gitaly.UserSquashRequest.repository:type_name -> gitaly.Repository
-	70,  // 76: gitaly.UserSquashRequest.user:type_name -> gitaly.User
-	70,  // 77: gitaly.UserSquashRequest.author:type_name -> gitaly.User
-	75,  // 78: gitaly.UserSquashRequest.timestamp:type_name -> google.protobuf.Timestamp
-	78,  // 79: gitaly.UserRebaseConfirmableError.rebase_conflict:type_name -> gitaly.MergeConflictError
-	73,  // 80: gitaly.UserRebaseConfirmableError.access_check:type_name -> gitaly.AccessCheckError
-	83,  // 81: gitaly.UserSquashError.resolve_revision:type_name -> gitaly.ResolveRevisionError
-	78,  // 82: gitaly.UserSquashError.rebase_conflict:type_name -> gitaly.MergeConflictError
-	68,  // 83: gitaly.UserApplyPatchRequest.header:type_name -> gitaly.UserApplyPatchRequest.Header
-	72,  // 84: gitaly.UserApplyPatchError.custom_hook:type_name -> gitaly.CustomHookError
+	74,  // 71: gitaly.UserCommitFilesError.access_check:type_name -> gitaly.AccessCheckError
+	83,  // 72: gitaly.UserCommitFilesError.index_update:type_name -> gitaly.IndexError
+	73,  // 73: gitaly.UserCommitFilesError.custom_hook:type_name -> gitaly.CustomHookError
+	68,  // 74: gitaly.UserRebaseConfirmableRequest.header:type_name -> gitaly.UserRebaseConfirmableRequest.Header
+	70,  // 75: gitaly.UserSquashRequest.repository:type_name -> gitaly.Repository
+	71,  // 76: gitaly.UserSquashRequest.user:type_name -> gitaly.User
+	71,  // 77: gitaly.UserSquashRequest.author:type_name -> gitaly.User
+	76,  // 78: gitaly.UserSquashRequest.timestamp:type_name -> google.protobuf.Timestamp
+	79,  // 79: gitaly.UserRebaseConfirmableError.rebase_conflict:type_name -> gitaly.MergeConflictError
+	74,  // 80: gitaly.UserRebaseConfirmableError.access_check:type_name -> gitaly.AccessCheckError
+	84,  // 81: gitaly.UserSquashError.resolve_revision:type_name -> gitaly.ResolveRevisionError
+	79,  // 82: gitaly.UserSquashError.rebase_conflict:type_name -> gitaly.MergeConflictError
+	69,  // 83: gitaly.UserApplyPatchRequest.header:type_name -> gitaly.UserApplyPatchRequest.Header
+	73,  // 84: gitaly.UserApplyPatchError.custom_hook:type_name -> gitaly.CustomHookError
 	27,  // 85: gitaly.UserApplyPatchResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	69,  // 86: gitaly.UserUpdateSubmoduleRequest.repository:type_name -> gitaly.Repository
-	70,  // 87: gitaly.UserUpdateSubmoduleRequest.user:type_name -> gitaly.User
-	75,  // 88: gitaly.UserUpdateSubmoduleRequest.timestamp:type_name -> google.protobuf.Timestamp
+	70,  // 86: gitaly.UserUpdateSubmoduleRequest.repository:type_name -> gitaly.Repository
+	71,  // 87: gitaly.UserUpdateSubmoduleRequest.user:type_name -> gitaly.User
+	76,  // 88: gitaly.UserUpdateSubmoduleRequest.timestamp:type_name -> google.protobuf.Timestamp
 	27,  // 89: gitaly.UserUpdateSubmoduleResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	72,  // 90: gitaly.UserUpdateSubmoduleError.custom_hook:type_name -> gitaly.CustomHookError
-	74,  // 91: gitaly.UserUpdateSubmoduleError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	84,  // 92: gitaly.UserUpdateSubmoduleError.path_error:type_name -> gitaly.PathError
-	69,  // 93: gitaly.UserLandRequest.repository:type_name -> gitaly.Repository
-	70,  // 94: gitaly.UserLandRequest.user:type_name -> gitaly.User
+	73,  // 90: gitaly.UserUpdateSubmoduleError.custom_hook:type_name -> gitaly.CustomHookError
+	75,  // 91: gitaly.UserUpdateSubmoduleError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	85,  // 92: gitaly.UserUpdateSubmoduleError.path_error:type_name -> gitaly.PathError
+	70,  // 93: gitaly.UserLandRequest.repository:type_name -> gitaly.Repository
+	71,  // 94: gitaly.UserLandRequest.user:type_name -> gitaly.User
 	2,   // 95: gitaly.UserLandRequest.strategy:type_name -> gitaly.UserLandRequest.Strategy
-	75,  // 96: gitaly.UserLandRequest.timestamp:type_name -> google.protobuf.Timestamp
+	76,  // 96: gitaly.UserLandRequest.timestamp:type_name -> google.protobuf.Timestamp
 	63,  // 97: gitaly.UserLandRequest.resolution:type_name -> gitaly.LandResolution
 	57,  // 98: gitaly.LandConflict.files:type_name -> gitaly.LandConflictFile
 	60,  // 99: gitaly.LandConflict.messages:type_name -> gitaly.LandConflictMessage
@@ -6902,57 +7014,58 @@ var file_operations_proto_depIdxs = []int32{
 	64,  // 110: gitaly.LandResolution.files:type_name -> gitaly.LandResolvedFile
 	5,   // 111: gitaly.LandResolvedFile.action:type_name -> gitaly.LandResolvedFile.Action
 	27,  // 112: gitaly.UserLandResponse.branch_update:type_name -> gitaly.OperationBranchUpdate
-	78,  // 113: gitaly.UserLandError.merge_conflict:type_name -> gitaly.MergeConflictError
-	80,  // 114: gitaly.UserLandError.not_ancestor:type_name -> gitaly.NotAncestorError
-	74,  // 115: gitaly.UserLandError.reference_update:type_name -> gitaly.ReferenceUpdateError
-	72,  // 116: gitaly.UserLandError.custom_hook:type_name -> gitaly.CustomHookError
-	73,  // 117: gitaly.UserLandError.access_check:type_name -> gitaly.AccessCheckError
-	69,  // 118: gitaly.UserRebaseConfirmableRequest.Header.repository:type_name -> gitaly.Repository
-	70,  // 119: gitaly.UserRebaseConfirmableRequest.Header.user:type_name -> gitaly.User
-	69,  // 120: gitaly.UserRebaseConfirmableRequest.Header.remote_repository:type_name -> gitaly.Repository
-	75,  // 121: gitaly.UserRebaseConfirmableRequest.Header.timestamp:type_name -> google.protobuf.Timestamp
-	69,  // 122: gitaly.UserApplyPatchRequest.Header.repository:type_name -> gitaly.Repository
-	70,  // 123: gitaly.UserApplyPatchRequest.Header.user:type_name -> gitaly.User
-	75,  // 124: gitaly.UserApplyPatchRequest.Header.timestamp:type_name -> google.protobuf.Timestamp
-	6,   // 125: gitaly.OperationService.UserCreateBranch:input_type -> gitaly.UserCreateBranchRequest
-	9,   // 126: gitaly.OperationService.UserUpdateBranch:input_type -> gitaly.UserUpdateBranchRequest
-	11,  // 127: gitaly.OperationService.UserDeleteBranch:input_type -> gitaly.UserDeleteBranchRequest
-	16,  // 128: gitaly.OperationService.UserCreateTag:input_type -> gitaly.UserCreateTagRequest
-	14,  // 129: gitaly.OperationService.UserDeleteTag:input_type -> gitaly.UserDeleteTagRequest
-	22,  // 130: gitaly.OperationService.UserMergeToRef:input_type -> gitaly.UserMergeToRefRequest
-	25,  // 131: gitaly.OperationService.UserRebaseToRef:input_type -> gitaly.UserRebaseToRefRequest
-	19,  // 132: gitaly.OperationService.UserMergeBranch:input_type -> gitaly.UserMergeBranchRequest
-	29,  // 133: gitaly.OperationService.UserFFBranch:input_type -> gitaly.UserFFBranchRequest
-	31,  // 134: gitaly.OperationService.UserCherryPick:input_type -> gitaly.UserCherryPickRequest
-	40,  // 135: gitaly.OperationService.UserCommitFiles:input_type -> gitaly.UserCommitFilesRequest
-	43,  // 136: gitaly.OperationService.UserRebaseConfirmable:input_type -> gitaly.UserRebaseConfirmableRequest
-	34,  // 137: gitaly.OperationService.UserRevert:input_type -> gitaly.UserRevertRequest
-	45,  // 138: gitaly.OperationService.UserSquash:input_type -> gitaly.UserSquashRequest
-	49,  // 139: gitaly.OperationService.UserApplyPatch:input_type -> gitaly.UserApplyPatchRequest
-	52,  // 140: gitaly.OperationService.UserUpdateSubmodule:input_type -> gitaly.UserUpdateSubmoduleRequest
-	55,  // 141: gitaly.OperationService.UserLand:input_type -> gitaly.UserLandRequest
-	7,   // 142: gitaly.OperationService.UserCreateBranch:output_type -> gitaly.UserCreateBranchResponse
-	10,  // 143: gitaly.OperationService.UserUpdateBranch:output_type -> gitaly.UserUpdateBranchResponse
-	12,  // 144: gitaly.OperationService.UserDeleteBranch:output_type -> gitaly.UserDeleteBranchResponse
-	17,  // 145: gitaly.OperationService.UserCreateTag:output_type -> gitaly.UserCreateTagResponse
-	15,  // 146: gitaly.OperationService.UserDeleteTag:output_type -> gitaly.UserDeleteTagResponse
-	23,  // 147: gitaly.OperationService.UserMergeToRef:output_type -> gitaly.UserMergeToRefResponse
-	26,  // 148: gitaly.OperationService.UserRebaseToRef:output_type -> gitaly.UserRebaseToRefResponse
-	20,  // 149: gitaly.OperationService.UserMergeBranch:output_type -> gitaly.UserMergeBranchResponse
-	30,  // 150: gitaly.OperationService.UserFFBranch:output_type -> gitaly.UserFFBranchResponse
-	32,  // 151: gitaly.OperationService.UserCherryPick:output_type -> gitaly.UserCherryPickResponse
-	41,  // 152: gitaly.OperationService.UserCommitFiles:output_type -> gitaly.UserCommitFilesResponse
-	44,  // 153: gitaly.OperationService.UserRebaseConfirmable:output_type -> gitaly.UserRebaseConfirmableResponse
-	35,  // 154: gitaly.OperationService.UserRevert:output_type -> gitaly.UserRevertResponse
-	46,  // 155: gitaly.OperationService.UserSquash:output_type -> gitaly.UserSquashResponse
-	51,  // 156: gitaly.OperationService.UserApplyPatch:output_type -> gitaly.UserApplyPatchResponse
-	53,  // 157: gitaly.OperationService.UserUpdateSubmodule:output_type -> gitaly.UserUpdateSubmoduleResponse
-	65,  // 158: gitaly.OperationService.UserLand:output_type -> gitaly.UserLandResponse
-	142, // [142:159] is the sub-list for method output_type
-	125, // [125:142] is the sub-list for method input_type
-	125, // [125:125] is the sub-list for extension type_name
-	125, // [125:125] is the sub-list for extension extendee
-	0,   // [0:125] is the sub-list for field type_name
+	79,  // 113: gitaly.UserLandError.merge_conflict:type_name -> gitaly.MergeConflictError
+	81,  // 114: gitaly.UserLandError.not_ancestor:type_name -> gitaly.NotAncestorError
+	75,  // 115: gitaly.UserLandError.reference_update:type_name -> gitaly.ReferenceUpdateError
+	73,  // 116: gitaly.UserLandError.custom_hook:type_name -> gitaly.CustomHookError
+	74,  // 117: gitaly.UserLandError.access_check:type_name -> gitaly.AccessCheckError
+	67,  // 118: gitaly.UserLandError.expected_result:type_name -> gitaly.ExpectedResultError
+	70,  // 119: gitaly.UserRebaseConfirmableRequest.Header.repository:type_name -> gitaly.Repository
+	71,  // 120: gitaly.UserRebaseConfirmableRequest.Header.user:type_name -> gitaly.User
+	70,  // 121: gitaly.UserRebaseConfirmableRequest.Header.remote_repository:type_name -> gitaly.Repository
+	76,  // 122: gitaly.UserRebaseConfirmableRequest.Header.timestamp:type_name -> google.protobuf.Timestamp
+	70,  // 123: gitaly.UserApplyPatchRequest.Header.repository:type_name -> gitaly.Repository
+	71,  // 124: gitaly.UserApplyPatchRequest.Header.user:type_name -> gitaly.User
+	76,  // 125: gitaly.UserApplyPatchRequest.Header.timestamp:type_name -> google.protobuf.Timestamp
+	6,   // 126: gitaly.OperationService.UserCreateBranch:input_type -> gitaly.UserCreateBranchRequest
+	9,   // 127: gitaly.OperationService.UserUpdateBranch:input_type -> gitaly.UserUpdateBranchRequest
+	11,  // 128: gitaly.OperationService.UserDeleteBranch:input_type -> gitaly.UserDeleteBranchRequest
+	16,  // 129: gitaly.OperationService.UserCreateTag:input_type -> gitaly.UserCreateTagRequest
+	14,  // 130: gitaly.OperationService.UserDeleteTag:input_type -> gitaly.UserDeleteTagRequest
+	22,  // 131: gitaly.OperationService.UserMergeToRef:input_type -> gitaly.UserMergeToRefRequest
+	25,  // 132: gitaly.OperationService.UserRebaseToRef:input_type -> gitaly.UserRebaseToRefRequest
+	19,  // 133: gitaly.OperationService.UserMergeBranch:input_type -> gitaly.UserMergeBranchRequest
+	29,  // 134: gitaly.OperationService.UserFFBranch:input_type -> gitaly.UserFFBranchRequest
+	31,  // 135: gitaly.OperationService.UserCherryPick:input_type -> gitaly.UserCherryPickRequest
+	40,  // 136: gitaly.OperationService.UserCommitFiles:input_type -> gitaly.UserCommitFilesRequest
+	43,  // 137: gitaly.OperationService.UserRebaseConfirmable:input_type -> gitaly.UserRebaseConfirmableRequest
+	34,  // 138: gitaly.OperationService.UserRevert:input_type -> gitaly.UserRevertRequest
+	45,  // 139: gitaly.OperationService.UserSquash:input_type -> gitaly.UserSquashRequest
+	49,  // 140: gitaly.OperationService.UserApplyPatch:input_type -> gitaly.UserApplyPatchRequest
+	52,  // 141: gitaly.OperationService.UserUpdateSubmodule:input_type -> gitaly.UserUpdateSubmoduleRequest
+	55,  // 142: gitaly.OperationService.UserLand:input_type -> gitaly.UserLandRequest
+	7,   // 143: gitaly.OperationService.UserCreateBranch:output_type -> gitaly.UserCreateBranchResponse
+	10,  // 144: gitaly.OperationService.UserUpdateBranch:output_type -> gitaly.UserUpdateBranchResponse
+	12,  // 145: gitaly.OperationService.UserDeleteBranch:output_type -> gitaly.UserDeleteBranchResponse
+	17,  // 146: gitaly.OperationService.UserCreateTag:output_type -> gitaly.UserCreateTagResponse
+	15,  // 147: gitaly.OperationService.UserDeleteTag:output_type -> gitaly.UserDeleteTagResponse
+	23,  // 148: gitaly.OperationService.UserMergeToRef:output_type -> gitaly.UserMergeToRefResponse
+	26,  // 149: gitaly.OperationService.UserRebaseToRef:output_type -> gitaly.UserRebaseToRefResponse
+	20,  // 150: gitaly.OperationService.UserMergeBranch:output_type -> gitaly.UserMergeBranchResponse
+	30,  // 151: gitaly.OperationService.UserFFBranch:output_type -> gitaly.UserFFBranchResponse
+	32,  // 152: gitaly.OperationService.UserCherryPick:output_type -> gitaly.UserCherryPickResponse
+	41,  // 153: gitaly.OperationService.UserCommitFiles:output_type -> gitaly.UserCommitFilesResponse
+	44,  // 154: gitaly.OperationService.UserRebaseConfirmable:output_type -> gitaly.UserRebaseConfirmableResponse
+	35,  // 155: gitaly.OperationService.UserRevert:output_type -> gitaly.UserRevertResponse
+	46,  // 156: gitaly.OperationService.UserSquash:output_type -> gitaly.UserSquashResponse
+	51,  // 157: gitaly.OperationService.UserApplyPatch:output_type -> gitaly.UserApplyPatchResponse
+	53,  // 158: gitaly.OperationService.UserUpdateSubmodule:output_type -> gitaly.UserUpdateSubmoduleResponse
+	65,  // 159: gitaly.OperationService.UserLand:output_type -> gitaly.UserLandResponse
+	143, // [143:160] is the sub-list for method output_type
+	126, // [126:143] is the sub-list for method input_type
+	126, // [126:126] is the sub-list for extension type_name
+	126, // [126:126] is the sub-list for extension extendee
+	0,   // [0:126] is the sub-list for field type_name
 }
 
 func init() { file_operations_proto_init() }
@@ -7049,6 +7162,7 @@ func file_operations_proto_init() {
 		(*UserLandError_ReferenceUpdate)(nil),
 		(*UserLandError_CustomHook)(nil),
 		(*UserLandError_AccessCheck)(nil),
+		(*UserLandError_ExpectedResult)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -7056,7 +7170,7 @@ func file_operations_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_operations_proto_rawDesc), len(file_operations_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   63,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

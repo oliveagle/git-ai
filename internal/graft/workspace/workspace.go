@@ -499,7 +499,7 @@ func (w *Workspace) Commit(ctx context.Context, req CommitRequest) (CommitResult
 	if req.LandBranch == "" {
 		return res, nil
 	}
-	lres, err := w.land(ctx, req.LandBranch, req.Strategy, req.Author, req.Resolve, nil, time.Time{})
+	lres, err := w.land(ctx, req.LandBranch, req.Strategy, req.Author, req.Resolve, nil, time.Time{}, "")
 	if err != nil {
 		if w.state.Pending != nil && w.state.Pending.Landed != "" {
 			// The land succeeded; only the refresh failed, and err explains it.
@@ -531,7 +531,7 @@ func (w *Workspace) LandResolving(ctx context.Context, branch, strategy string, 
 		return LandResult{}, err
 	}
 	defer unlock()
-	return w.land(ctx, branch, strategy, committer, resolve, nil, time.Time{})
+	return w.land(ctx, branch, strategy, committer, resolve, nil, time.Time{}, "")
 }
 
 // GetObjects returns the contents of the requested blobs from the workspace's
@@ -554,7 +554,7 @@ func (w *Workspace) LandResolution(ctx context.Context, branch string, committer
 	if w.state.Pending != nil && resolution.Commit != w.state.Pending.Commit {
 		return LandResult{}, fmt.Errorf("the resolution is for commit %s, not the pending commit %s", resolution.Commit, w.state.Pending.Commit)
 	}
-	return w.land(ctx, branch, StrategyMerge, committer, false, resolution, time.Time{})
+	return w.land(ctx, branch, StrategyMerge, committer, false, resolution, time.Time{}, "")
 }
 
 // LandTimed is Land with the committer date of the rewritten commits pinned to
@@ -562,12 +562,20 @@ func (w *Workspace) LandResolution(ctx context.Context, branch string, committer
 // for the same request (doc/graft/BRANCHES.md, "Verifying the result of a
 // land").
 func (w *Workspace) LandTimed(ctx context.Context, branch, strategy string, committer Signature, timestamp time.Time) (LandResult, error) {
+	return w.LandVerified(ctx, branch, strategy, committer, timestamp, "")
+}
+
+// LandVerified is LandTimed with the commit the caller verified: the server
+// writes exactly that commit, or the land fails and names the commit it would
+// have written. It is what a merge queue lands: the commit it tested, and not
+// another one (doc/graft/BRANCHES.md, "Verifying the result of a land").
+func (w *Workspace) LandVerified(ctx context.Context, branch, strategy string, committer Signature, timestamp time.Time, verified string) (LandResult, error) {
 	unlock, err := w.lockAndLoad()
 	if err != nil {
 		return LandResult{}, err
 	}
 	defer unlock()
-	return w.land(ctx, branch, strategy, committer, false, nil, timestamp)
+	return w.land(ctx, branch, strategy, committer, false, nil, timestamp, verified)
 }
 
 // DryRunLand returns the commit a land of the pending commit would produce on
@@ -610,7 +618,7 @@ func (w *Workspace) DryRunLand(ctx context.Context, branch, strategy string, com
 }
 
 // land is Land without taking the workspace lock.
-func (w *Workspace) land(ctx context.Context, branch, strategy string, committer Signature, resolve bool, resolution *Resolution, timestamp time.Time) (LandResult, error) {
+func (w *Workspace) land(ctx context.Context, branch, strategy string, committer Signature, resolve bool, resolution *Resolution, timestamp time.Time, expected string) (LandResult, error) {
 	if w.state.Pending == nil {
 		return LandResult{}, errors.New("nothing to land: no pending commit")
 	}
@@ -648,6 +656,7 @@ func (w *Workspace) land(ctx context.Context, branch, strategy string, committer
 			ResolveConflicts: resolve,
 			Resolution:       resolution,
 			Timestamp:        timestamp,
+			ExpectedResult:   expected,
 		})
 		if err != nil {
 			return LandResult{}, err

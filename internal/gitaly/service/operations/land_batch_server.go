@@ -70,6 +70,13 @@ func (s *Server) landBatchable(ctx context.Context, in *gitalypb.UserLandRequest
 		return false
 	}
 
+	// A land that names the commit it verified lands alone: a batch writes one
+	// commit for all of its members, which is not the commit the caller
+	// verified.
+	if in.GetExpectedResult() != "" {
+		return false
+	}
+
 	reference := git.NewReferenceNameFromBranchName(string(in.GetBranch()))
 	tip, err := s.landBranchTip(ctx, s.localRepoFactory.Build(in.GetRepository()), reference)
 	if err != nil || tip == "" {

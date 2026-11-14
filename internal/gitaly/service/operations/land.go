@@ -386,6 +386,14 @@ func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, 
 		return landResponse(tip, tip, false, false, false), nil
 	}
 
+	// The caller named the commit it verified: the land writes exactly that
+	// commit, or it fails. The branch moved after the result was computed, or
+	// the request is not the one that was verified, and either way the commit
+	// the land would write is not the one the caller tested.
+	if expected := in.GetExpectedResult(); expected != "" && step.tip.String() != expected {
+		return nil, expectedResultError(expected, step.tip, tip)
+	}
+
 	if err := attempt.publish(ctx); err != nil {
 		return nil, err
 	}
@@ -402,6 +410,24 @@ func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, 
 		step.resolution.landed()
 	}
 	return resp, nil
+}
+
+// expectedResultError is the refusal of a land that would write another commit than the one
+// the caller verified. The detail carries the commit the land would have written, so that a
+// merge queue knows which result it has to compute again.
+func expectedResultError(expected string, landed, tip git.ObjectID) error {
+	return structerr.NewFailedPrecondition(
+		"the land would write %s, not the expected %s: the result has to be computed again (the branch moved, or the request is not the one that was verified)",
+		landed, expected,
+	).WithDetail(&gitalypb.UserLandError{
+		Error: &gitalypb.UserLandError_ExpectedResult{
+			ExpectedResult: &gitalypb.ExpectedResultError{
+				Expected: expected,
+				Landed:   landed.String(),
+				Tip:      tip.String(),
+			},
+		},
+	})
 }
 
 // updateLandedReference performs the compare-and-swap of the branch, recording lands, the

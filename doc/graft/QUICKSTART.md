@@ -217,13 +217,17 @@ graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
 (cd DIR && make test)                   # 4. both suites, on that tree
 (cd DIR && graft green set --branch main --commit "$M")   # 5. the checkpoint
 graft gate check --branch main --result "$M"  #    the status check
-graft land --timestamp "$T"             # 6. land exactly the commit that was tested
+graft land --timestamp "$T" --expect "$M"   # 6. land exactly the commit that was tested
 ```
 
 The checkpoint is published in the workspace the suites ran on, because it
 certifies the tree that was tested: a sparse or changed workspace certifies a
 tree the suites never saw, and a branch that asks for the whole tree
 (`require_full_tree`) refuses the land.
+
+`--expect` holds the land to the commit the suites ran on: the server refuses
+to write another one, so a branch that moved while the suites ran takes
+nothing, and the queue computes the result again on the tip the branch holds.
 
 [BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
 decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and

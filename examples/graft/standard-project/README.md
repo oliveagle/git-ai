@@ -52,14 +52,17 @@ graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
 make test                               # 4. both suites, on that tree
 graft green set --branch main --commit "$M"          # 5. the checkpoint
 graft gate check --branch main --result "$M"         #    the status check
-graft land --timestamp "$T"             # 6. the land of that exact commit
+graft land --timestamp "$T" --expect "$M"   # 6. the land of that exact commit
 ```
 
 `--timestamp` is required: the committer date is part of the object ID, and a
 land with another one writes another commit, which the checkpoint would not
-cover. A CI that holds only the object ID of the change, and no workspace, runs
-the same loop with `graft land main --commit "$C" --dry-run --timestamp "$T"`
-and `--commit "$C"` on the gate check and the land
+cover. `--expect` holds the land to the commit the suites ran on: the server
+refuses to write another one, so a branch that moved while the suites ran
+takes nothing, and the queue computes the result again. A CI that holds only
+the object ID of the change, and no workspace, runs the same loop with `graft
+land main --commit "$C" --dry-run --timestamp "$T"` and `--commit "$C"` on the
+gate check and the land
 ([BRANCHES.md](../../../doc/graft/BRANCHES.md#landing-a-commit-the-ci-holds)).
 
 ## What the server enforces

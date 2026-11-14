@@ -62,6 +62,9 @@ type options struct {
 	// dryRun and timestamp are those of graft land --dry-run and --timestamp.
 	dryRun    bool
 	timestamp string
+	// expect is the commit graft land --expect writes, the one the caller
+	// verified.
+	expect string
 	// commit is the commit graft land --commit lands, instead of the pending
 	// commit of a workspace. repo is the repository that land --commit works
 	// on when there is no workspace.
@@ -247,6 +250,7 @@ func bindLand(fs *flag.FlagSet, o *options) {
 	fs.BoolVar(&o.dryRun, "dry-run", false, "print the commit the land would produce, without landing it (needs --timestamp)")
 	fs.StringVar(&o.timestamp, "timestamp", "", "committer date of the rewritten commit (RFC 3339), to land the commit --dry-run named")
 	fs.StringVar(&o.commit, "commit", "", "land this commit instead of the pending one; needs BRANCH, and -address with --repo outside a workspace")
+	fs.StringVar(&o.expect, "expect", "", "land exactly this commit: the land fails when it would write another one (needs --timestamp)")
 	fs.StringVar(&o.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
 }
 
@@ -281,7 +285,7 @@ commands:
   land [BRANCH]          land the pending commit, or the one --commit OID names without a
                          workspace (--strategy, --resolve [--conflicts-dir DIR], --resolved
                          DIR; --abort drops it; --dry-run --timestamp T prints the commit
-                         the land would produce)
+                         the land would produce; --expect OID lands that commit and no other)
   revert [PATH...]       discard local changes to PATHs (default: all) and restore them
   update                 move the workspace to the tip of its branch
   sparse [PREFIX...]     restrict the workspace to PREFIX paths

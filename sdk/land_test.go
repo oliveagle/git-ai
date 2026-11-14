@@ -304,3 +304,43 @@ func TestRepo_Land_RefusesAResolutionOverTheMessageLimit(t *testing.T) {
 	require.Contains(t, err.Error(), "4 MiB message limit")
 	require.Empty(t, fakes.operations.landRequests, "the request is not sent")
 }
+
+// TestRepo_Land_ExpectedResult checks that a land asks for the commit it
+// verified, and that the refusal of a land that would write another commit is
+// readable by the caller: the queue has to know which result to compute again.
+func TestRepo_Land_ExpectedResult(t *testing.T) {
+	t.Parallel()
+
+	fakes := newFakeServices()
+	fakes.operations.landResponse = &gitalypb.UserLandResponse{LandedCommitId: "landed-sha"}
+	repo := dialFake(t, fakes.register).Repo("repo")
+
+	opts := validLand()
+	opts.ExpectedResult = "verified-sha"
+	_, err := repo.Land(t.Context(), opts)
+	require.NoError(t, err)
+	require.Equal(t, "verified-sha", fakes.operations.landRequests[0].GetExpectedResult())
+
+	st, err := status.New(codes.FailedPrecondition, "the land would write another commit").WithDetails(&gitalypb.UserLandError{
+		Error: &gitalypb.UserLandError_ExpectedResult{
+			ExpectedResult: &gitalypb.ExpectedResultError{
+				Expected: "verified-sha",
+				Landed:   "other-sha",
+				Tip:      "tip-sha",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	fakes = newFakeServices()
+	fakes.operations.landErr = st.Err()
+	repo = dialFake(t, fakes.register).Repo("repo")
+	_, err = repo.Land(t.Context(), opts)
+	require.Equal(t, codes.FailedPrecondition, sdk.Code(err))
+
+	detail, ok := sdk.ExpectedResultMismatch(err)
+	require.True(t, ok)
+	require.Equal(t, "verified-sha", detail.GetExpected())
+	require.Equal(t, "other-sha", detail.GetLanded())
+	require.Equal(t, "tip-sha", detail.GetTip())
+}

@@ -81,6 +81,19 @@ type LandOptions struct {
 	// produces that very commit, so the branch is green when it is written
 	// (doc/graft/BRANCHES.md).
 	DryRun bool
+	// ExpectedResult asks the server to write exactly that commit: the land
+	// fails when the commit it would produce is another one. It is the way a
+	// merge queue lands the commit it verified: the queue verifies the commit
+	// a dry run named, publishes it as the checkpoint of the branch, and lands
+	// it. When the branch moved in between, the land refuses instead of
+	// writing a commit nobody tested, and the failure carries the commit it
+	// would have written (ExpectedResultMismatch).
+	//
+	// The server holds every caller to it, the operator credential included:
+	// the branch policy binds the agents, and a CI that lands with the
+	// operator credential has this to keep the branch on the commit that was
+	// tested.
+	ExpectedResult string
 }
 
 // UnavailableRetry is the client side of the server's contract for
@@ -285,6 +298,7 @@ func (r *Repo) Land(ctx context.Context, opts LandOptions) (*LandResult, error) 
 		MergeMessage:     []byte(opts.MergeMessage),
 		ResolveConflicts: opts.ResolveConflicts,
 		DryRun:           opts.DryRun,
+		ExpectedResult:   opts.ExpectedResult,
 	}
 	if !opts.Timestamp.IsZero() {
 		req.Timestamp = timestamppb.New(opts.Timestamp)
