@@ -117,8 +117,18 @@ TEST_PACKAGES=./internal/graft/branchgate TEST_OPTIONS="-count=1 -run=TestDecide
 
 ## What CI does not run yet
 
-The targets below exist and pass locally, but no workflow runs them. They are
-the next things to wire, in this order:
+The targets below exist, but no workflow runs them. Locally, the bundled-Git
+matrix is green: `test-with-git-master` and `test-with-git-prev` pass the whole
+suite, as does `test-conformance` on its own. Two of the variants do not pass
+yet, and for suite reasons rather than environment ones:
+
+- `test-with-sha256`: the server-side repositories are SHA-256, but much of the
+  suite still creates the client-side ones with a plain `git init`, so the first
+  push fails on the format mismatch (`unsupported object format 'sha1'`).
+- `test-with-praefect`: the proxy topology fails in its setup, before the
+  tested behaviour is reached (node authentication, repository creation).
+
+They are the next things to wire once they pass, in this order:
 
 1. `make test-with-git-master`, `make test-with-git-prev` and
    `make test-with-sha256`: the compatibility matrix. The suite must pass on
