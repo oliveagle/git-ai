@@ -244,8 +244,7 @@ means the change waits for a reviewer.
 [BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
 decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and
 [MIRROR.md](MIRROR.md) says how to publish the landed branches to another Git
-host (Gitee, GitHub, GitLab, a self-hosted instance) while git-ai remains the
-authority.
+host — one command, any HTTPS or SSH URL — while git-ai remains the authority.
 [`examples/graft/standard-project`](../../examples/graft/standard-project) is a
 project with a unit suite and an integration suite, the queue that lands it and
 the rules that keep `main` the ref of the CI. `run.sh` there runs the whole

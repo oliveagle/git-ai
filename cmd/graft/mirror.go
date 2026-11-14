@@ -22,10 +22,12 @@ const mirrorSynopsis = "usage: graft mirror push --repo REPO --url URL --branch 
 const mirrorUsage = "mirror requires a subcommand: push (" + mirrorSynopsis + ")"
 
 // mirrorHelp explains graft mirror below its synopsis.
-const mirrorHelp = `Publishes selected branches of a Graft repository to another Git server as a
-mirror: Gitee, GitHub, GitLab, Gitea, or anything that speaks the Git protocol
-over HTTPS or SSH. The mirror is the compatibility path for the workflows
-Graft does not replace yet, such as a pipeline that already runs there.
+const mirrorHelp = `Publishes selected branches of a Graft repository to another Git host as a
+mirror. One command serves every host: there is no per-provider subcommand,
+and the host is only the URL, so anything that speaks Git over HTTPS, SSH or
+the scp-like form works the same way. The mirror is the compatibility path for
+the workflows Graft does not replace yet, such as a pipeline that already runs
+there.
 
 The server makes the Git connection; the shared (operator) token authorizes
 the RPC, so the remote credentials stay in the server process and never appear
@@ -37,10 +39,11 @@ Credentials come from the environment, one variable per run:
   github.com  GITHUB_TOKEN                   user "x-access-token"
   gitlab.com  GITLAB_TOKEN                   user "oauth2"
 
-The host of --url picks the default variable and user, so the usual case needs
-no credential flags at all. --token-env and --username override them for a
-self-hosted instance or another host; the value of the variable is sent as HTTP
-Basic authentication. --ssh-key (with --known-hosts) is the SSH alternative, and
+Those rows are a convenience, not a list of supported products: the host of
+--url only picks a default variable and user, so the usual case needs no
+credential flags at all. --token-env and --username name the credential for
+any other host; the value of the variable is sent as HTTP Basic
+authentication. --ssh-key (with --known-hosts) is the SSH alternative, and
 a public mirror needs neither. An http:// URL with a token needs
 --allow-insecure-http.
 
@@ -95,9 +98,9 @@ func mirrorCommand() command {
 				fs.PrintDefaults()
 			}
 			fs.StringVar(&f.repo, "repo", "", "repository path, used with -address and -storage")
-			fs.StringVar(&f.url, "url", "", "Git URL of the mirror, such as https://gitee.com/group/project.git")
+			fs.StringVar(&f.url, "url", "", "Git URL of the mirror: an HTTPS or SSH URL of any host, or a local path")
 			fs.Var(&f.branches, "branch", "branch pattern to push (repeatable, * is a wildcard)")
-			fs.StringVar(&f.tokenEnv, "token-env", "", "environment variable that holds the HTTPS token (default: by host, such as GITEE_TOKEN)")
+			fs.StringVar(&f.tokenEnv, "token-env", "", "environment variable that holds the HTTPS token (default: the host's usual variable, such as GITHUB_TOKEN)")
 			fs.StringVar(&f.username, "username", "", `HTTP Basic user for the token (default: by host, such as "oauth2")`)
 			fs.StringVar(&f.sshKey, "ssh-key", "", "private key for an SSH remote")
 			fs.StringVar(&f.knownHosts, "known-hosts", "", "host identities for strict SSH host-key checking")

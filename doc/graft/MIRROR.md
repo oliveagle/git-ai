@@ -6,9 +6,11 @@ the compatibility path: the landed branches are published again to a normal Git
 server — Gitee, GitHub, GitLab, Gitea, or a self-hosted instance — so the
 pipelines, webhooks and people that already work there keep working.
 
-There is one command for every host. Graft does not know or care which product
-serves the URL, and it does not call any provider's API: it pushes Git
-references. A push to the mirror is what starts the traditional CI.
+There is one command for every host, and no per-provider subcommand: there is
+no `graft gitee push`, `graft github push` or `graft gitlab push`. Graft does
+not know or care which product serves the URL, and it does not call any
+provider's API: it pushes Git references. A push to the mirror is what starts
+the traditional CI.
 
 ## The command
 
@@ -16,27 +18,29 @@ references. A push to the mirror is what starts the traditional CI.
 export GRAFT_ADDRESS="unix:/run/graft.sock"
 export GRAFT_TOKEN="$SHARED_TOKEN"
 
-# Gitee
-export GITEE_TOKEN="$GITEE_ACCESS_TOKEN"
 graft mirror push --repo shop.git \
-  --url https://gitee.com/group/shop.git \
+  --url https://git.example.com/group/shop.git \
   --branch main --branch 'release/*'
-
-# GitHub
-export GITHUB_TOKEN="$GITHUB_TOKEN"
-graft mirror push --repo shop.git \
-  --url https://github.com/group/shop.git \
-  --branch main
-
-# GitLab, self-hosted or not
-export GITLAB_TOKEN="$GITLAB_ACCESS_TOKEN"
-graft mirror push --repo shop.git \
-  --url https://gitlab.com/group/shop.git \
-  --branch main
 ```
 
-The host of `--url` picks the usual token variable and HTTP Basic user, so the
-common case needs no credential flags:
+The URL is the whole routing decision. The host of `--url` only picks a default
+token variable and HTTP Basic user, so a well-known host needs no credential
+flags; the table below is a convenience, not the list of supported products.
+`--token-env` and `--username` name the credential explicitly for any other
+host.
+
+The same command against the three well-known hosts:
+
+```shell
+GITEE_TOKEN="$GITEE_ACCESS_TOKEN" graft mirror push --repo shop.git \
+  --url https://gitee.com/group/shop.git --branch main
+
+GITHUB_TOKEN="$GITHUB_TOKEN" graft mirror push --repo shop.git \
+  --url https://github.com/group/shop.git --branch main
+
+GITLAB_TOKEN="$GITLAB_ACCESS_TOKEN" graft mirror push --repo shop.git \
+  --url https://gitlab.com/group/shop.git --branch main
+```
 
 | Host | Default variable | Default user |
 |---|---|---|
@@ -45,8 +49,7 @@ common case needs no credential flags:
 | `gitlab.com` | `GITLAB_TOKEN` | `oauth2` |
 | anything else | none | `oauth2` |
 
-`--token-env` and `--username` override them for a self-hosted instance; a
-public mirror needs no credential at all. `--ssh-key` (usually with
+A public mirror needs no credential at all. `--ssh-key` (usually with
 `--known-hosts`) is the SSH alternative for any host. A token over `http://` is
 refused unless `--allow-insecure-http` is explicit.
 
