@@ -79,6 +79,13 @@ published is refused with `not_verified`, and a caller that does not name the
 result at all with `result_unknown` — so the server, not the CI's discipline,
 decides whether the result was tested.
 
+The result the queue computed belongs to the tip it computed on. When the
+branch moves while the suite runs, the result is `stale_result`: the land would
+write another commit, and the checkpoint would cover a commit the branch never
+holds. The gate says so before the land (`graft gate check` answers
+`stale_result`), so the queue recomputes the result on the tip the branch
+holds instead of publishing a checkpoint for a commit nobody will land.
+
 The gate reads the review and the checkpoint, not the exit status of a test run.
 A change that is green on its own and red on the tip is the queue's question:
 the queue is the only thing that tests the result. When the checkpoint is behind

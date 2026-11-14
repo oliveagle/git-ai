@@ -612,6 +612,63 @@ func TestBranchGateTakesOneResultPerLand(t *testing.T) {
 	require.Equal(t, next.LandedCommitID, s.git(t, "rev-parse", "refs/heads/main"))
 }
 
+// TestBranchGateSaysAStaleResult checks what a queue reads when the branch
+// moved after it computed the result: the result is not the commit the branch
+// would take any more, so the answer says the result is stale, and the queue
+// computes it again instead of publishing a checkpoint for a commit the branch
+// will not hold.
+func TestBranchGateSaysAStaleResult(t *testing.T) {
+	t.Parallel()
+
+	s := startWithBranchRule(t, config.GraftBranchRule{Name: "main", RequireVerifiedResult: true})
+	base := writeMain(t, s, map[string]string{"README.md": "main\n"})
+
+	builder := s.repoAs(t, exampleTokens["builder"])
+	commit, err := commitFile(s.ctx, builder, "builder", "feature", base, "main.go", "package main\n")
+	require.NoError(t, err)
+
+	// The queue asks what the land would produce, and the CI tests that commit.
+	land := sdk.LandOptions{
+		Branch:    "main",
+		Commit:    commit,
+		User:      sdk.User{Name: clientDisplayName, Email: "builder@example.com"},
+		Timestamp: time.Unix(1700000000, 0),
+	}
+	dry := land
+	dry.DryRun = true
+	produced, err := builder.Land(s.ctx, dry)
+	require.NoError(t, err)
+	require.NotEmpty(t, produced.LandedCommitID)
+
+	// The CI publishes the checkpoint of the result it tested.
+	s.git(t, "update-ref", "refs/graft/green/main", produced.LandedCommitID)
+
+	answer, err := builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.True(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+
+	// The branch moves: another change lands on it while the CI was testing.
+	other, err := commitFile(s.ctx, builder, "builder", "feature-other", base, "other.go", "package main\n")
+	require.NoError(t, err)
+	s.git(t, "update-ref", "refs/heads/main", other)
+
+	// The result the CI tested is not the one the branch would take any more:
+	// the answer says so, and the queue computes the result again.
+	answer, err = builder.BranchDecision(s.ctx, sdk.BranchDecisionOptions{
+		Branch:  "main",
+		Commits: []string{commit},
+		Result:  produced.LandedCommitID,
+	})
+	require.NoError(t, err)
+	require.False(t, answer.GetAllowed(), "reason: %s", answer.GetReason())
+	require.Equal(t, sdk.BranchStaleResult, answer.GetCode())
+	require.Contains(t, answer.GetReason(), produced.LandedCommitID)
+}
+
 // branch is published by an operator and only read by agents. A checkpoint
 // that the party being gated can move says nothing about what was verified.
 func TestBranchGateKeepsTheCheckpointFromAgents(t *testing.T) {

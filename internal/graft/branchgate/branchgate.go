@@ -48,6 +48,10 @@ const (
 	// CodeResultUnknown is the code of a rule that demands the checkpoint cover
 	// the commit the update produces, and a caller that did not name it.
 	CodeResultUnknown = "result_unknown"
+	// CodeStaleResult is the code of a rule that demands the checkpoint cover
+	// the commit the update produces, and a result the branch would no longer
+	// write: the branch moved after the result was computed.
+	CodeStaleResult = "stale_result"
 )
 
 // Input is the state one decision is made with.
@@ -76,6 +80,12 @@ type Input struct {
 	// object ID. A CI knows it when it asked the server for the result of the
 	// land with a dry-run and verified that commit before landing.
 	Result string
+	// ResultStale tells whether the commit the update produces is one the
+	// branch would no longer write: the branch moved after the result was
+	// computed, and a land now produces another commit. The server reads it
+	// from the repository, where the tip of the branch is no longer an
+	// ancestor of the result. It is false when the caller named no result.
+	ResultStale bool
 	// Direct tells whether the update is a direct update of the branch, such
 	// as a push, rather than a land.
 	Direct bool
@@ -125,7 +135,10 @@ func Rule(rules []config.GraftBranchRule, branch string) *config.GraftBranchRule
 // update: the tip it builds on, or the commit it produces (verified). A rule
 // that asks for a verified result (RequireVerifiedResult) accepts only the
 // checkpoint on the commit the update produces, which is the rule of a merge
-// queue, and refuses a caller that does not name that commit.
+// queue, and refuses a caller that does not name that commit. A result the
+// branch would no longer write, because the branch moved after it was
+// computed, is refused as stale: the land writes another commit, and no
+// checkpoint covers it.
 func Decide(in Input) Decision {
 	rule := Rule(in.Rules, in.Branch)
 	if rule == nil {
@@ -171,6 +184,15 @@ func Decide(in Input) Decision {
 			return deny(rule, "", CodeResultUnknown,
 				"the branch %q takes only a verified result: name the commit the update produces (the result of a dry-run land) so that the checkpoint can be checked against it",
 				in.Branch)
+		}
+		if in.ResultStale {
+			// The result was computed on another tip: the land writes another
+			// commit, and no checkpoint can cover it. The queue has to ask for
+			// the result again, not publish a checkpoint for a commit the
+			// branch will not hold.
+			return deny(rule, "", CodeStaleResult,
+				"the result %s was computed before the branch moved to %s: the land has to be computed again",
+				in.Result, in.Tip)
 		}
 		if in.Checkpoint != in.Result {
 			if in.Checkpoint == "" {

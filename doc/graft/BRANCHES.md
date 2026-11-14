@@ -115,6 +115,7 @@ then the CI's required status check, not the server's.
 | `not_enough_approvals` | The review of the change has fewer approvals than the rule asks for. |
 | `not_verified` | The verification checkpoint of the branch covers neither its tip nor the commit the update produces. On a branch with `require_verified_result`, the checkpoint is not the commit the update produces. |
 | `result_unknown` | The rule of the branch asks for a verified result and the caller did not name the commit the update produces. The state of the tip does not matter: the rule refuses the question, not only a land, so a status of such a branch is read with `graft green show`, not with a decision that names no result. |
+| `stale_result` | The rule of the branch asks for a verified result and the result the caller named is not the commit the branch would take any more: the branch moved after the result was computed. The queue computes the result again. |
 
 ## The CI commands
 
@@ -329,6 +330,13 @@ one writes another commit, which the checkpoint would not cover.
 If the branch moves between the dry run and the land, the land produces another
 commit: the checkpoint covers neither it nor the tip, and the land is refused.
 That is the intended answer — the queue runs again on the new tip.
+
+The check knows it before the land: the tip of the branch must be an ancestor
+of the result for the result to be the commit a land writes, and a result
+computed on another tip is refused with `stale_result`. A queue that reads the
+code recomputes the result on the tip the branch holds, instead of publishing a
+checkpoint for a commit the branch will not take. The land is refused the same
+way, whatever the check said.
 
 A dry run writes the objects of the commit it names into the repository, and no
 reference points at them: the regular GC collects them if the land never

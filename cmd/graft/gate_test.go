@@ -262,4 +262,20 @@ func TestGateCheckRequiresTheResult(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &allowed))
 	require.True(t, allowed.Allowed, "reason: %s", allowed.Reason)
 	require.Equal(t, produced.String(), allowed.Checkpoint)
+
+	// The branch moved after the result was computed: the land writes another
+	// commit, and the check says the result is stale rather than allowing a
+	// commit the branch will not hold. A queue that reads the code knows it has
+	// to compute the result again.
+	gittest.WriteCommit(t, env.cfg, env.repoPath,
+		gittest.WithBranch("main"),
+		gittest.WithParents(tip),
+		gittest.WithTree(env.writeTree(t, map[string]string{"top.txt": "top\n", "other.txt": "other\n"})),
+	)
+	code, stdout, stderr = runCLI(t, append([]string{"gate", "check", "--branch", "main", "--result", produced.String(), "--json"}, target...)...)
+	require.Equal(t, exitError, code, stderr)
+	var stale gateResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &stale))
+	require.Equal(t, "stale_result", stale.Code)
+	require.Contains(t, stale.Reason, produced.String())
 }

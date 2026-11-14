@@ -312,6 +312,16 @@ func TestGetBranchDecision_VerifiedResult(t *testing.T) {
 	resp = h.decideAbout("main", change.String(), result.String())
 	requireDecision(t, resp, "allowed")
 	require.Equal(t, result.String(), resp.GetCheckpoint())
+
+	// The branch moved after the result was computed: the land writes another
+	// commit, and no checkpoint covers it. The answer says the result is
+	// stale, so that a queue computes it again instead of publishing a
+	// checkpoint for a commit the branch will not hold.
+	h.write(tip, "main", map[string]string{"d.txt": "d\n"})
+	resp = h.decideAbout("main", change.String(), result.String())
+	requireDecision(t, resp, "stale_result")
+	require.Contains(t, resp.GetReason(), result.String())
+	require.Contains(t, resp.GetReason(), h.tip("main").String())
 }
 
 func TestListBranchRules(t *testing.T) {

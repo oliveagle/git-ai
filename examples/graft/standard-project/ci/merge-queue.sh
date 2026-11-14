@@ -62,7 +62,15 @@ say "4/6 unit and integration suites on the whole tree of the result"
 
 say "5/6 publish the checkpoint, and ask the gate the question the land asks"
 operator "$graft" green set --branch "$branch" --commit "$result"
-"$graft" gate check --branch "$branch" --result "$result"
+if ! "$graft" gate check --branch "$branch" --result "$result"; then
+  # The gate refused the land, and its reason says what to do: when the result
+  # is stale, the branch moved while the suite ran, and the queue computes the
+  # result again on the tip the branch holds.
+  echo "merge-queue: the gate refused the land of $result" >&2
+  echo "merge-queue: a stale result means the branch moved while the suite ran:" >&2
+  echo "merge-queue: the queue runs again on the new tip" >&2
+  exit 1
+fi
 
 say "6/6 land the commit that was tested, with the timestamp that names it"
 "$graft" land --timestamp "$timestamp"

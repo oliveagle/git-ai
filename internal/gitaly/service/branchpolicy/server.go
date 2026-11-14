@@ -71,6 +71,18 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		return nil, structerr.NewInternal("reading the state of the branch %q: %w", branch, err)
 	}
 
+	// A result the branch would no longer write is not a result: the branch
+	// moved after it was computed, and a land now writes another commit. The
+	// caller is a CI that asks whether the commit it tested may land, so it
+	// has to be told that the branch moved rather than that nothing was
+	// verified.
+	stale, err := s.staleResult(ctx, req.GetRepository(), tip, req.GetResult())
+	if err != nil {
+		// The server cannot tell: the result may be a commit it does not know.
+		// The decision then says what it knows, and the land decides the rest.
+		s.deps.GetLogger().WithError(err).WithField("branch", branch).Warn("graft: the staleness of the result of a branch decision is unknown")
+	}
+
 	policy := s.policy.Current()
 	decision := branchgate.Decide(branchgate.Input{
 		Rules:       policy.Rules,
@@ -82,9 +94,10 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		// The checkpoint covers the update when it points at the tip the
 		// change builds on, or at the commit the land would produce when the
 		// caller knows it (a dry-run land it verified).
-		Checkpoint: state.Checkpoint,
-		Result:     req.GetResult(),
-		Direct:     req.GetDirect(),
+		Checkpoint:  state.Checkpoint,
+		Result:      req.GetResult(),
+		ResultStale: stale,
+		Direct:      req.GetDirect(),
 	})
 
 	return &gitalypb.GetBranchDecisionResponse{
@@ -99,6 +112,27 @@ func (s *server) GetBranchDecision(ctx context.Context, req *gitalypb.GetBranchD
 		Rule:       protoRule(decision.Rule),
 		Change:     decision.Change,
 	}, nil
+}
+
+// staleResult reports whether the result the caller named is one the branch
+// would no longer write. The tip of the branch must be an ancestor of the
+// result for the result to be the commit a land writes: a result computed on
+// another tip is stale, and the land of it produces another commit.
+//
+// A result the repository does not know is not stale: the server cannot tell,
+// and the decision says what it knows.
+func (s *server) staleResult(ctx context.Context, repo *gitalypb.Repository, tip, result string) (bool, error) {
+	if tip == "" || result == "" {
+		return false, nil
+	}
+
+	local := s.deps.GetRepositoryFactory().Build(repo)
+	ancestor, err := local.IsAncestor(ctx, git.Revision(tip), git.Revision(result))
+	if err != nil {
+		return false, err
+	}
+
+	return !ancestor, nil
 }
 
 // ListBranchRules lists the branch rules the server enforces.

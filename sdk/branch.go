@@ -54,6 +54,11 @@ const (
 	// verified result and a caller that did not name the commit the update
 	// produces.
 	BranchResultUnknown = "result_unknown"
+	// BranchStaleResult is the code of a branch whose rule asks for a
+	// verified result and a result the branch would no longer write: the
+	// branch moved after the result was computed, and the land produces
+	// another commit.
+	BranchStaleResult = "stale_result"
 )
 
 // BranchDecisionOptions asks whether changes may land on a branch.

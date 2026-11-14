@@ -367,6 +367,39 @@ func TestDecide_verificationOfTheResult(t *testing.T) {
 	require.False(t, decision.Allowed)
 	require.Equal(t, CodeResultUnknown, decision.Code)
 	require.Contains(t, decision.Reason, "name the commit the update produces")
+
+	// A result the branch would no longer write: the branch moved after it
+	// was computed, so the land writes another commit. The checkpoint covers
+	// the stale result, and the answer is still no: the queue has to compute
+	// the result again.
+	decision = Decide(Input{
+		Rules:       []config.GraftBranchRule{rule},
+		Branch:      "main",
+		Tip:         "tip",
+		Result:      "result",
+		ResultStale: true,
+		Changes:     []string{"commit"},
+		Checkpoint:  "result",
+	})
+	require.False(t, decision.Allowed)
+	require.Equal(t, CodeStaleResult, decision.Code)
+	require.Contains(t, decision.Reason, "result")
+	require.Contains(t, decision.Reason, "tip")
+
+	// A rule that asks for a verified tip does not care about the result: the
+	// land may go on when the tip is covered, and the branch is not green
+	// until the verifier covers the tip the land wrote.
+	decision = Decide(Input{
+		Rules:       []config.GraftBranchRule{{Name: "main", RequireVerified: true}},
+		Branch:      "main",
+		Tip:         "tip",
+		Result:      "result",
+		ResultStale: true,
+		Changes:     []string{"commit"},
+		Checkpoint:  "tip",
+	})
+	require.True(t, decision.Allowed)
+	require.Equal(t, CodeAllowed, decision.Code)
 }
 
 func TestDecide_everyChangeOfALand(t *testing.T) {

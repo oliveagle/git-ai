@@ -45,7 +45,9 @@ branch, and prints the rules the server enforces.
   rule of a merge queue) takes only a land whose own result the checkpoint
   covers, so --result is required there: without it the answer is
   result_unknown, and with a checkpoint on anything but that commit it is
-  not_verified.
+  not_verified. A result the branch would no longer write, because the branch
+  moved after it was computed, is stale_result: the land has to be computed
+  again, and a queue that reads the code knows it before it runs the suite.
 - --direct asks about an update that is not a land, such as a push.
 
 Exit status: 0 when the policy allows the change, 1 when it refuses it (the
