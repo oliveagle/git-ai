@@ -118,6 +118,8 @@ func commandTable() map[string]command {
 		"gate":    gateCommand(),
 		"green":   greenCommand(),
 		"mirror":  mirrorCommand(),
+		"upgrade": upgradeCommand(),
+		"version": {run: cmdVersion},
 	}
 }
 
@@ -318,6 +320,10 @@ commands:
   mirror push            publish selected branches to another Git host, named only by URL, for the
                          workflows that still run there; one command for every host (--repo, --url,
                          --branch, --token-env, --username, --ssh-key, --known-hosts, --force, --json)
+
+  upgrade                self-update the graft tools from the GitHub release (--check,
+                         --version, --repo, --json)
+  version                print the version of the graft tools
 
 environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
 
