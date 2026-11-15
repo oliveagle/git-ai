@@ -91,7 +91,8 @@ func newAncestryEnv(t *testing.T) (config.Cfg, string, *localrepo.Repo, catfile.
 	return cfg, repoPath, repo, reader
 }
 
-// writeDatedHistory is writeHistory with the committer date dates[i] for commit i.
+// writeDatedHistory creates the commits with git fast-import. Commit i has the parents parents[i], which
+// must be lower indexes, and its committer date is dates[i].
 func writeDatedHistory(t *testing.T, cfg config.Cfg, repoPath string, parents [][]int, dates []int64) []git.ObjectID {
 	t.Helper()
 

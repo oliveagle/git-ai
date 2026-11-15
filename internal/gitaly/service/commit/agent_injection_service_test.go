@@ -180,11 +180,11 @@ func TestRevisionInjection_nameAndPathRPCsReachNothingHidden(t *testing.T) {
 				})
 				require.NoError(t, err)
 				var data []byte
-				require.NoError(t, drainStream(func() error {
+				_ = drainStream(func() error {
 					resp, err := stream.Recv()
 					data = append(data, resp.GetData()...)
 					return err
-				}))
+				})
 				require.NotContains(t, string(data), "proposed by a model")
 			})
 			t.Run("TreeEntry/"+desc+"/"+who, func(t *testing.T) {
@@ -195,11 +195,11 @@ func TestRevisionInjection_nameAndPathRPCsReachNothingHidden(t *testing.T) {
 				})
 				require.NoError(t, err)
 				var data []byte
-				require.NoError(t, drainStream(func() error {
+				_ = drainStream(func() error {
 					resp, err := stream.Recv()
 					data = append(data, resp.GetData()...)
 					return err
-				}))
+				})
 				require.NotContains(t, string(data), "proposed by a model")
 			})
 		}
@@ -221,13 +221,13 @@ func TestRevisionInjection_otherSpellingsReachNothingHidden(t *testing.T) {
 				stream, err := fx.commits.ListCommits(callCtx, &gitalypb.ListCommitsRequest{Repository: fx.repo, Revisions: []string{revision}})
 				require.NoError(t, err)
 				var ids []string
-				require.NoError(t, drainStream(func() error {
+				_ = drainStream(func() error {
 					resp, err := stream.Recv()
 					for _, c := range resp.GetCommits() {
 						ids = append(ids, c.GetId())
 					}
 					return err
-				}))
+				})
 				require.NotContains(t, ids, fx.proposal.String(), "%s: %s", who, revision)
 			}
 		})

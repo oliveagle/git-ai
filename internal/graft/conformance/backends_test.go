@@ -175,11 +175,9 @@ func runStock(t *testing.T, ctx context.Context, dir string, env []string, stdin
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
-	if err != nil {
-		exitError := &exec.ExitError{}
-		if errors.As(err, &exitError) {
-			require.NoError(t, err, "running git %v", args)
-		}
+	var exitError *exec.ExitError
+	if !errors.As(err, &exitError) {
+		require.NoError(t, err, "running git %v", args)
 	}
 	return cmd.ProcessState.ExitCode(), stdout.String(), stderr.String()
 }

@@ -146,7 +146,7 @@ func writeTree(tb testing.TB, cfg config.Cfg, repoPath string, entries []gittest
 		case "160000":
 			objectType = "commit"
 		}
-		fmt.Fprintf(&stdin, "%s %s %s\tb%s\n", entry.Mode, objectType, entry.OID, entry.Path)
+		fmt.Fprintf(&stdin, "%s %s %s\t%s\n", entry.Mode, objectType, entry.OID, entry.Path)
 	}
 
 	output := gittest.ExecOpts(tb, cfg, gittest.ExecConfig{Stdin: &stdin}, "-C", repoPath, "mktree")
