@@ -139,9 +139,11 @@ func TestLLMGitRegions(t *testing.T) {
 
 	// A file git merges: no call, the merge, and a report.
 	base := numbered("line", 30)
-	merged := LLMFile{Path: "m.txt", Base: []byte(base),
+	merged := LLMFile{
+		Path: "m.txt", Base: []byte(base),
 		Ours:   []byte(strings.Replace(base, "line 3\n", "o3\n", 1)),
-		Theirs: []byte(strings.Replace(base, "line 27\n", "t27\n", 1))}
+		Theirs: []byte(strings.Replace(base, "line 27\n", "t27\n", 1)),
+	}
 	p := llmFixed("never\n")
 	res, err := ResolveLLM(context.Background(), p, merged, LLMOptions{})
 	if err != nil || len(p.reqs) != 0 {

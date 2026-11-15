@@ -24,7 +24,7 @@ func TestStopGRPCServer_ForcesStopOfLongLivedStreams(t *testing.T) {
 		return stream.Context().Err()
 	}))
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 

@@ -38,7 +38,7 @@ func countingVerify(t *testing.T, body string) (string, []string) {
 
 	dir := t.TempDir()
 	script := fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 echo x >> "$DIR/vlines"
 N=$(wc -l < "$DIR/vlines" | tr -d ' ')
 %s
@@ -524,7 +524,7 @@ func TestLandApplyVerdicts_neverVerifiesAModelsResolution(t *testing.T) {
 	// and hands the land back to be verified; it does not verify either.
 	unverified := &landPreResolution{verdicts: pre.verdicts, verified: map[git.ObjectID]bool{}}
 	_, err = s.landApplyVerdicts(fx.ctx, in, fx.repo, fx.tip, fx.commit, fx.committer(), unverified)
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, err, &need)
 	require.NotEmpty(t, need.unverified, "the tree to verify")
 	require.Equal(t, 1, verifyRuns(t, vdir), "the lane did not run the command")

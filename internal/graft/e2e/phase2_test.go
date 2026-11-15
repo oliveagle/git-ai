@@ -212,7 +212,7 @@ func buildAgentsTool(t *testing.T, pkg string) string {
 	// -buildvcs=false: the test harness sets GIT_DIR to /dev/null (a sanity
 	// check on the Git commands the server runs), and the VCS stamping of the
 	// build would fail on it.
-	cmd := exec.Command("go", "-C", "../../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, pkg)
+	cmd := exec.CommandContext(t.Context(), "go", "-C", "../../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, pkg)
 	cmd.Env = append(os.Environ(), "GOPROXY=off")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build %s (run go -C tools/graft-agents mod download first if the module cache is cold): %s", pkg, out)
@@ -417,7 +417,7 @@ func buildGraftCLI(t *testing.T) string {
 	// -buildvcs=false: the test harness sets GIT_DIR to /dev/null (a sanity
 	// check on the Git commands the server runs), and the VCS stamping of the
 	// build would fail on it.
-	out, err := exec.Command("go", "-C", "../../..", "build", "-buildvcs=false", "-o", bin, "./cmd/graft").CombinedOutput()
+	out, err := exec.CommandContext(t.Context(), "go", "-C", "../../..", "build", "-buildvcs=false", "-o", bin, "./cmd/graft").CombinedOutput()
 	require.NoError(t, err, "build graft: %s", out)
 	return bin
 }
@@ -427,7 +427,7 @@ func runGraft(t *testing.T, bin string, env []string, args ...string) string {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, args...)
+	cmd := exec.CommandContext(t.Context(), bin, args...)
 	cmd.Env = env
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -490,7 +490,7 @@ func TestPhase2SuperfanPostsToWebhook(t *testing.T) {
 		_, err = landOn(ctx, repo, branch, commit, false)
 		require.NoError(t, err)
 	}
-	changesets := allChangesets(ctx, t, repo)
+	changesets := allChangesets(t, ctx, repo)
 	require.NotEmpty(t, changesets)
 
 	graft := buildGraftCLI(t)

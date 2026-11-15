@@ -15,10 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 // oid returns a 40 hex character object ID for n.
 func oid(n int) string { return fmt.Sprintf("%040x", n+1) }
 

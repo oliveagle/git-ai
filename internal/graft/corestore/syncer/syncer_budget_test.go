@@ -101,7 +101,7 @@ func TestEnsureFreshBackstop(t *testing.T) {
 	err := b.sy.EnsureFresh(b.ctx, b.pbRepo(localRelPath))
 	elapsed := time.Since(start)
 
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "no sync ended within")
 	require.GreaterOrEqual(t, elapsed, 2*syncTimeout, "the call waited for the two rounds it may need")
 }

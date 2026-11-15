@@ -46,7 +46,7 @@ func resolverScript(t *testing.T, body string) (string, []string) {
 
 	dir := t.TempDir()
 	script := fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 N=$(cat "$DIR/calls" 2>/dev/null || echo 0)
 N=$((N+1))
 echo "$N" > "$DIR/calls"

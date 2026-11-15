@@ -119,7 +119,7 @@ Files: `internal/gitaly/service/operations/land_batch.go`,
      any member rewritten; `s.updateLandedReference(ctx2, batchIn, quarantineDir, quarantineRepo, ref, tip, running, rewritten)`
      where `batchIn` is the first item's request with `User` replaced by
      `&gitalypb.User{GlId: "graft-batch", GlUsername: "graft-batch", Name: []byte("Graft"), Email: []byte("graft@localhost")}`.
-  6. landConflict (external writer moved the branch) → rebuild the whole
+  6. landConflictError (external writer moved the branch) → rebuild the whole
      batch from step 2 on the new tip, at most 10 times, then fail every
      remaining item with the existing `landKeptMovingError`.
   7. PermissionDenied from hooks for the combined update → land each member

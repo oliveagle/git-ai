@@ -12,11 +12,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+
 	gitalyclient "github.com/feder-cr/git-ai/client"
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 )
 
 const clientCaps = "multi_ack_detailed no-done side-band-64k thin-pack include-tag ofs-delta deepen-since deepen-not agent=git/2.47.0"

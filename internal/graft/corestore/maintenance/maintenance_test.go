@@ -32,10 +32,6 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 const relPath = "repo.git"
 
 // env is one node with a repository of the storage core: its database record,

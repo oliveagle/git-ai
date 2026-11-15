@@ -47,12 +47,12 @@ type BranchGateSource interface {
 	BranchState(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (BranchGateState, error)
 }
 
-// BranchGateDenial is the refusal of an update by the branch management policy.
+// BranchGateDenialError is the refusal of an update by the branch management policy.
 // It carries the decision, so that the caller can tell a policy decision from a
 // failure, and tell which rule refused the update: the land lanes land the
 // members of a batch alone when the combined update is refused, so that the
 // policy judges each of them on its own.
-type BranchGateDenial struct {
+type BranchGateDenialError struct {
 	// Branch is the branch whose rule refused the update.
 	Branch string
 	// Code is the code of the decision (branchgate.CodeNotVerified, say).
@@ -61,7 +61,7 @@ type BranchGateDenial struct {
 	Reason string
 }
 
-func (e BranchGateDenial) Error() string {
+func (e BranchGateDenialError) Error() string {
 	return e.Reason
 }
 
@@ -136,7 +136,7 @@ func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcm
 			// that lands reads what to do next (a stale result is computed
 			// again, a missing verification is published before the land)
 			// instead of parsing the reason.
-			return structerr.NewPermissionDenied("%w", BranchGateDenial{
+			return structerr.NewPermissionDenied("%w", BranchGateDenialError{
 				Branch: branch,
 				Code:   decision.Code,
 				Reason: decision.Reason,

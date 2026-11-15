@@ -101,7 +101,7 @@ func TestCreatedRefConflict(t *testing.T) {
 				f.core.Meta = failingConflictRead{f.core.Meta}
 				got, err := f.voter.CreatedRefConflict(f.ctx, f.repo, "refs/heads/a/b")
 				if !shadow {
-					require.Equal(t, codes.Unavailable, status.Code(err), "error: %v", err)
+					require.Equal(t, codes.Internal, status.Code(err), "error: %v", err)
 					return
 				}
 				require.NoError(t, err, "shadow mode never refuses a git write")

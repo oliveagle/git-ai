@@ -128,7 +128,7 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 
 	gitalypb.RegisterSSHServiceServer(srv, gitConfigEchoServer{})
 
-	listener, err := net.Listen(starter.TCP, "localhost:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), starter.TCP, "localhost:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -236,7 +236,7 @@ func TestExternalServerStandaloneIdentity(t *testing.T) {
 
 	gitalypb.RegisterOperationServiceServer(srv, identityClaimServer{})
 
-	listener, err := net.Listen(starter.TCP, "localhost:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), starter.TCP, "localhost:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -340,7 +340,7 @@ func TestExternalServerAgentAuthentication(t *testing.T) {
 	gitalypb.RegisterServerServiceServer(srv, identityEchoServer{})
 	gitalypb.RegisterHookServiceServer(srv, gitalypb.UnimplementedHookServiceServer{})
 
-	listener, err := net.Listen(starter.TCP, "localhost:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), starter.TCP, "localhost:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -480,7 +480,7 @@ func TestExternalServerWithoutAgentsKeepsUpstreamAuthentication(t *testing.T) {
 
 	gitalypb.RegisterServerServiceServer(srv, identityEchoServer{})
 
-	listener, err := net.Listen(starter.TCP, "localhost:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), starter.TCP, "localhost:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 

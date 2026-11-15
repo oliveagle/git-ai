@@ -70,9 +70,9 @@ func TestHookService_storageRefNameConflict(t *testing.T) {
 	})
 
 	t.Run("update hook, database unavailable", func(t *testing.T) {
-		updateErr = structerr.NewUnavailable("storage core: the database is gone")
+		updateErr = structerr.NewInternal("storage core: the database is gone")
 		_, err := update()
-		require.Equal(t, codes.Unavailable, status.Code(err), "error: %v", err)
+		require.Equal(t, codes.Internal, status.Code(err), "error: %v", err)
 	})
 
 	t.Run("reference-transaction hook, name conflict", func(t *testing.T) {

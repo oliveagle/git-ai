@@ -122,7 +122,7 @@ func TestIndex_PathHistoryComputesWithinTheWriteBudget(t *testing.T) {
 
 // filteredHistory returns the commits that the Deriver reports with the summaries of
 // index as the pre-filter.
-func filteredHistory(ctx context.Context, tb testing.TB, deriver *derived.Deriver, index *Index, start git.ObjectID, path string, limit int) []string {
+func filteredHistory(tb testing.TB, ctx context.Context, deriver *derived.Deriver, index *Index, start git.ObjectID, path string, limit int) []string {
 	tb.Helper()
 
 	var ids []string
@@ -181,8 +181,8 @@ func TestKnownUnchanged_FilteredDeriverMatchesPathHistory(t *testing.T) {
 						for _, path := range equivalencePaths {
 							for _, limit := range []int{1000, 2} {
 								require.Equal(t,
-									derivedHistory(ctx, t, reference, ids[commit.name], path, limit),
-									filteredHistory(ctx, t, deriver, index, ids[commit.name], path, limit),
+									derivedHistory(t, ctx, reference, ids[commit.name], path, limit),
+									filteredHistory(t, ctx, deriver, index, ids[commit.name], path, limit),
 									"%s summaries, cache %v: %q from %s, limit %d", warmed, cache, path, commit.name, limit)
 							}
 						}
@@ -247,7 +247,7 @@ func TestKnownUnchanged_FilteredDeriverCost(t *testing.T) {
 
 	reference, err := derived.NewDeriver(ctx, logger, repo, reader, false)
 	require.NoError(t, err)
-	want := derivedHistory(ctx, t, reference, tip, "a/x", 100)
+	want := derivedHistory(t, ctx, reference, tip, "a/x", 100)
 	require.Len(t, want, changes)
 
 	var trees atomic.Int64
@@ -259,7 +259,7 @@ func TestKnownUnchanged_FilteredDeriverCost(t *testing.T) {
 		deriver, err := derived.NewDeriver(ctx, logger, repo, counting, true)
 		require.NoError(t, err)
 		index := NewIndexFor(counting, derived.NewStore(repoPath))
-		got := filteredHistory(ctx, t, deriver, index, tip, "a/x", 100)
+		got := filteredHistory(t, ctx, deriver, index, tip, "a/x", 100)
 		require.Zero(t, index.Computed())
 		return got, trees.Load()
 	}

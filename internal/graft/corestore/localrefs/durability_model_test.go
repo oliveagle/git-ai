@@ -461,12 +461,12 @@ func (m *markerModel) nextTable() string {
 func (m *markerModel) writeTable(name, temp string) {
 	table := filepath.Join(m.reftable, name)
 	if temp != "" {
-		if err := os.Rename(temp, table); errors.Is(err, fs.ErrNotExist) {
+		err := os.Rename(temp, table)
+		if errors.Is(err, fs.ErrNotExist) {
 			// The repository it was writing was moved aside meanwhile.
 			return
-		} else {
-			require.NoError(m.t, err)
 		}
+		require.NoError(m.t, err)
 	} else {
 		require.NoError(m.t, os.WriteFile(table, []byte(name), 0o666))
 	}

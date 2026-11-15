@@ -70,7 +70,7 @@ func startRealTier(t *testing.T, ctx context.Context, upstreamAddr string, cfg C
 	server, err := NewServer(upstreamConn, cfg)
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	grpcServer := NewGRPCServer(server)
 	go func() { _ = grpcServer.Serve(listener) }()

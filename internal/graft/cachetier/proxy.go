@@ -74,7 +74,7 @@ func NewGRPCServer(s *Server) *grpc.Server {
 func (s *Server) director(ctx context.Context, _ string, peeker proxy.StreamPeeker) (*proxy.StreamParameters, error) {
 	frame, err := peeker.Peek()
 	if err != nil {
-		return nil, structerr.NewInternal("peek first request frame: %v", err)
+		return nil, structerr.NewInternal("peek first request frame: %w", err)
 	}
 
 	outCtx, err := s.outgoingContext(ctx)
@@ -116,7 +116,7 @@ func (s *Server) outgoingContext(ctx context.Context) (context.Context, error) {
 func (s *Server) tokenMetadata(ctx context.Context) (map[string]string, error) {
 	md, err := gitalyauth.RPCCredentialsV2(s.token).GetRequestMetadata(ctx)
 	if err != nil {
-		return nil, structerr.NewInternal("sign upstream request: %v", err)
+		return nil, structerr.NewInternal("sign upstream request: %w", err)
 	}
 	return md, nil
 }

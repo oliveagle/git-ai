@@ -154,7 +154,7 @@ func TestLandKeptMoving(t *testing.T) {
 	t.Parallel()
 
 	in := &gitalypb.UserLandRequest{Branch: []byte("main"), CommitId: strings.Repeat("c", 40)}
-	conflict := landConflict{reference: "refs/heads/main", oldOID: git.ObjectID(strings.Repeat("1", 40)), newOID: git.ObjectID(strings.Repeat("2", 40))}
+	conflict := landConflictError{reference: "refs/heads/main", oldOID: git.ObjectID(strings.Repeat("1", 40)), newOID: git.ObjectID(strings.Repeat("2", 40))}
 	current := map[landFileKey]bool{{path: "a"}: true}
 	model := &landPreResolution{current: current, verdicts: landVerdicts{{path: "a"}: {file: resolver.ResponseFile{Path: "a", Origin: resolver.OriginModel}}}}
 	rules := &landPreResolution{current: current, verdicts: landVerdicts{{path: "a"}: {file: resolver.ResponseFile{Path: "a", Origin: resolver.OriginRule}}}}
@@ -167,7 +167,7 @@ func TestLandKeptMoving(t *testing.T) {
 	}}
 
 	for name, pre := range map[string]*landPreResolution{"a model's verdict": model, "a verdict that says nothing": unmarked} {
-		var need *landNeedsResolution
+		var need *landNeedsResolutionError
 		require.ErrorAs(t, landKeptMoving(in, pre, conflict, 20), &need, name)
 		require.True(t, need.moved, name)
 		require.Equal(t, strings.Repeat("c", 40), need.commit.String(), name)
@@ -175,7 +175,7 @@ func TestLandKeptMoving(t *testing.T) {
 	}
 	for name, pre := range map[string]*landPreResolution{"rules only": rules, "stale model verdicts": stale, "no pre-resolution": nil, "no verdict": {}, "no current files": {verdicts: model.verdicts}} {
 		err := landKeptMoving(in, pre, conflict, 20)
-		var need *landNeedsResolution
+		var need *landNeedsResolutionError
 		require.False(t, errors.As(err, &need), name)
 		require.Equal(t, codes.FailedPrecondition, status.Code(err), name)
 		require.ErrorContains(t, err, "kept moving", name)
@@ -183,7 +183,7 @@ func TestLandKeptMoving(t *testing.T) {
 
 	// A member of a batch that ran out of rebuilds is the same: the cause is a conflict of the update.
 	req := &landBatchRequest{in: in, preResolution: model}
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, landBatchGiveUp(req, conflict, 4), &need)
 	require.ErrorContains(t, landBatchGiveUp(&landBatchRequest{in: in, preResolution: rules}, conflict, 4), "kept moving")
 }
@@ -191,8 +191,8 @@ func TestLandKeptMoving(t *testing.T) {
 func TestLandStoppedReason(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "could not verify before the branch moved again", landStoppedReason(&landNeedsResolution{unverified: "tree"}, time.Minute))
-	require.Equal(t, "the files changed again before they could be resolved", landStoppedReason(&landNeedsResolution{paths: []string{"a"}}, time.Minute))
+	require.Equal(t, "could not verify before the branch moved again", landStoppedReason(&landNeedsResolutionError{unverified: "tree"}, time.Minute))
+	require.Equal(t, "the files changed again before they could be resolved", landStoppedReason(&landNeedsResolutionError{paths: []string{"a"}}, time.Minute))
 	require.Equal(t, "the time ran out before the conflicts were resolved (deadline of 2m0s)", landStoppedReason(nil, 2*time.Minute))
 }
 
@@ -208,7 +208,7 @@ func TestLandLostRace(t *testing.T) {
 	t.Parallel()
 
 	in := &gitalypb.UserLandRequest{Branch: []byte("main"), CommitId: strings.Repeat("c", 40)}
-	conflict := landConflict{reference: "refs/heads/main", oldOID: git.ObjectID(strings.Repeat("1", 40)), newOID: git.ObjectID(strings.Repeat("2", 40))}
+	conflict := landConflictError{reference: "refs/heads/main", oldOID: git.ObjectID(strings.Repeat("1", 40)), newOID: git.ObjectID(strings.Repeat("2", 40))}
 	model := &landPreResolution{
 		verdicts: landVerdicts{{path: "a"}: {file: resolver.ResponseFile{Path: "a", Origin: resolver.OriginModel}}},
 		current:  map[landFileKey]bool{{path: "a"}: true},
@@ -220,14 +220,14 @@ func TestLandLostRace(t *testing.T) {
 
 	for _, attempt := range []int{1, 5} {
 		err := landLostRace(in, model, conflict, attempt, 20, true)
-		var need *landNeedsResolution
+		var need *landNeedsResolutionError
 		require.False(t, errors.As(err, &need), "attempt %d", attempt)
 		require.Equal(t, codes.FailedPrecondition, status.Code(err), "attempt %d", attempt)
 		require.ErrorContains(t, err, "kept moving")
 	}
 
 	require.NoError(t, landLostRace(in, model, conflict, 3, 20, false), "an attempt that can be retried")
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, landLostRace(in, model, conflict, 20, 20, false), &need, "the last attempt hands a model's resolution back")
 	require.ErrorContains(t, landLostRace(in, &landPreResolution{}, conflict, 20, 20, false), "kept moving")
 }

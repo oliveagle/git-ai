@@ -748,13 +748,13 @@ func TestShadowTimeoutNeverFails(t *testing.T) {
 	require.Equal(t, float64(1), metricValue(t, f.voter, "graft_storage_shadow_errors_total", nil))
 }
 
-func TestAuthoritativeClosedDatabaseIsUnavailable(t *testing.T) {
+func TestAuthoritativeClosedDatabaseIsInternal(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
 		f := newFixture(t, fixtureOptions{mode: corestore.ModeAuthoritative, dialect: dialect})
 		require.NoError(t, f.core.Meta.Close())
 
 		err := f.prepared(line(f.zero, f.a.String(), "refs/heads/main"))
-		require.Equal(t, codes.Unavailable, status.Code(err), "error %v", err)
+		require.Equal(t, codes.Internal, status.Code(err), "error %v", err)
 		require.Equal(t, float64(1), metricValue(t, f.voter, "graft_storage_changesets_total", map[string]string{"mode": "authoritative", "result": "error"}))
 	})
 }

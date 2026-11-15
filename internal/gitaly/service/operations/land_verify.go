@@ -112,8 +112,8 @@ func (s *Server) landVerify(ctx context.Context, repo *localrepo.Repo, tree git.
 		pathBytes: landMaxPathBytes,
 	}
 	if err := landCheckoutTreeThen(runCtx, repo, tree, checkout, limits, s.verifyAfterWriteHook); err != nil {
-		var refusal *landCheckoutRefusal
-		var fault *landCheckoutFault
+		var refusal *landCheckoutRefusalError
+		var fault *landCheckoutFaultError
 		switch {
 		case ctx.Err() != nil:
 			return ctx.Err()
@@ -294,17 +294,17 @@ type landCheckoutLimits struct {
 	pathBytes int64
 }
 
-// landCheckoutRefusal is a tree that the checkout refuses to write, closed: it holds more than the
+// landCheckoutRefusalError is a tree that the checkout refuses to write, closed: it holds more than the
 // limits allow, or a path that is not safe to write under a directory. It is no failure of the
 // server: the command does not run, and the reason goes to the agent in the conflict package.
-type landCheckoutRefusal struct {
+type landCheckoutRefusalError struct {
 	reason string
 }
 
-func (e *landCheckoutRefusal) Error() string { return e.reason }
+func (e *landCheckoutRefusalError) Error() string { return e.reason }
 
 func landRefuse(format string, args ...any) error {
-	return &landCheckoutRefusal{reason: fmt.Sprintf(format, args...)}
+	return &landCheckoutRefusalError{reason: fmt.Sprintf(format, args...)}
 }
 
 // landCheckoutTreeThen writes the tree under dir byte for byte: the entries of git-ls-tree(1) -r and the
@@ -317,7 +317,7 @@ func landRefuse(format string, args ...any) error {
 //
 // The listing and the blobs are streamed, one entry at a time, so the memory it takes is that of the
 // entries (which limits bounds) and not of the tree. A tree beyond the limits, or with a path that is
-// not safe to write, is a *landCheckoutRefusal.
+// not safe to write, is a *landCheckoutRefusalError.
 //
 // afterWrite, when given, runs between the writing and the check; only tests give one, to damage the
 // checkout and see that the check notices.
@@ -524,17 +524,17 @@ func newLandMaterializer(ctx context.Context, dir string, limits landCheckoutLim
 	return &landMaterializer{ctx: ctx, dir: dir, limits: limits, links: map[string]bool{}, dirs: map[string]bool{}, folded: map[string]landFolded{}}
 }
 
-// landCheckoutFault is a failure of the server's own file system while it wrote the tree (no space,
+// landCheckoutFaultError is a failure of the server's own file system while it wrote the tree (no space,
 // no descriptors, an I/O error, no permission): not the tree's doing, so no refusal and no proposal,
 // an error of the server with a log and a metric.
-type landCheckoutFault struct {
+type landCheckoutFaultError struct {
 	err error
 }
 
-func (e *landCheckoutFault) Error() string {
+func (e *landCheckoutFaultError) Error() string {
 	return "checkout failed on the file system: " + e.err.Error()
 }
-func (e *landCheckoutFault) Unwrap() error { return e.err }
+func (e *landCheckoutFaultError) Unwrap() error { return e.err }
 
 // osError sorts what the file system said. What the TREE causes is a refusal with its reason: a name
 // that exists already (two names a case-insensitive file system makes one), a name or a path too
@@ -552,7 +552,7 @@ func (m *landMaterializer) osError(err error) error {
 			return landRefuse("the tree cannot be written on this file system: %s", m.describe(err, errno))
 		}
 	}
-	return &landCheckoutFault{err: err}
+	return &landCheckoutFaultError{err: err}
 }
 
 // describe words a system error with the operation and the path relative to the checkout.
@@ -584,7 +584,7 @@ func (o landOSWriter) Write(p []byte) (int, error) {
 	return n, o.m.osError(err)
 }
 
-// add writes one entry. It refuses, with a *landCheckoutRefusal:
+// add writes one entry. It refuses, with a *landCheckoutRefusalError:
 //   - a path that is not clean, or leaves dir;
 //   - a path longer than landMaxTreePath, or that with dir reaches PATH_MAX; a name over 255 bytes;
 //   - more entries and directories, more bytes or components than the limits allow;
@@ -743,8 +743,8 @@ func (m *landMaterializer) add(e *landTreeEntry, batch *bufio.Reader) error {
 		}
 		if _, err := io.CopyN(landOSWriter{m: m, w: f}, batch, size); err != nil {
 			_ = f.Close()
-			var refusal *landCheckoutRefusal
-			var fault *landCheckoutFault
+			var refusal *landCheckoutRefusalError
+			var fault *landCheckoutFaultError
 			if errors.As(err, &refusal) || errors.As(err, &fault) {
 				return err
 			}

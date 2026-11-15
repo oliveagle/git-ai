@@ -54,7 +54,7 @@ func (s *session) env(extra ...string) []string {
 // local runs a git command of the row's setup, which touches no server and has to succeed.
 func (s *session) local(dir string, args ...string) string {
 	s.t.Helper()
-	return mustStock(s.ctx, s.t, dir, s.env(), nil, args...)
+	return mustStock(s.t, s.ctx, dir, s.env(), nil, args...)
 }
 
 // step runs a client operation against the remote and records its exit code, and its standard
@@ -64,7 +64,7 @@ func (s *session) step(direction, dir string, compare bool, args ...string) int 
 
 	s.steps++
 	key := fmt.Sprintf("step %02d git %s", s.steps, strings.ReplaceAll(strings.Join(args, " "), s.remote.url, "<url>"))
-	code, stdout, stderr := runStock(s.ctx, s.t, dir, s.env(s.remote.env(direction, s.protocol)...), nil,
+	code, stdout, stderr := runStock(s.t, s.ctx, dir, s.env(s.remote.env(direction, s.protocol)...), nil,
 		append([]string{"-c", fmt.Sprintf("protocol.version=%d", s.protocol)}, args...)...)
 	// git prints an SSH remote without its user.
 	stdout = strings.ReplaceAll(stdout, strings.TrimPrefix(s.remote.url, "git@"), "<url>")
@@ -169,7 +169,7 @@ func (s *session) recordRefs(prefix, dir string) {
 			s.observed[prefix+" ref "+name] = strings.TrimSpace(value)
 		}
 	}
-	_, head, _ := runStock(s.ctx, s.t, dir, s.env(), nil, "symbolic-ref", "HEAD")
+	_, head, _ := runStock(s.t, s.ctx, dir, s.env(), nil, "symbolic-ref", "HEAD")
 	s.observed[prefix+" HEAD"] = strings.TrimSpace(head)
 }
 
@@ -181,7 +181,7 @@ func (s *session) finish() {
 	s.step(uploadPack, s.root, true, "ls-remote", "--symref", s.remote.url)
 
 	s.recordRefs("server", s.remote.path)
-	code, _, stderr := runStock(s.ctx, s.t, s.remote.path, s.env(), nil, "fsck", "--no-dangling")
+	code, _, stderr := runStock(s.t, s.ctx, s.remote.path, s.env(), nil, "fsck", "--no-dangling")
 	s.observed["server fsck: exit"] = fmt.Sprint(code)
 	fmt.Fprintf(&s.log, "server fsck: exit %d\n%s\n", code, stderr)
 
@@ -197,7 +197,7 @@ func (s *session) finish() {
 
 		// fsck does not fetch what a partial clone lacks, so it needs no credentials; rev-list counts
 		// what the filter left out without fetching it either.
-		code, _, stderr := runStock(s.ctx, s.t, dir, s.env(), nil, "fsck", "--no-dangling")
+		code, _, stderr := runStock(s.t, s.ctx, dir, s.env(), nil, "fsck", "--no-dangling")
 		s.observed[prefix+" fsck: exit"] = fmt.Sprint(code)
 		fmt.Fprintf(&s.log, "%s fsck: exit %d\n%s\n", prefix, code, stderr)
 
@@ -489,7 +489,7 @@ var clientRows = []clientRow{
 		seed := s.seeded()
 		tree := s.local(seed, "rev-parse", "main^{tree}")
 		malformed := "tree " + tree + "\nauthor no email\ncommitter no email\n\nmalformed\n"
-		commit := mustStock(s.ctx, s.t, seed, s.env(), []byte(malformed), "hash-object", "-t", "commit", "-w", "--stdin", "--literally")
+		commit := mustStock(s.t, s.ctx, seed, s.env(), []byte(malformed), "hash-object", "-t", "commit", "-w", "--stdin", "--literally")
 		s.local(seed, "update-ref", "refs/heads/malformed", commit)
 		s.push(seed, "malformed")
 	}},

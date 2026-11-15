@@ -296,7 +296,7 @@ func TestTargetsThatAreNotTextAreRefused(t *testing.T) {
 		} {
 			_, err := commit(ctx, s, repo.ID, create("HEAD", target))
 			require.Error(t, err, "target %q", target)
-			var conflict *corestore.ErrRefConflict
+			var conflict *corestore.RefConflictError
 			require.False(t, errors.As(err, &conflict))
 		}
 

@@ -328,7 +328,7 @@ func TestImportRepositoryDatabaseDownDuringCommit(t *testing.T) {
 		})
 
 		_, err := h.client.ImportRepository(h.ctx, &gitalypb.ImportRepositoryRequest{Repository: h.repo})
-		requireResumeHint(t, err, codes.Unavailable)
+		requireResumeHint(t, err, codes.Internal)
 		meta.setDown(false)
 
 		h.requireIncomplete(repoID)
@@ -358,7 +358,7 @@ func TestImportRepositoryFailedUploadIsResumed(t *testing.T) {
 		localBefore := h.localRefs()
 
 		_, err := h.client.ImportRepository(h.ctx, &gitalypb.ImportRepositoryRequest{Repository: h.repo})
-		requireResumeHint(t, err, codes.Unavailable)
+		requireResumeHint(t, err, codes.Internal)
 
 		state, err := h.client.GetStorageState(h.ctx, &gitalypb.GetStorageStateRequest{Repository: h.repo})
 		require.NoError(t, err)
@@ -368,7 +368,7 @@ func TestImportRepositoryFailedUploadIsResumed(t *testing.T) {
 
 		// Still failing: the retry resumes the same registration and fails again.
 		_, err = h.client.ImportRepository(h.ctx, &gitalypb.ImportRepositoryRequest{Repository: h.repo})
-		requireResumeHint(t, err, codes.Unavailable)
+		requireResumeHint(t, err, codes.Internal)
 		h.requireIncomplete(repoID)
 
 		failing.Store(false)

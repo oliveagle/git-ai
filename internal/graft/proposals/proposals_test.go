@@ -18,10 +18,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 // setup returns a repository and a writer of commits dated as given.
 func setup(t *testing.T) (*localrepo.Repo, string, func(time.Time) git.ObjectID, func(string) []string) {
 	t.Helper()

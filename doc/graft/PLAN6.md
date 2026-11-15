@@ -117,13 +117,13 @@ and the local repository still shows the old values:
 
 A changeset whose updates all leave the database unchanged (for example a
 forced deletion of an absent reference) writes nothing and returns
-`CommitResult{NoOp: true}`. On mismatch the store returns `*ErrRefConflict`
+`CommitResult{NoOp: true}`. On mismatch the store returns `*RefConflictError`
 listing every mismatching reference (expected and actual) and writes nothing
 — unless `ChangesetInput.Force` is set (shadow mode), in which case it writes
 the changeset with `forced = true` and returns the conflicts in
 `CommitResult.Conflicts`.
 
-The voter converts `*ErrRefConflict` into a
+The voter converts `*RefConflictError` into a
 `git/updateref.MismatchingStateError` (first conflict; `ActualObjectID` = the
 database value, zero OID if absent) wrapped in the hook error, so that
 `UserLand`'s lost-race retry (`land.go`, `updateLandedReference`) classifies
@@ -157,7 +157,7 @@ In `GitLabHookManager.ReferenceTransactionHook`, Prepared phase, after
 6. `MetaStore.CommitChangeset` with the updates, operation/actor/members meta
    (from the same helper the file changelog uses), node ID, pack key and size,
    and `Changelog` meta in authoritative mode.
-7. Authoritative: on `*ErrRefConflict` return the mismatching-state error →
+7. Authoritative: on `*RefConflictError` return the mismatching-state error →
    git aborts the transaction. On any other error return `Unavailable`
    (`structerr.NewUnavailable`) → git aborts. On success remember
    `(repo_id, seq)` for the Committed/Aborted phases (process-local map keyed
@@ -390,7 +390,7 @@ Owns: `internal/graft/corestore/sqlstore/**` (the table definitions in
   3. Read the current targets of the named references (chunks of at most
      500 names) and evaluate every expectation (CAS table). Conflicts are
      listed in update order.
-  4. Conflicts without `Force` → roll back, return `&ErrRefConflict{...}`.
+  4. Conflicts without `Force` → roll back, return `&RefConflictError{...}`.
   5. Effective updates = updates whose current value differs from `New`. None
      → roll back, return `CommitResult{NoOp: true, Conflicts: ...}` (no
      sequence is used).
@@ -1130,7 +1130,7 @@ returns the last sequence of the file log, if one is missing), `doc/graft/STORAG
    per-repository mutex.
 7. **Watermark** = `(repo_id, seq)`, advanced only contiguously, written
    atomically after the references are applied.
-8. **Typed errors** as listed: `*ErrRefConflict` → mismatching-state error;
+8. **Typed errors** as listed: `*RefConflictError` → mismatching-state error;
    database unavailable → `Unavailable`; untracked → `FailedPrecondition`.
 9. **Both dialects.** SQLite and Postgres pass the same conformance suite.
    Postgres tests use `GRAFT_TEST_POSTGRES_DSN` and skip only when it is

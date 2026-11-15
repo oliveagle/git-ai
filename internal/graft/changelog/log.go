@@ -1055,7 +1055,7 @@ func readLogHead(repoPath string) (logHead, error) {
 	if err != nil {
 		return logHead{}, err
 	}
-	head.device, head.inode = uint64(stat.Dev), stat.Ino
+	head.device, head.inode = stat.Dev, stat.Ino
 
 	return head, nil
 }

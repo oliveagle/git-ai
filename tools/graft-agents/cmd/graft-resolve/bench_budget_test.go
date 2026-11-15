@@ -139,9 +139,11 @@ func TestBenchAnswersAndRejudge(t *testing.T) {
 	answers := filepath.Join(work, "answers")
 	reportIn := filepath.Join(work, "run.json")
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"bench", "run", "--config", cfg, "--manifest", manifest, "--clones", clones, "--max-usd", "1",
+	if code := run([]string{
+		"bench", "run", "--config", cfg, "--manifest", manifest, "--clones", clones, "--max-usd", "1",
 		"--pricing", "fixed", "--input-usd-per-million", "1", "--output-usd-per-million", "1",
-		"--answers-dir", answers, "--json-out", reportIn}, nil, &stdout, &stderr); code != 0 {
+		"--answers-dir", answers, "--json-out", reportIn,
+	}, nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("run exited %d: %s", code, stderr.String())
 	}
 	var rep bench.Report
@@ -161,8 +163,10 @@ func TestBenchAnswersAndRejudge(t *testing.T) {
 		t.Helper()
 		out := filepath.Join(t.TempDir(), "rejudged.json")
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{"bench", "rejudge", "--report-in", reportIn, "--manifest", manifest, "--clones", clones,
-			"--answers-dir", answers, "--json-out", out}, nil, &stdout, &stderr); code != 0 {
+		if code := run([]string{
+			"bench", "rejudge", "--report-in", reportIn, "--manifest", manifest, "--clones", clones,
+			"--answers-dir", answers, "--json-out", out,
+		}, nil, &stdout, &stderr); code != 0 {
 			t.Fatalf("rejudge exited %d: %s", code, stderr.String())
 		}
 		var r bench.Report

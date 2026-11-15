@@ -15,10 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 var testKey = Key{Storage: "default", RelativePath: "repo.git", Branch: "main"}
 
 // recorder remembers the requests of every executed batch.

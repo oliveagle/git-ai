@@ -77,7 +77,7 @@ func NewFanOutRemovingCommandFactory(tb testing.TB, ctx context.Context, cfg con
 	library := filepath.Join(dir, "fanout_removal.so")
 	armed := filepath.Join(dir, "armed")
 	require.NoError(tb, os.WriteFile(source, []byte(fanOutRemovalShim), mode.File))
-	if out, err := exec.Command("cc", "-shared", "-fPIC", "-o", library, source, "-ldl").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "cc", "-shared", "-fPIC", "-o", library, source, "-ldl").CombinedOutput(); err != nil {
 		require.FailNow(tb, "compiling the fan-out removal library", "%v: %s", err, out)
 	}
 

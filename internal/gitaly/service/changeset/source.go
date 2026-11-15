@@ -30,7 +30,7 @@ func (s *server) changelogSource(ctx context.Context, repo *gitalypb.Repository)
 		return nil, structerr.NewFailedPrecondition("repository is not imported into the storage core")
 	}
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	return dblog.New(core.Meta, r.ID), nil

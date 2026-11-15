@@ -148,7 +148,7 @@ single-reference update with an explicit old value:
 | a malformed reference name | `gitops.ValidateName` (git's rules) and the name length limit | `InvalidReferenceFormatError` |
 | a new object that does not exist | the RPC's object reader (`cat-file --batch-check`, already open) | as `update-ref`'s error |
 | a non-commit object on `refs/heads/*` | the same read, object type | `NonCommitObjectError` |
-| an old value that does not match | the database's compare-and-swap (stronger: against the truth) | `MismatchingStateError` / `landConflict` |
+| an old value that does not match | the database's compare-and-swap (stronger: against the truth) | `MismatchingStateError` / `landConflictError` |
 | a name git cannot hold next to another (D/F) | the database's `refuseRefNameConflicts`, in the commit | `FileDirectoryConflictError` |
 | a lock it cannot get | nothing to check: no lock is taken | none |
 

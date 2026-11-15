@@ -412,7 +412,7 @@ func TestSyncerNeverServesAnUntrustedRepository(t *testing.T) {
 	require.DirExists(t, e.localPath(), "the move aside failed")
 
 	err = e.sy.EnsureFresh(e.ctx, e.pbRepo(localRelPath))
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 
 	e.sy.DurableStep(e.ctx, e.localPath(), false)
 	require.NoDirExists(t, e.localPath())

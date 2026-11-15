@@ -339,7 +339,7 @@ func TestSyncerConcurrentLocalWritesAreNeverReverted(t *testing.T) {
 				})
 				if err != nil {
 					_ = u.Close()
-					var conflict *corestore.ErrRefConflict
+					var conflict *corestore.RefConflictError
 					if errors.As(err, &conflict) {
 						conflicts.Add(1)
 						continue

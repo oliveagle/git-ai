@@ -180,8 +180,6 @@ type knownProblem struct {
 	problems []string
 }
 
-func withStorageCore(mode gitaiMode) bool { return mode.coreMode != "" }
-
 // bugRejectedUpdateCommitted: git's reference-transaction hook is fed the updates that a non-atomic
 // receive-pack (REF_TRANSACTION_ALLOW_FAILURE) already rejected. The database refuses a changeset
 // that would leave a pair git cannot hold, so it never records such a rejected update; in

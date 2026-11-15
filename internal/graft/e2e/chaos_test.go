@@ -257,7 +257,7 @@ func runChaosRequest(ctx context.Context, repo *sdk.Repo, req chaosRequest) (*sd
 // of updates that won the compare-and-swap. A lost race only ends that
 // attempt. Any other error, a denial included, fails the test: the policy
 // admits the writer to every branch. ctx ends it only as a deadlock.
-func chaosExternalWriter(ctx context.Context, t *testing.T, s gitalyStack, rnd *rand.Rand) int {
+func chaosExternalWriter(t *testing.T, ctx context.Context, s gitalyStack, rnd *rand.Rand) int {
 	t.Helper()
 
 	client := gitalypb.NewOperationServiceClient(s.dialAgent(t, sharedTestToken))
@@ -513,7 +513,7 @@ func chaosViewOf(t *testing.T, s gitalyStack, repo *sdk.Repo, base string) chaos
 		}
 	}
 
-	for _, cs := range allChangesets(s.ctx, t, repo) {
+	for _, cs := range allChangesets(t, s.ctx, repo) {
 		entry := chaosLogEntry{
 			Reference: string(cs.GetReference()),
 			Operation: cs.GetOperation(),
@@ -611,7 +611,7 @@ func TestChaosLanding(t *testing.T) {
 
 	// The external writer runs here, in the test goroutine, until it has won its
 	// updates. The lands may outlive it, so the results are read after done.
-	externalWins := chaosExternalWriter(landCtx, t, s, rand.New(rand.NewSource(seed+1)))
+	externalWins := chaosExternalWriter(t, landCtx, s, rand.New(rand.NewSource(seed+1)))
 	t.Logf("the external writer won %d updates of %s", externalWins, chaosExternalBranch)
 	<-done
 

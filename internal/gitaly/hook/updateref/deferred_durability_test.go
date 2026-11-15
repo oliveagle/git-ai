@@ -1,6 +1,7 @@
 package updateref
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -73,7 +74,7 @@ func liveUpdateRefs(t *testing.T) []int {
 		}
 		// pid (comm) state ppid ...; comm may contain spaces, so the fields are
 		// read after its closing parenthesis.
-		fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:]))
+		fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, 0x29)+1:]))
 		if len(fields) < 2 || fields[0] == "Z" || fields[1] != strconv.Itoa(os.Getpid()) {
 			continue
 		}

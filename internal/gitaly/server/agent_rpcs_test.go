@@ -90,7 +90,7 @@ func serveRepositorySize(t *testing.T, sf *GitalyServerFactory) string {
 		}},
 	}, struct{}{})
 
-	listener, err := net.Listen(starter.TCP, "localhost:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), starter.TCP, "localhost:0")
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 

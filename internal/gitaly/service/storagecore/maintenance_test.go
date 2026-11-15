@@ -317,7 +317,7 @@ func TestImportRefusesAnUntrustedRepository(t *testing.T) {
 	require.True(t, h.core.RefDurability.Untrusted(h.repoPath))
 
 	_, err = h.client.ImportRepository(h.ctx, &gitalypb.ImportRepositoryRequest{Repository: h.repo})
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	_, err = h.core.Meta.GetRepository(h.ctx, corestore.KeyOf(h.repo))
 	require.ErrorIs(t, err, corestore.ErrRepositoryNotFound, "nothing was imported")
 }

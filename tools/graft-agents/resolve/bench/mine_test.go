@@ -39,8 +39,10 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) git(args ...string) string {
 	f.t.Helper()
 	f.now += 60
-	cmd := exec.Command("git", append([]string{"-C", f.dir, "-c", "user.name=Bench", "-c", "user.email=bench@example.com",
-		"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"}, args...)...)
+	cmd := exec.Command("git", append([]string{
+		"-C", f.dir, "-c", "user.name=Bench", "-c", "user.email=bench@example.com",
+		"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main",
+	}, args...)...)
 	date := time.Unix(f.now, 0).UTC().Format(time.RFC3339)
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
@@ -238,7 +240,6 @@ func TestRunnerOutcomes(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 // TestRunnerSyntaxUnchecked: an accepted Go answer whose sides the grammar cannot read counts as

@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
@@ -70,7 +69,7 @@ func TestReceivePack_longReferenceNames(t *testing.T) {
 	t.Run("an existing long reference can be deleted", func(t *testing.T) {
 		repo, repoPath := gittest.CreateRepository(t, ctx, cfg)
 		commitID := gittest.WriteCommit(t, cfg, repoPath)
-		gittest.SeedPackedReference(t, repoPath, git.ReferenceName(long), commitID)
+		gittest.SeedPackedReference(t, repoPath, long, commitID)
 
 		output, err := push(t, repo, ":"+long.String())
 		require.NoError(t, err, output)

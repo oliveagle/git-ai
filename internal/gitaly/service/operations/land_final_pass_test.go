@@ -67,7 +67,7 @@ func TestLandFinalPass_givingUpIsTheKeptMovingError(t *testing.T) {
 	t.Parallel()
 
 	in := &gitalypb.UserLandRequest{Branch: []byte(git.DefaultBranch), CommitId: "c"}
-	err := landFinalPassGaveUp(in, &landNeedsResolution{tip: "1111111111111111111111111111111111111111"}, landFinalPasses)
+	err := landFinalPassGaveUp(in, &landNeedsResolutionError{tip: "1111111111111111111111111111111111111111"}, landFinalPasses)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "err = %v", err)
 	require.Contains(t, err.Error(), fmt.Sprintf("kept moving, giving up after %d attempts", landFinalPasses))
 

@@ -143,7 +143,7 @@ type MetaStore interface {
 	// CommitChangeset checks every update against the current references and
 	// records the changeset, the reference changes and the changelog entries
 	// in one transaction (see the CAS table of doc/graft/PLAN6.md). It returns
-	// *ErrRefConflict, writing nothing, when an expectation fails and Force is
+	// *RefConflictError, writing nothing, when an expectation fails and Force is
 	// not set, and ErrRepositoryNotFound for an unknown repository. Unless Force
 	// is set, a changeset that deletes or moves the keep-around reference of a
 	// commit that an open review uses as its head or base is refused with
@@ -151,7 +151,7 @@ type MetaStore interface {
 	// whose changesets are forced, does not enforce it. A changeset that creates
 	// a reference that cannot exist in git next to another one of the repository
 	// (refs/heads/a and refs/heads/a/b), counting the changeset's own deletions
-	// and creations, is refused with *ErrRefNameConflict, writing nothing, also
+	// and creations, is refused with *RefNameConflictError, writing nothing, also
 	// when Force is set: the database must stay something git can apply.
 	CommitChangeset(ctx context.Context, in ChangesetInput) (CommitResult, error)
 	// ConflictingRef returns a reference of the repository that git cannot hold

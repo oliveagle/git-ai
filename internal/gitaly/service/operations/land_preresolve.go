@@ -134,11 +134,11 @@ func (p *landPreResolution) isVerified(tree git.ObjectID) bool {
 	return p != nil && tree != "" && p.verified[tree]
 }
 
-// landNeedsResolution is the answer of a lane that cannot land the land as it stands: it met
+// landNeedsResolutionError is the answer of a lane that cannot land the land as it stands: it met
 // conflicting files without a verdict (new files, or files whose sides changed since they were
 // resolved), or the tree it would land is not one that verify.command passed on (unverified: the
 // tip moved). UserLand resolves and verifies again out of the lane, and lands again.
-type landNeedsResolution struct {
+type landNeedsResolutionError struct {
 	tip, commit git.ObjectID
 	paths       []string
 	unverified  git.ObjectID
@@ -155,7 +155,7 @@ type landNeedsResolution struct {
 	rulesCannot bool
 }
 
-func (e *landNeedsResolution) Error() string {
+func (e *landNeedsResolutionError) Error() string {
 	if e.moved {
 		return fmt.Sprintf("the branch moved while the resolution of the land at tip %s was being landed", e.tip)
 	}
@@ -201,7 +201,7 @@ func (s *Server) landPreResolve(ctx context.Context, in *gitalypb.UserLandReques
 
 	l, _, err := s.landResolveAt(ctx, in, repo, tip, commitID, committer, pre)
 	var unfinished *landVerifyUnfinishedError
-	var needs *landNeedsResolution
+	var needs *landNeedsResolutionError
 	var moved *landTipMovedError
 	switch {
 	case err == nil, errors.Is(err, errLandNoConflicts):
@@ -272,7 +272,7 @@ func (s *Server) landResolving(ctx context.Context, in *gitalypb.UserLandRequest
 
 	pre := newLandPreResolution()
 	pre.verifyAll = s.resolveCfg.Verify.Enabled
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	// deadline reports whether the land ran out of its own timeout, and not its caller.
 	deadline := func() bool {
 		return ctx.Err() == nil && errors.Is(resolveCtx.Err(), context.DeadlineExceeded)
@@ -328,7 +328,7 @@ func (s *Server) landResolving(ctx context.Context, in *gitalypb.UserLandRequest
 		// Another land holds the ticket of one of these files: this one does not enter the lane, which would
 		// only hand it back (and which every land of the branch waits for), and waits for its turn.
 		if paths := pre.currentPaths(); s.landTicketsBlock(in, paths, pre) {
-			need = &landNeedsResolution{paths: paths, queued: true}
+			need = &landNeedsResolutionError{paths: paths, queued: true}
 		} else {
 			resp, err := s.landOnce(ctx, in, committer, nil, pre)
 			if !errors.As(err, &need) {
@@ -415,7 +415,7 @@ func (s *Server) landTicketsBlock(in *gitalypb.UserLandRequest, paths []string, 
 // One that now needs more files gives its tickets back and takes the larger set at the tail (it loses its
 // place in the queues, and its priority until it is back in the lane): tickets are taken in sorted order, so
 // that no two lands wait for each other.
-func (s *Server) landTakeTicket(ctx context.Context, in *gitalypb.UserLandRequest, pre *landPreResolution, need *landNeedsResolution) error {
+func (s *Server) landTakeTicket(ctx context.Context, in *gitalypb.UserLandRequest, pre *landPreResolution, need *landNeedsResolutionError) error {
 	scope := landTicketScope(in.GetRepository().GetStorageName(), in.GetRepository().GetRelativePath(), in.GetBranch())
 	keys := landTicketKeys(scope, need.paths, s.resolveCfg.Verify.Enabled)
 	if pre.ticket.covers(keys) {
@@ -451,7 +451,7 @@ func landCallerGaveUp(ctx context.Context, err error) error {
 // landStoppedReason is why the land could not go on, as the files it leaves say: the tree it was
 // about to land was not verified before the branch moved again, the files changed again before they
 // could be resolved, or the time ran out before the conflicts were resolved at all.
-func landStoppedReason(need *landNeedsResolution, timeout time.Duration) string {
+func landStoppedReason(need *landNeedsResolutionError, timeout time.Duration) string {
 	switch {
 	case need != nil && (need.unverified != "" || need.moved):
 		return "could not verify before the branch moved again"
@@ -498,7 +498,7 @@ func (s *Server) landFinalPass(
 			s.landFinalPassHook(pass)
 		}
 		resp, err := s.landOnce(ctx, in, committer, nil, pre)
-		var needs *landNeedsResolution
+		var needs *landNeedsResolutionError
 		if !errors.As(err, &needs) {
 			return resp, err
 		}
@@ -512,8 +512,8 @@ func (s *Server) landFinalPass(
 // that lost the race, the retryable "kept moving" FailedPrecondition with the ReferenceUpdate detail
 // (landKeptMovingError). needs is the lane's last handing back, whose tip is the one the branch is
 // at; the package of a conflict is not what it is about.
-func landFinalPassGaveUp(in *gitalypb.UserLandRequest, needs *landNeedsResolution, passes int) error {
-	return landKeptMovingError(in, landConflict{
+func landFinalPassGaveUp(in *gitalypb.UserLandRequest, needs *landNeedsResolutionError, passes int) error {
+	return landKeptMovingError(in, landConflictError{
 		reference: git.NewReferenceNameFromBranchName(string(in.GetBranch())),
 		// The tip the last pass resolved at is the one the branch moved away from; where it moved to is
 		// not known here (the lane handed the land back without a compare-and-swap), so newOID is empty.

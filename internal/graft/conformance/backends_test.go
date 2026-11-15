@@ -50,13 +50,6 @@ import (
 	"github.com/feder-cr/git-ai/sdk"
 )
 
-func TestMain(m *testing.M) {
-	if os.Getenv(fetchTransportEnv) != "" {
-		os.Exit(runFetchTransport())
-	}
-	testhelper.Run(m)
-}
-
 // fetchTransportEnv makes the test binary act as the transport of a client's fetch, see
 // runFetchTransport.
 const fetchTransportEnv = "CONFORMANCE_FETCH_TRANSPORT"
@@ -125,11 +118,6 @@ type remote struct {
 	invariants func(t *testing.T) []string
 }
 
-// A backend hosts the repositories of one mode.
-type backend interface {
-	newRemote(t *testing.T) remote
-}
-
 // stockGit returns the git client of the machine. The tests of this repository put a shim named git
 // first in PATH, which refuses to run outside of the command factory.
 func stockGit(t *testing.T) string {
@@ -166,7 +154,7 @@ func stockEnv(home string) []string {
 }
 
 // runStock runs the stock git in dir and returns its exit code, standard output and standard error.
-func runStock(ctx context.Context, t *testing.T, dir string, env []string, stdin []byte, args ...string) (int, string, string) {
+func runStock(t *testing.T, ctx context.Context, dir string, env []string, stdin []byte, args ...string) (int, string, string) {
 	t.Helper()
 
 	// Every repository the harness creates has to land on the object hash the
@@ -197,10 +185,10 @@ func runStock(ctx context.Context, t *testing.T, dir string, env []string, stdin
 }
 
 // mustStock is runStock for a command that has to succeed, and returns its trimmed output.
-func mustStock(ctx context.Context, t *testing.T, dir string, env []string, stdin []byte, args ...string) string {
+func mustStock(t *testing.T, ctx context.Context, dir string, env []string, stdin []byte, args ...string) string {
 	t.Helper()
 
-	code, stdout, stderr := runStock(ctx, t, dir, env, stdin, args...)
+	code, stdout, stderr := runStock(t, ctx, dir, env, stdin, args...)
 	require.Equal(t, 0, code, "git %v: %s", args, stderr)
 	return strings.TrimSpace(stdout)
 }
@@ -250,9 +238,9 @@ func (b *referenceBackend) newRemote(t *testing.T) remote {
 	ctx := testhelper.Context(t)
 	name := fmt.Sprintf("repo-%d.git", b.n.Add(1))
 	path := filepath.Join(b.root, name)
-	mustStock(ctx, t, b.root, b.env, nil, "init", "--quiet", "--bare", "--initial-branch=main", path)
-	mustStock(ctx, t, path, b.env, nil, "config", "http.receivepack", "true")
-	mustStock(ctx, t, path, b.env, nil, "config", "uploadpack.allowFilter", "true")
+	mustStock(t, ctx, b.root, b.env, nil, "init", "--quiet", "--bare", "--initial-branch=main", path)
+	mustStock(t, ctx, path, b.env, nil, "config", "http.receivepack", "true")
+	mustStock(t, ctx, path, b.env, nil, "config", "uploadpack.allowFilter", "true")
 
 	return remote{
 		url:  b.url + "/" + name,

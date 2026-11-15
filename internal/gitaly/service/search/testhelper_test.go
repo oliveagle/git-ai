@@ -18,6 +18,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/repository"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -134,4 +135,8 @@ func writeNestedTree(tb testing.TB, cfg config.Cfg, repoPath string, files map[s
 	}
 
 	return gittest.WriteTree(tb, cfg, repoPath, entries)
+}
+
+func TestMain(m *testing.M) {
+	testhelper.Run(m)
 }

@@ -41,7 +41,7 @@ func TestSyncerNodesCannotCommitConflictingNames(t *testing.T) {
 					Actor:     "tester",
 					NodeID:    "node-b",
 				})
-				var conflict *corestore.ErrRefNameConflict
+				var conflict *corestore.RefNameConflictError
 				require.True(t, errors.As(err, &conflict), "error: %v", err)
 
 				require.NoError(t, a.sy.EnsureFresh(a.ctx, a.pbRepo(localRelPath)))

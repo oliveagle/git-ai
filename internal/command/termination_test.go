@@ -237,7 +237,7 @@ func waitForNextTick(t *testing.T) {
 func startInOwnGroup(t *testing.T, name string, args ...string) *exec.Cmd {
 	t.Helper()
 
-	cmd := exec.Command(name, args...)
+	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() {
@@ -345,7 +345,7 @@ func TestProcGroupProof(t *testing.T) {
 func startGroupWithSurvivor(t *testing.T) (leader, member int) {
 	t.Helper()
 
-	cmd := exec.Command("sh", "-c", `sleep 1000 </dev/null >/dev/null 2>&1 & echo $!`)
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", `sleep 1000 </dev/null >/dev/null 2>&1 & echo $!`)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	output, err := cmd.Output()
 	require.NoError(t, err)

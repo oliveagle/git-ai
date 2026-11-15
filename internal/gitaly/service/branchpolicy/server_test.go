@@ -138,11 +138,11 @@ func (h *harness) decideAbout(branch, commit, result string) *gitalypb.GetBranch
 	return resp
 }
 
-func requireDecision(t testing.TB, resp *gitalypb.GetBranchDecisionResponse, code string) {
-	t.Helper()
+func requireDecision(tb testing.TB, resp *gitalypb.GetBranchDecisionResponse, code string) {
+	tb.Helper()
 
-	require.Equal(t, code, resp.GetCode(), "reason: %s", resp.GetReason())
-	require.Equal(t, code == "allowed" || code == "not_managed", resp.GetAllowed(), "reason: %s", resp.GetReason())
+	require.Equal(tb, code, resp.GetCode(), "reason: %s", resp.GetReason())
+	require.Equal(tb, code == "allowed" || code == "not_managed", resp.GetAllowed(), "reason: %s", resp.GetReason())
 }
 
 // TestGetBranchDecision_Review checks the review part of the policy: a change

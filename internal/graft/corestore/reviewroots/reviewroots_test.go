@@ -19,10 +19,6 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 type fixture struct {
 	ctx     context.Context
 	t       *testing.T

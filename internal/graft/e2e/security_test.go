@@ -73,7 +73,7 @@ func TestAgentCannotMakeServerDialAddress(t *testing.T) {
 	s := startExample(t)
 	writeMain(t, s, map[string]string{"README.md": "ssrf\n"})
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = listener.Close() })
 

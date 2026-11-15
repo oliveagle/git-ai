@@ -7,7 +7,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -55,7 +54,7 @@ func TestUpdateReferences_longReferenceNames(t *testing.T) {
 	t.Run("an existing long reference can be read and deleted", func(t *testing.T) {
 		repo, repoPath := gittest.CreateRepository(t, ctx, cfg)
 		commitID := gittest.WriteCommit(t, cfg, repoPath)
-		gittest.SeedPackedReference(t, repoPath, git.ReferenceName(long), commitID)
+		gittest.SeedPackedReference(t, repoPath, long, commitID)
 
 		exists, err := client.RefExists(ctx, &gitalypb.RefExistsRequest{Repository: repo, Ref: []byte(long)})
 		require.NoError(t, err)
@@ -71,7 +70,7 @@ func TestUpdateReferences_longReferenceNames(t *testing.T) {
 	t.Run("DeleteRefs deletes an existing long reference", func(t *testing.T) {
 		repo, repoPath := gittest.CreateRepository(t, ctx, cfg)
 		commitID := gittest.WriteCommit(t, cfg, repoPath)
-		gittest.SeedPackedReference(t, repoPath, git.ReferenceName(long), commitID)
+		gittest.SeedPackedReference(t, repoPath, long, commitID)
 
 		_, err := client.DeleteRefs(ctx, &gitalypb.DeleteRefsRequest{Repository: repo, Refs: [][]byte{[]byte(long)}})
 		require.NoError(t, err)

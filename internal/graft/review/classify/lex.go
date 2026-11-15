@@ -197,15 +197,6 @@ func (s *scanner) quoted(multiline bool) {
 	s.pos = end
 }
 
-// plainWord emits an identifier or keyword.
-func (s *scanner) plainWord() {
-	start := s.pos
-	for s.pos < len(s.src) && isIdentChar(s.src[s.pos]) {
-		s.pos++
-	}
-	s.emit(string(s.src[start:s.pos]))
-}
-
 // number emits a numeric literal. Signs are part of the literal only directly
 // after an exponent mark, so "1e+5" stays one token while "1 + 5" does not.
 // The literal may swallow more than the language would (for example "0xE+1"),

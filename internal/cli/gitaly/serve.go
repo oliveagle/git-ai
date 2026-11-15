@@ -78,8 +78,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/tempdir"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/internal/version"
-	// Import to register the proxy codec with gRPC.
-	_ "github.com/feder-cr/git-ai/proxy"
+	_ "github.com/feder-cr/git-ai/proxy" // Import to register the proxy codec with gRPC.
 )
 
 func newServeCommand() *cli.Command {

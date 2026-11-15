@@ -23,10 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 func agentContext(t *testing.T, name string) context.Context {
 	t.Helper()
 	return identity.NewContext(testhelper.Context(t), identity.Identity{Name: name, Source: identity.SourceAgent})

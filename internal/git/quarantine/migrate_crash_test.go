@@ -119,7 +119,7 @@ func TestMigrateCrashLeavesAPrefixOfTheLinks(t *testing.T) {
 		source := filepath.Join(t.TempDir(), "source")
 		copyTree(t, quarantine, source)
 
-		cmd := exec.Command(os.Args[0], "-test.run", "^TestMigrateCrashChild$")
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run", "^TestMigrateCrashChild$")
 		cmd.Env = append(os.Environ(),
 			"QUARANTINE_CRASH_SOURCE="+source,
 			"QUARANTINE_CRASH_TARGET="+target,

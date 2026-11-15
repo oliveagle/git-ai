@@ -173,8 +173,10 @@ func (r Runner) Run(ctx context.Context, cases []Case) ([]Result, error) {
 		if r.Stop != nil {
 			if reason := r.Stop(); reason != "" {
 				for j, rest := range cases[i:] {
-					res := Result{ID: rest.ID, Repo: rest.Repo, Family: rest.Family, Language: LanguageOf(rest.Path), Kind: rest.Kind, Path: rest.Path,
-						Outcome: OutcomeStopped, Reason: reason}
+					res := Result{
+						ID: rest.ID, Repo: rest.Repo, Family: rest.Family, Language: LanguageOf(rest.Path), Kind: rest.Kind, Path: rest.Path,
+						Outcome: OutcomeStopped, Reason: reason,
+					}
 					results = append(results, res)
 					if r.Progress != nil {
 						r.Progress(i+j+1, len(cases), res)

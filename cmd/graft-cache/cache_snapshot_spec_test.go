@@ -26,7 +26,7 @@ func buildGraftCacheSpec(t *testing.T) string {
 	}
 	bin := filepath.Join(t.TempDir(), name)
 
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin, ".")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", bin, ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("building graft-cache failed: %v\n%s", err, out)
 	}

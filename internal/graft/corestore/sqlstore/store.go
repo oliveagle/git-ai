@@ -300,7 +300,7 @@ func applyMigrations(ctx context.Context, db *sql.DB, dialect Dialect, limit int
 		if err != nil {
 			return fmt.Errorf("get migration connection: %w", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
 			return fmt.Errorf("lock migrations: %w", err)

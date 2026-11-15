@@ -97,7 +97,7 @@ func checkConnectivity(ctx context.Context, repo *localrepo.Repo) (bool, string,
 		return true, "", nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return false, "", structerr.NewUnavailable("connectivity check: %w", ctxErr)
+		return false, "", structerr.NewInternal("connectivity check: %w", ctxErr)
 	}
 	if _, exited := command.ExitStatus(err); !exited {
 		return false, "", structerr.NewInternal("connectivity check: %w", err)

@@ -544,9 +544,9 @@ func (s *Server) GetTree(req *gitalypb.GetTreeRequest, stream gitalypb.ObjectSer
 	case <-f.done:
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return structerr.NewDeadlineExceeded("waiting for tree %s: %v", req.GetTreeOid(), ctx.Err())
+			return structerr.NewDeadlineExceeded("waiting for tree %s: %w", req.GetTreeOid(), ctx.Err())
 		}
-		return structerr.NewCanceled("waiting for tree %s: %v", req.GetTreeOid(), ctx.Err())
+		return structerr.NewCanceled("waiting for tree %s: %w", req.GetTreeOid(), ctx.Err())
 	}
 	if f.cached {
 		return s.sendTree(stream, req.GetTreeOid(), f.entries)

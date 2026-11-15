@@ -522,7 +522,7 @@ func runTokenValidityHelper(t *testing.T, extraEnv ...string) string {
 
 	outPath := filepath.Join(t.TempDir(), "result")
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestTokenValidityHelperProcess$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestTokenValidityHelperProcess$")
 	cmd.Env = withoutEnv(os.Environ(), "GITALY_TOKEN_VALIDITY")
 	cmd.Env = append(cmd.Env,
 		tokenValidityHelperEnv+"=1",

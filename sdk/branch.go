@@ -69,10 +69,10 @@ const (
 	BranchSuitesMissing = "suites_missing"
 )
 
-// BranchGateDenial returns the refusal of the branch management policy: the
+// BranchGateDenialError returns the refusal of the branch management policy: the
 // branch, the code of the decision and its reason. The second return value is
 // false when the error is not a refusal of that policy.
-func BranchGateDenial(err error) (*gitalypb.BranchGateError, bool) {
+func BranchGateDenialError(err error) (*gitalypb.BranchGateError, bool) {
 	st, ok := status.FromError(err)
 	if !ok {
 		return nil, false
@@ -90,7 +90,7 @@ func BranchGateDenial(err error) (*gitalypb.BranchGateError, bool) {
 // code a CI branches on: stale_result means the result has to be computed
 // again, not_verified means the checkpoint has to be published first.
 func BranchGateCode(err error) string {
-	denial, ok := BranchGateDenial(err)
+	denial, ok := BranchGateDenialError(err)
 	if !ok {
 		return ""
 	}

@@ -27,7 +27,7 @@ import (
 func startServer(t *testing.T, register func(*grpc.Server)) string {
 	t.Helper()
 
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	srv := grpc.NewServer()

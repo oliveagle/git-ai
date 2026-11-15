@@ -125,7 +125,7 @@ func (s *Server) userLandBatched(ctx context.Context, in *gitalypb.UserLandReque
 func batchSubmitError(err error) error {
 	switch {
 	case errors.Is(err, landlane.ErrClosed):
-		return structerr.NewUnavailable("land batching is shut down: %w", err)
+		return structerr.NewInternal("land batching is shut down: %w", err)
 	case errors.Is(err, context.DeadlineExceeded):
 		return structerr.NewDeadlineExceeded("waiting for landing batch: %w", err)
 	case errors.Is(err, context.Canceled):
@@ -231,7 +231,7 @@ func landBatchResult(outcome landBatchOutcome) landlane.Result[*gitalypb.UserLan
 // landBatchGiveUp returns the error of a request whose batch lost the compare-and-swap on every
 // attempt.
 func landBatchGiveUp(req *landBatchRequest, cause error, attempts int) error {
-	var conflict landConflict
+	var conflict landConflictError
 	if !errors.As(cause, &conflict) {
 		return structerr.NewInternal("updating ref with hooks: %w", cause)
 	}
@@ -379,7 +379,7 @@ func (st *serverLandBatchStepper) updateKind(err error, members int) (landUpdate
 		return landUpdated, nil
 	}
 
-	var conflict landConflict
+	var conflict landConflictError
 	if errors.As(err, &conflict) {
 		return landUpdateLost, err
 	}
@@ -396,7 +396,7 @@ func (st *serverLandBatchStepper) updateKind(err error, members int) (landUpdate
 	// The branch management policy refused the combined update: the refusal belongs to one of the
 	// members, which the combined update does not say, so each request lands alone and is judged by
 	// the policy on its own. A refusal of the only member of the update is its own answer.
-	var branchDenial hook.BranchGateDenial
+	var branchDenial hook.BranchGateDenialError
 	if members > 1 && errors.As(err, &branchDenial) {
 		return landUpdateRejected, err
 	}

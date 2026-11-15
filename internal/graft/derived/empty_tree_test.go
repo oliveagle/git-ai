@@ -202,7 +202,7 @@ func TestPathHistory_EmptyTreesMatchGit(t *testing.T) {
 					gitPath = "."
 				}
 				want := gitFirstParentPathHistory(t, cfg, repoPath, ids[name], gitPath)
-				got := collectPathHistory(ctx, t, deriver, ids[name], path, 1000)
+				got := collectPathHistory(t, ctx, deriver, ids[name], path, 1000)
 				require.Equal(t, want, got, "path history of %q at %s (cache %v)", path, name, cache)
 			}
 		}

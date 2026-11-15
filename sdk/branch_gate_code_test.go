@@ -25,7 +25,7 @@ func TestBranchGateCode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	denial, ok := sdk.BranchGateDenial(st.Err())
+	denial, ok := sdk.BranchGateDenialError(st.Err())
 	require.True(t, ok)
 	require.Equal(t, "main", denial.GetBranch())
 	require.Equal(t, "not_verified", denial.GetCode())

@@ -99,7 +99,7 @@ func TestPolicyHoldsForEveryReferenceUpdate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, builderCommit, s.git(t, "rev-parse", "refs/heads/main"))
 
-	for _, c := range allChangesets(s.ctx, t, builder) {
+	for _, c := range allChangesets(t, s.ctx, builder) {
 		if string(c.GetReference()) == "refs/heads/main" {
 			require.NotEqual(t, "builder", c.GetActor(), "a denied update of main must not be recorded")
 		}

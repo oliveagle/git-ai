@@ -192,7 +192,7 @@ func TestPhase4BatchOfOneIsLand(t *testing.T) {
 	require.Equal(t, int32(1), res.Batch.Size, "the change is a batch of one")
 
 	var landed []*sdk.Changeset
-	for _, cs := range allChangesets(ctx, t, repo) {
+	for _, cs := range allChangesets(t, ctx, repo) {
 		if string(cs.GetReference()) == "refs/heads/"+branch && len(cs.GetMembers()) == 1 {
 			landed = append(landed, cs)
 		}
@@ -245,14 +245,6 @@ func startGitalyWithLanes(t *testing.T, graft config.Graft, lanes *landlane.Shar
 		relPath:  repoProto.GetRelativePath(),
 		repoPath: repoPath,
 	}
-}
-
-// newTestLanes builds the lanes of a configuration, as the server does, and
-// closes them when the test ends.
-func newTestLanes(t *testing.T, graft config.Graft) *landlane.Shared {
-	t.Helper()
-
-	return newTestLanesWithClock(t, graft, nil)
 }
 
 // newTestLanesWithClock is newTestLanes with the clock that measures the batches
@@ -404,7 +396,7 @@ func gatedUpdateHookScript(release string) string {
 	return fmt.Sprintf(`#!/bin/sh
 while read old new ref; do :; done
 i=0
-while [ ! -f '%s' ]; do
+while [ ! -f %q ]; do
 	i=$((i + 1))
 	[ "$i" -lt 6000 ] || exit 1
 	sleep 0.05

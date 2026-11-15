@@ -226,13 +226,13 @@ type RefConflict struct {
 	Actual   Target
 }
 
-// ErrRefConflict is returned by MetaStore.CommitChangeset when at least one
+// RefConflictError is returned by MetaStore.CommitChangeset when at least one
 // reference does not satisfy its expectation; nothing was written.
-type ErrRefConflict struct {
+type RefConflictError struct {
 	Conflicts []RefConflict
 }
 
-func (e *ErrRefConflict) Error() string {
+func (e *RefConflictError) Error() string {
 	if len(e.Conflicts) == 0 {
 		return "storage core: reference conflict"
 	}
@@ -241,14 +241,14 @@ func (e *ErrRefConflict) Error() string {
 		c.Name, c.Actual, c.Expected, len(e.Conflicts))
 }
 
-// ErrRefNameConflict is returned by MetaStore.CommitChangeset when a reference
+// RefNameConflictError is returned by MetaStore.CommitChangeset when a reference
 // that the changeset creates cannot exist in git next to another reference of
 // the repository, because one name is a directory of the other (refs/heads/a
 // and refs/heads/a/b). Nothing was written. It is the database's form of git's
 // own file/directory conflict: every local repository is rebuilt from the
 // database, so a pair git cannot hold would stop the catch-up and the hydration
 // of the repository on every node.
-type ErrRefNameConflict struct {
+type RefNameConflictError struct {
 	// Name is the reference that the changeset creates.
 	Name string
 	// Existing is the reference it conflicts with, which the changeset leaves in
@@ -256,7 +256,7 @@ type ErrRefNameConflict struct {
 	Existing string
 }
 
-func (e *ErrRefNameConflict) Error() string {
+func (e *RefNameConflictError) Error() string {
 	return fmt.Sprintf("storage core: reference %q conflicts with reference %q: one name is a directory of the other", e.Name, e.Existing)
 }
 

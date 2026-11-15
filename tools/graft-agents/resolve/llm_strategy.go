@@ -366,8 +366,12 @@ func llmProviderConfigOf(spec StrategySpec, tbl map[string]any, where string) (l
 		key string
 		dst *string
 	}{
-		{"type", &cfg.Type}, {"model", &cfg.Model}, {"base_url", &cfg.BaseURL},
-		{"api_key_env", &cfg.APIKeyEnv}, {"timeout", &cfg.Timeout}, {"effort", &cfg.Effort},
+		{"type", &cfg.Type},
+		{"model", &cfg.Model},
+		{"base_url", &cfg.BaseURL},
+		{"api_key_env", &cfg.APIKeyEnv},
+		{"timeout", &cfg.Timeout},
+		{"effort", &cfg.Effort},
 	}
 	for _, s := range strs {
 		if *s.dst, err = stringField(tbl, s.key); err != nil {

@@ -467,7 +467,7 @@ func testLandBatchChangesetRecordsMembersWithRealActors(t *testing.T, ctx contex
 func TestLandBatchSubmitError(t *testing.T) {
 	t.Parallel()
 
-	testhelper.RequireGrpcCode(t, batchSubmitError(landlane.ErrClosed), codes.Unavailable)
+	testhelper.RequireGrpcCode(t, batchSubmitError(landlane.ErrClosed), codes.Internal)
 	testhelper.RequireGrpcCode(t, batchSubmitError(context.DeadlineExceeded), codes.DeadlineExceeded)
 	testhelper.RequireGrpcCode(t, batchSubmitError(context.Canceled), codes.Canceled)
 }

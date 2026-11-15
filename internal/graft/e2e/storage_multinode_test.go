@@ -60,8 +60,8 @@ func TestStorageWriteOnOneNodeReadOnAnother(t *testing.T) {
 
 		// Both nodes serve the changelog from the database: the same dense log,
 		// with the actor of each write.
-		logA := allChangesets(a.ctx, t, onA)
-		logB := allChangesets(b.ctx, t, onB)
+		logA := allChangesets(t, a.ctx, onA)
+		logB := allChangesets(t, b.ctx, onB)
 		requireDense(t, logA)
 		require.Len(t, logA, 2)
 		require.Equal(t, len(logA), len(logB))
@@ -183,10 +183,10 @@ func runConcurrentLandsAcrossNodes(t *testing.T, dialect sqlstore.Dialect, nodes
 	require.Equal(t, fmt.Sprint(workers+1), a.git(t, rel, "rev-list", "--count", "main"))
 
 	// Every landed request is in the database changelog exactly once.
-	changesets := allChangesets(nodeOf(0).ctx, t, repos[0])
+	changesets := allChangesets(t, nodeOf(0).ctx, repos[0])
 	requireDense(t, changesets)
 	if batched {
-		members := landBatchMembers(nodeOf(0).ctx, t, repos[0])
+		members := landBatchMembers(t, nodeOf(0).ctx, repos[0])
 		require.Len(t, members, workers, "the land members are exactly the landed requests")
 		for i, commit := range commits {
 			require.Equal(t, workerName(i), members[commit], "change %d is recorded once, for its agent", i)
@@ -208,7 +208,7 @@ func runConcurrentLandsAcrossNodes(t *testing.T, dialect sqlstore.Dialect, nodes
 
 	// Every node reads the same log from the database.
 	for i := 1; i < nodes; i++ {
-		require.Len(t, allChangesets(nodeOf(i).ctx, t, repos[i]), len(changesets), "%s", nodeOf(i).name)
+		require.Len(t, allChangesets(t, nodeOf(i).ctx, repos[i]), len(changesets), "%s", nodeOf(i).name)
 	}
 
 	for _, n := range cluster.nodes {

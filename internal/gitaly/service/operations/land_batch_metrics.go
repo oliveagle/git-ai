@@ -117,7 +117,7 @@ func landBatchOutcomeLabel(outcome landBatchOutcome) string {
 
 // landBatchErrorLabel returns the outcome label of a request that failed with err.
 func landBatchErrorLabel(err error) string {
-	var needs *landNeedsResolution
+	var needs *landNeedsResolutionError
 	if errors.As(err, &needs) {
 		return landBatchOutcomeNeedsResolution
 	}

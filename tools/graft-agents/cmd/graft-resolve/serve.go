@@ -127,12 +127,18 @@ func writeMetrics(w http.ResponseWriter, res *resolve.Resolver) {
 		name, typ, help string
 		value           func(resolve.BudgetSnapshot) string
 	}{
-		{"graft_resolve_ai_spend_usd", "gauge", "AI spend of the current month (UTC) in USD.",
-			func(s resolve.BudgetSnapshot) string { return strconv.FormatFloat(s.SpentUSD, 'f', -1, 64) }},
-		{"graft_resolve_ai_budget_usd", "gauge", "Monthly AI spending cap in USD (0: none).",
-			func(s resolve.BudgetSnapshot) string { return strconv.FormatFloat(s.MonthlyUSD, 'f', -1, 64) }},
-		{"graft_resolve_ai_budget_exhausted_total", "counter", "Model calls not made because the monthly cap was reached.",
-			func(s resolve.BudgetSnapshot) string { return strconv.FormatInt(s.Exhausted, 10) }},
+		{
+			"graft_resolve_ai_spend_usd", "gauge", "AI spend of the current month (UTC) in USD.",
+			func(s resolve.BudgetSnapshot) string { return strconv.FormatFloat(s.SpentUSD, 'f', -1, 64) },
+		},
+		{
+			"graft_resolve_ai_budget_usd", "gauge", "Monthly AI spending cap in USD (0: none).",
+			func(s resolve.BudgetSnapshot) string { return strconv.FormatFloat(s.MonthlyUSD, 'f', -1, 64) },
+		},
+		{
+			"graft_resolve_ai_budget_exhausted_total", "counter", "Model calls not made because the monthly cap was reached.",
+			func(s resolve.BudgetSnapshot) string { return strconv.FormatInt(s.Exhausted, 10) },
+		},
 	}
 	snaps := make(map[string]resolve.BudgetSnapshot, len(names))
 	for _, name := range names {

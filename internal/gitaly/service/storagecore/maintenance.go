@@ -42,7 +42,7 @@ func (s *server) CreateCheckpoint(ctx context.Context, req *gitalypb.CreateCheck
 	}
 	refs, err := core.Meta.CheckpointRefs(ctx, created.RepoID, created.Seq)
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: checkpoint references: %w", err)
+		return nil, structerr.NewInternal("storage core: checkpoint references: %w", err)
 	}
 	resp.References = uint32(len(refs))
 	return resp, nil
@@ -72,7 +72,7 @@ func (s *server) CollectGarbage(ctx context.Context, req *gitalypb.CollectGarbag
 		return nil, structerr.NewNotFound("repository is not tracked by the storage core")
 	}
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	holder := maintenance.RequestLeaseHolder(core)
@@ -81,7 +81,7 @@ func (s *server) CollectGarbage(ctx context.Context, req *gitalypb.CollectGarbag
 		return nil, structerr.NewNotFound("repository is not tracked by the storage core")
 	}
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: maintenance lease: %w", err)
+		return nil, structerr.NewInternal("storage core: maintenance lease: %w", err)
 	}
 	if !acquired {
 		return nil, structerr.NewFailedPrecondition("another maintenance operation of this repository is in progress")

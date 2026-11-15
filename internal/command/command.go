@@ -268,6 +268,7 @@ func New(ctx context.Context, logger log.Logger, nameAndArgs []string, opts ...O
 	// Not exec.CommandContext: it sends SIGKILL when ctx is done, and a git that dies that way leaves
 	// its reference lock behind (see the check above). The goroutine at the end of this function
 	// ends the process when ctx is done, with SIGTERM to its process group.
+	//nolint:noctx // The goroutine below sends SIGTERM; exec.CommandContext would send SIGKILL.
 	cmd := exec.Command(nameAndArgs[0], nameAndArgs[1:]...)
 	service, method := methodFromContext(ctx)
 

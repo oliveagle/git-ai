@@ -542,7 +542,7 @@ func TestLockOrderConcurrentWriters(t *testing.T) {
 		// and left as it is.
 		protect := func(s *sqlstore.Store, root string) error {
 			_, err := commit(ctx, s, repo.ID, create(corestore.KeepAroundRef(root), corestore.Target(root)))
-			var conflict *corestore.ErrRefConflict
+			var conflict *corestore.RefConflictError
 			switch {
 			case err == nil:
 				committed.Add(1)
@@ -630,7 +630,7 @@ func TestLockOrderConcurrentWriters(t *testing.T) {
 						continue
 					}
 					_, err := commit(ctx, b, repo.ID, update(name, target, ""))
-					var conflict *corestore.ErrRefConflict
+					var conflict *corestore.RefConflictError
 					switch {
 					case err == nil:
 						committed.Add(1)

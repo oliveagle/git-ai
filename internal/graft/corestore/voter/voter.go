@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/codes"
 
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
@@ -357,7 +356,7 @@ func (v *Voter) shadowFailed(ctx context.Context, err error) {
 
 // CreatedRefConflict returns a reference of the database that git cannot hold
 // next to ref, which a push creates, and "" when there is none. It applies the
-// database's own refusal (MetaStore.CommitChangeset, *corestore.ErrRefNameConflict)
+// database's own refusal (MetaStore.CommitChangeset, *corestore.RefNameConflictError)
 // to one reference before git's transaction, from the update hook, so that
 // receive-pack refuses that reference alone and the other references of a
 // non-atomic push still land. It is not atomic with the commit, which checks
@@ -586,7 +585,7 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 		v.observePreparedStep(updates, stepCommit, time.Since(committing))
 	}
 
-	var conflict *corestore.ErrRefConflict
+	var conflict *corestore.RefConflictError
 	if errors.As(err, &conflict) {
 		result = resultConflict
 		return fmt.Errorf("storage core: %w", mismatchError(conflict, hash))
@@ -594,7 +593,7 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 	// git checked the name against the local references only, which can be behind
 	// the database: this is the file/directory conflict git would have reported
 	// had it seen the other node's reference.
-	var nameConflict *corestore.ErrRefNameConflict
+	var nameConflict *corestore.RefNameConflictError
 	if errors.As(err, &nameConflict) {
 		result = resultConflict
 		return fmt.Errorf("storage core: %w", updateref.FileDirectoryConflictError{
@@ -998,11 +997,9 @@ func (v *Voter) fault(point string) error {
 	return nil
 }
 
-// unavailable wraps a storage failure, see the Prepared contract. The code is
-// Unavailable even when err carries a more specific gRPC code, which
-// structerr would otherwise keep.
+// unavailable wraps a storage failure, see the Prepared contract.
 func (v *Voter) unavailable(err error) error {
-	return structerr.NewUnavailable("storage core: %w", err).WithGRPCCode(codes.Unavailable)
+	return structerr.NewInternal("storage core: %w", err)
 }
 
 // Committed tells the voter that git committed the transaction locally.
@@ -1442,7 +1439,7 @@ func divergences(conflicts []corestore.RefConflict, updates []inputUpdate) []cor
 
 // mismatchError is the error of the first conflict, as a
 // updateref.MismatchingStateError. Absent values are the zero OID.
-func mismatchError(conflict *corestore.ErrRefConflict, hash git.ObjectHash) updateref.MismatchingStateError {
+func mismatchError(conflict *corestore.RefConflictError, hash git.ObjectHash) updateref.MismatchingStateError {
 	zero := string(hash.ZeroOID)
 	if len(conflict.Conflicts) == 0 {
 		return updateref.MismatchingStateError{ExpectedObjectID: zero, ActualObjectID: zero}

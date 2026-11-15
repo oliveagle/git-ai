@@ -545,7 +545,7 @@ func TestUserLand_reland(t *testing.T) {
 		loose := filepath.Join(fx.repoPath, "objects", theirsB[:2], theirsB[2:])
 		require.FileExists(t, loose)
 
-		dir, argv := resolverScript(t, fmt.Sprintf(`[ "$N" = 1 ] && rm -f '%s'; [ -s "$DIR/answer-$N.json" ] || exit 1; cp "$DIR/answer-$N.json" "$DIR/answer.json"`, loose))
+		dir, argv := resolverScript(t, fmt.Sprintf(`[ "$N" = 1 ] && rm -f %q; [ -s "$DIR/answer-$N.json" ] || exit 1; cp "$DIR/answer-$N.json" "$DIR/answer.json"`, loose))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "answer-1.json"), []byte(checkAnswer("graft-resolve", "a", false, "a is wrong")), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "answer-2.json"), []byte(checkAnswer("graft-resolve", "b", true, "")), 0o600))
 		s := fx.server(t, enabledResolver(argv))

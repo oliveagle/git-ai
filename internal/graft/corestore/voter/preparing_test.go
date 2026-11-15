@@ -229,7 +229,7 @@ func TestPreparingNeverFails(t *testing.T) {
 			input := line(f.zero, f.a.String(), ref)
 			f.preparing(input)
 			err := f.prepared(input)
-			require.Equal(t, codes.Unavailable, status.Code(err), "error %v", err)
+			require.Equal(t, codes.Internal, status.Code(err), "error %v", err)
 		})
 
 		t.Run("closed database in shadow mode", func(t *testing.T) {

@@ -44,7 +44,7 @@ func TestLandResolveBench(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "answer.json"), answer, 0o600))
 	require.NoError(t, os.WriteFile(script, []byte(fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 cat > /dev/null
 echo x >> "$DIR/calls"
 sleep %.3f

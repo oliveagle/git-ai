@@ -35,7 +35,7 @@ func TestRepoCreateWithTheCLI(t *testing.T) {
 
 	// An agent may never create a repository.
 	var stderr bytes.Buffer
-	cmd := exec.Command(bin, "repo", "create", rel, "--initial-commit")
+	cmd := exec.CommandContext(t.Context(), bin, "repo", "create", rel, "--initial-commit")
 	cmd.Env = agent
 	cmd.Stderr = &stderr
 	require.Error(t, cmd.Run())

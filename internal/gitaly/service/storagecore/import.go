@@ -73,7 +73,7 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 		return nil, err
 	}
 	if core.RefDurability.Untrusted(path) {
-		return nil, structerr.NewUnavailable("storage core: the local references of the repository may have lost writes; it cannot be imported until it is rebuilt")
+		return nil, structerr.NewInternal("storage core: the local references of the repository may have lost writes; it cannot be imported until it is rebuilt")
 	}
 
 	local := s.localRepo(repo)
@@ -185,7 +185,7 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 			if errors.Is(err, corestore.ErrRepositoryNotFound) {
 				return nil, errRegistrationRemoved()
 			}
-			return nil, structerr.NewUnavailable("storage core: %w; %s", err, resumeHint)
+			return nil, structerr.NewInternal("storage core: %w; %s", err, resumeHint)
 		}
 		if record.ID != reg.repo.ID {
 			return nil, errRegistrationRemoved()
@@ -198,7 +198,7 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 		upload, err = core.UploadPack(ctx, record, readAt, pack.SHA256, pack.Size, f)
 		_ = f.Close()
 		if err != nil {
-			return nil, structerr.NewUnavailable("storage core: upload pack: %w; %s", err, resumeHint)
+			return nil, structerr.NewInternal("storage core: upload pack: %w; %s", err, resumeHint)
 		}
 	}
 
@@ -214,7 +214,7 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 	}
 	commitCtx, cancel, err := upload.CommitContext(ctx)
 	if err != nil {
-		return nil, structerr.NewUnavailable("%w; %s", err, resumeHint)
+		return nil, structerr.NewInternal("%w; %s", err, resumeHint)
 	}
 	defer cancel()
 
@@ -229,8 +229,8 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 		PackDeadline: upload.DBDeadline,
 	})
 	if err != nil {
-		var conflict *corestore.ErrRefConflict
-		var nameConflict *corestore.ErrRefNameConflict
+		var conflict *corestore.RefConflictError
+		var nameConflict *corestore.RefNameConflictError
 		switch {
 		case errors.As(err, &conflict):
 			// Writes are refused (authoritative) or not recorded (shadow) while the
@@ -243,7 +243,7 @@ func (s *server) ImportRepository(ctx context.Context, req *gitalypb.ImportRepos
 			// Local git cannot normally hold such a pair, but a retry cannot fix one.
 			return nil, structerr.NewFailedPrecondition("storage core: %w", err)
 		default:
-			return nil, structerr.NewUnavailable("storage core: commit import changeset: %w; %s", err, resumeHint)
+			return nil, structerr.NewInternal("storage core: commit import changeset: %w; %s", err, resumeHint)
 		}
 	}
 
@@ -328,7 +328,7 @@ func (s *server) registerImport(ctx context.Context, core *corestore.Core, key c
 	case err == nil:
 		return resumeImport(ctx, core, existing, format)
 	case !errors.Is(err, corestore.ErrRepositoryNotFound):
-		return registration{}, structerr.NewUnavailable("storage core: %w", err)
+		return registration{}, structerr.NewInternal("storage core: %w", err)
 	}
 
 	history, err := scanChangelog(repoPath)
@@ -349,12 +349,12 @@ func (s *server) registerImport(ctx context.Context, core *corestore.Core, key c
 		// incomplete import too.
 		existing, err := core.Meta.GetRepository(ctx, key)
 		if err != nil {
-			return registration{}, structerr.NewUnavailable("storage core: %w", err)
+			return registration{}, structerr.NewInternal("storage core: %w", err)
 		}
 		return resumeImport(ctx, core, existing, format)
 	}
 	if err != nil {
-		return registration{}, structerr.NewUnavailable("storage core: register repository: %w", err)
+		return registration{}, structerr.NewInternal("storage core: register repository: %w", err)
 	}
 	return registration{repo: registered, changelogEntries: len(history), reviews: len(reviews)}, nil
 }
@@ -372,11 +372,11 @@ func resumeImport(ctx context.Context, core *corestore.Core, r corestore.Reposit
 
 	entries, err := core.Meta.ScanChangelog(ctx, r.ID, 0, 0)
 	if err != nil {
-		return registration{}, structerr.NewUnavailable("storage core: read imported changelog: %w; %s", err, resumeHint)
+		return registration{}, structerr.NewInternal("storage core: read imported changelog: %w; %s", err, resumeHint)
 	}
 	reviews, err := core.Meta.ListReviews(ctx, r.ID, "", true, 0)
 	if err != nil {
-		return registration{}, structerr.NewUnavailable("storage core: read imported reviews: %w; %s", err, resumeHint)
+		return registration{}, structerr.NewInternal("storage core: read imported reviews: %w; %s", err, resumeHint)
 	}
 	return registration{repo: r, resumed: true, changelogEntries: len(entries), reviews: len(reviews)}, nil
 }
@@ -409,7 +409,7 @@ func (s *server) importHistory(ctx context.Context, core *corestore.Core, r core
 	case errors.Is(err, corestore.ErrRepositoryNotFound):
 		return nil, structerr.NewFailedPrecondition("storage core: the repository was removed from the storage core concurrently; run ImportRepository again")
 	case err != nil:
-		return nil, structerr.NewUnavailable("storage core: import history: %w", err)
+		return nil, structerr.NewInternal("storage core: import history: %w", err)
 	}
 
 	if importedEntries > 0 || importedReviews > 0 {
@@ -422,7 +422,7 @@ func (s *server) importHistory(ctx context.Context, core *corestore.Core, r core
 	// The response reports the current head: the references are not touched.
 	current, err := core.Meta.GetRepository(ctx, r.Key)
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	return &gitalypb.ImportRepositoryResponse{

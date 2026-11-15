@@ -53,7 +53,7 @@ func (s *server) VerifyRepository(ctx context.Context, req *gitalypb.VerifyRepos
 		return nil, structerr.NewFailedPrecondition("repository is not imported into the storage core")
 	}
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 	if record.HeadSeq == 0 {
 		// An incomplete import (IMPORT RULE): the database has no reference yet.
@@ -67,7 +67,7 @@ func (s *server) VerifyRepository(ctx context.Context, req *gitalypb.VerifyRepos
 
 	dbRefs, headSeq, err := core.Meta.Refs(ctx, record.ID)
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	local := s.localRepo(repo)

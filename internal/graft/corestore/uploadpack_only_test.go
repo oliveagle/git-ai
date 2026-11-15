@@ -1,4 +1,4 @@
-package corestore_test
+package corestore
 
 import (
 	"bytes"
@@ -36,7 +36,7 @@ type listedPackage struct {
 // packages it prints.
 func goList(t *testing.T, root string, args ...string) []listedPackage {
 	t.Helper()
-	cmd := exec.Command("go", append([]string{"list", "-e", "-json=ImportPath,Dir,GoFiles,Export,Deps,Module"}, args...)...)
+	cmd := exec.CommandContext(t.Context(), "go", append([]string{"list", "-e", "-json=ImportPath,Dir,GoFiles,Export,Deps,Module"}, args...)...)
 	cmd.Dir = root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

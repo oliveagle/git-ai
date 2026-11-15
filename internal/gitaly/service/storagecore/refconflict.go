@@ -90,7 +90,7 @@ func (s *server) DeleteConflictingReference(ctx context.Context, req *gitalypb.D
 		return nil, structerr.NewFailedPrecondition("repository is not imported into the storage core")
 	}
 	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	actor := identity.Actor(ctx, deleteConflictingOperation)
@@ -104,7 +104,7 @@ func (s *server) DeleteConflictingReference(ctx context.Context, req *gitalypb.D
 		Changelog:            &changelog.Meta{Operation: deleteConflictingOperation, Actor: actor},
 	})
 	if err != nil {
-		var conflict *corestore.ErrRefConflict
+		var conflict *corestore.RefConflictError
 		switch {
 		case errors.Is(err, corestore.ErrRefNotConflicting):
 			return nil, structerr.NewFailedPrecondition("%w", err)
@@ -113,7 +113,7 @@ func (s *server) DeleteConflictingReference(ctx context.Context, req *gitalypb.D
 		case errors.Is(err, corestore.ErrRepositoryNotFound):
 			return nil, structerr.NewFailedPrecondition("repository is not imported into the storage core")
 		default:
-			return nil, structerr.NewUnavailable("storage core: %w", err)
+			return nil, structerr.NewInternal("storage core: %w", err)
 		}
 	}
 	if len(res.Changelog) > 0 {

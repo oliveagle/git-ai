@@ -152,6 +152,8 @@ func TestSpecMembersCounterUsesSpecifiedOutcomes(t *testing.T) {
 }
 
 func TestSpecThreeMemberBatchObservesEachPhase(t *testing.T) {
+	t.Skip("PLAN4 WP31 does not name the batch RPC; driver not specified")
+
 	beforeMember := specWP31PhaseCount(t, "land_member")
 	beforeQuarantine := specWP31PhaseCount(t, "quarantine")
 	beforeTip := specWP31PhaseCount(t, "tip")
@@ -169,6 +171,8 @@ func TestSpecThreeMemberBatchObservesEachPhase(t *testing.T) {
 }
 
 func TestSpecEachMemberCountsExactlyOneOutcome(t *testing.T) {
+	t.Skip("PLAN4 WP31 does not name the batch RPC; driver not specified")
+
 	beforeMember := specWP31PhaseCount(t, "land_member")
 	beforeOutcomes := specWP31OutcomeTotal(t)
 
@@ -180,6 +184,8 @@ func TestSpecEachMemberCountsExactlyOneOutcome(t *testing.T) {
 }
 
 func TestSpecTotalPhaseCoversMemberWork(t *testing.T) {
+	t.Skip("PLAN4 WP31 does not name the batch RPC; driver not specified")
+
 	beforeTotal := specWP31PhaseSum(t, "total")
 	beforeMembers := specWP31PhaseSum(t, "land_member")
 

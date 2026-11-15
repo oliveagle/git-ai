@@ -247,24 +247,24 @@ func batchOf(contents map[string]string, entries []landTreeEntry) *bufio.Reader 
 }
 
 // blobOID is the object ID git gives a blob with this content.
-func blobOID(t testing.TB, content string) git.ObjectID {
-	t.Helper()
+func blobOID(tb testing.TB, content string) git.ObjectID {
+	tb.Helper()
 	oid, err := landBlobOID(strings.NewReader(content), int64(len(content)), git.ObjectID(strings.Repeat("0", 40)))
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return oid
 }
 
-func fakeEntries(t testing.TB) ([]landTreeEntry, map[string]string) {
-	t.Helper()
+func fakeEntries(tb testing.TB) ([]landTreeEntry, map[string]string) {
+	tb.Helper()
 	contents := map[string]string{
 		"a.txt":   "content\n",
 		"bin/run": "#!/bin/sh\n",
 		"link":    "a.txt",
 	}
 	return []landTreeEntry{
-		{mode: 0o100644, oid: blobOID(t, contents["a.txt"]), path: "a.txt"},
-		{mode: 0o100755, oid: blobOID(t, contents["bin/run"]), path: "bin/run"},
-		{mode: 0o120000, oid: blobOID(t, contents["link"]), path: "link"},
+		{mode: 0o100644, oid: blobOID(tb, contents["a.txt"]), path: "a.txt"},
+		{mode: 0o100755, oid: blobOID(tb, contents["bin/run"]), path: "bin/run"},
+		{mode: 0o120000, oid: blobOID(tb, contents["link"]), path: "link"},
 		{mode: 0o160000, oid: git.ObjectID(strings.Repeat("4", 40)), path: "mod"},
 	}, contents
 }
@@ -520,7 +520,7 @@ func TestLandMaterialize_pathSafety(t *testing.T) {
 			}
 
 			err := materializeFake(t, dir, tc.entries(outer)...)
-			var refusal *landCheckoutRefusal
+			var refusal *landCheckoutRefusalError
 			require.ErrorAs(t, err, &refusal, "a refusal, with its reason")
 			require.NotEmpty(t, refusal.reason)
 
@@ -599,7 +599,7 @@ func TestLandCheckoutTree_limits(t *testing.T) {
 	count := len(entries) + dirs
 	require.NoError(t, landCheckoutTree(ctx, fx.repo, fx.tree, t.TempDir(), landCheckoutLimits{entries: count, bytes: total}), "at the limits")
 
-	var refusal *landCheckoutRefusal
+	var refusal *landCheckoutRefusalError
 	dir := t.TempDir()
 	require.ErrorAs(t, landCheckoutTree(ctx, fx.repo, fx.tree, dir, landCheckoutLimits{entries: count - 1}), &refusal)
 	require.Contains(t, refusal.reason, "more than")
@@ -761,7 +761,7 @@ func TestLandCheckoutTree_aSmallPushCannotBecomeALargeCheckout(t *testing.T) {
 			dir := t.TempDir()
 			start := time.Now()
 			err := landCheckoutTree(ctx, repo, tc.tree, dir, tc.limits)
-			var refusal *landCheckoutRefusal
+			var refusal *landCheckoutRefusalError
 			require.ErrorAs(t, err, &refusal)
 			require.Contains(t, refusal.reason, tc.reason)
 			require.Less(t, inodes(t, dir), tc.maxMaker+1, "what the checkout made is bounded by the limit")
@@ -814,7 +814,7 @@ func TestLandMaterialize_refusesWhatTheFileSystemWouldNot(t *testing.T) {
 			if tc.prepare != nil {
 				tc.prepare(t, dir)
 			}
-			var refusal *landCheckoutRefusal
+			var refusal *landCheckoutRefusalError
 			require.ErrorAs(t, materializeFake(t, dir, tc.entries...), &refusal)
 			require.Contains(t, refusal.reason, tc.reason)
 			require.NotContains(t, refusal.reason, dir, "a reason names the path inside the checkout, not the directory of the server")
@@ -827,8 +827,8 @@ func TestLandMaterialize_refusesWhatTheFileSystemWouldNot(t *testing.T) {
 		t.Parallel()
 
 		err := materializeFake(t, filepath.Join(t.TempDir(), "missing"), fakeTreeEntry{reg, "a/b", "x"})
-		var fault *landCheckoutFault
-		var refusal *landCheckoutRefusal
+		var fault *landCheckoutFaultError
+		var refusal *landCheckoutRefusalError
 		require.ErrorAs(t, err, &fault)
 		require.False(t, errors.As(err, &refusal))
 	})
@@ -870,7 +870,7 @@ func TestLandMaterialize_theDirectoryClauseOfPathMax(t *testing.T) {
 	require.Less(t, len(long), landMaxTreePath)
 	require.GreaterOrEqual(t, len(dir)+1+len(long), landPathMax)
 
-	var refusal *landCheckoutRefusal
+	var refusal *landCheckoutRefusalError
 	require.ErrorAs(t, materializeFake(t, dir, fakeTreeEntry{0o100644, long, "x"}), &refusal)
 	require.Contains(t, refusal.reason, "too long to write", "refused by the clause of the directory, not by the system call")
 }

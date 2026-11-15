@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
@@ -62,7 +61,7 @@ func TestPostReceivePack_longReferenceNames(t *testing.T) {
 		repoProto, repoPath := gittest.CreateRepository(t, ctx, cfg)
 		repoProto.GlProjectPath = "project/path"
 		commitID := gittest.WriteCommit(t, cfg, repoPath)
-		gittest.SeedPackedReference(t, repoPath, git.ReferenceName(long), commitID)
+		gittest.SeedPackedReference(t, repoPath, long, commitID)
 
 		push := setupPush(t, ctx, cfg, repoPath, func(string) []refUpdate {
 			return []refUpdate{{ref: long, from: commitID, to: zero}}

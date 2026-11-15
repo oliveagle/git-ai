@@ -37,12 +37,12 @@ func forEachDialect(t *testing.T, fn func(t *testing.T, ctx context.Context, s *
 var openedDSNs sync.Map
 
 // openStore opens a store on dsn and closes it when the test ends.
-func openStore(t testing.TB, ctx context.Context, dsn string) *sqlstore.Store {
-	t.Helper()
+func openStore(tb testing.TB, ctx context.Context, dsn string) *sqlstore.Store {
+	tb.Helper()
 
 	s, err := sqlstore.Open(ctx, dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	require.NoError(tb, err)
+	tb.Cleanup(func() { require.NoError(tb, s.Close()) })
 	openedDSNs.Store(s, dsn)
 
 	return s
@@ -178,7 +178,7 @@ func TestCASTable(t *testing.T) {
 
 		// Non-zero old that differs: conflict, nothing written.
 		_, err = commit(ctx, s, repo.ID, update("refs/heads/a", oid(1), oid(3)))
-		var conflict *corestore.ErrRefConflict
+		var conflict *corestore.RefConflictError
 		require.True(t, errors.As(err, &conflict), "got %v", err)
 		require.Equal(t, []corestore.RefConflict{{Name: "refs/heads/a", Expected: oid(1), Actual: oid(2)}}, conflict.Conflicts)
 		requireRefs(t, ctx, s, repo.ID, map[string]corestore.Target{"refs/heads/a": oid(2)})

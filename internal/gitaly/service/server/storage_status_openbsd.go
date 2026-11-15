@@ -1,9 +1,10 @@
 package server
 
 import (
+	"golang.org/x/sys/unix"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"golang.org/x/sys/unix"
 )
 
 func getStorageStatus(shard config.Storage) (*gitalypb.DiskStatisticsResponse_StorageStatus, error) {

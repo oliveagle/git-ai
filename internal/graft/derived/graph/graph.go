@@ -28,7 +28,9 @@ const (
 	// derived-data store. The version must be bumped when the encoding or the computation
 	// changes. Other packages that open the graph kind (for example
 	// internal/graft/ancestry) use them so that both read the same entries.
-	KindName    = "graph"
+	KindName = "graph"
+
+	// KindVersion is the encoding and computation version of the graph entries.
 	KindVersion = 1
 
 	kindName    = KindName

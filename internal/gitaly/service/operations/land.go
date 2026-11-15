@@ -36,21 +36,21 @@ const (
 	landBackoffMax = 100 * time.Millisecond
 )
 
-// landConflict reports that the compare-and-swap of the branch lost a race against a concurrent
+// landConflictError reports that the compare-and-swap of the branch lost a race against a concurrent
 // writer. The attempt is discarded and UserLand retries from the top.
-type landConflict struct {
+type landConflictError struct {
 	reference      git.ReferenceName
 	oldOID, newOID git.ObjectID
 	cause          error
 }
 
 // Error returns the error message.
-func (e landConflict) Error() string {
+func (e landConflictError) Error() string {
 	return fmt.Sprintf("reference %s moved concurrently: %v", e.reference, e.cause)
 }
 
 // Unwrap returns the underlying reference update error.
-func (e landConflict) Unwrap() error {
+func (e landConflictError) Unwrap() error {
 	return e.cause
 }
 
@@ -226,7 +226,7 @@ func (s *Server) landWithRetries(ctx context.Context, in *gitalypb.UserLandReque
 			return resp, nil
 		}
 
-		var conflict landConflict
+		var conflict landConflictError
 		if !errors.As(err, &conflict) {
 			return nil, err
 		}
@@ -282,7 +282,7 @@ func (s *Server) landAncestry(ctx context.Context, quarantineRepo *localrepo.Rep
 	return checker, release, nil
 }
 
-// landAttempt performs a single compare-and-swap attempt of UserLand. It returns a landConflict
+// landAttempt performs a single compare-and-swap attempt of UserLand. It returns a landConflictError
 // if the branch was moved by a concurrent writer, in which case the caller retries.
 // landDryRun computes the commit a land would produce on the current tip of the
 // branch, without updating the branch. It decides and replays the change through
@@ -432,7 +432,7 @@ func expectedResultError(expected string, landed, tip git.ObjectID) error {
 
 // updateLandedReference performs the compare-and-swap of the branch, recording lands, the
 // identities of the changes it lands (doc/graft/PLAN11.md), in its changelog entry. Hook rejections
-// are returned as PermissionDenied errors, lost races as landConflict and invalid requests or
+// are returned as PermissionDenied errors, lost races as landConflictError and invalid requests or
 // conflicting references as InvalidArgument or FailedPrecondition. Everything else is Internal.
 func (s *Server) updateLandedReference(
 	ctx context.Context,
@@ -504,7 +504,7 @@ func (s *Server) updateLandedReference(
 		errors.As(err, &alreadyExistsErr) ||
 		errors.As(err, &unexpectedOldValErr) ||
 		errors.Is(err, gitupdateref.ErrPackedRefsLocked) {
-		return landConflict{
+		return landConflictError{
 			reference: reference,
 			oldOID:    oldOID,
 			newOID:    newOID,
@@ -539,7 +539,7 @@ func (s *Server) updateLandedReference(
 			return structerr.NewInternal("updating ref with hooks: %w", errors.Join(err, resolveErr))
 		}
 		if moved {
-			return landConflict{
+			return landConflictError{
 				reference: reference,
 				oldOID:    oldOID,
 				newOID:    newOID,
@@ -610,7 +610,7 @@ func landSnapshotPinned(ctx context.Context) bool {
 // FailedPrecondition for the client to retry, whatever the land holds: not even a model's
 // resolution is handed back to be verified again, as that would verify the same tree once more.
 // Otherwise the attempts run out at max_attempts and the land ends as landKeptMoving says.
-func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflict, attempt, maxAttempts int, pinned bool) error {
+func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflictError, attempt, maxAttempts int, pinned bool) error {
 	switch {
 	case pinned:
 		return landKeptMovingError(in, conflict, attempt)
@@ -625,16 +625,16 @@ func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict
 // cause: the branch moved on): UserLand goes out again, and at its deadline the agent gets the
 // proposals, not an error about a branch it has nothing to do with. The others get
 // landKeptMovingError.
-func landKeptMoving(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflict, attempts int) error {
+func landKeptMoving(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflictError, attempts int) error {
 	if pre.mustVerify() {
-		return &landNeedsResolution{tip: conflict.newOID, commit: git.ObjectID(in.GetCommitId()), moved: true}
+		return &landNeedsResolutionError{tip: conflict.newOID, commit: git.ObjectID(in.GetCommitId()), moved: true}
 	}
 	return landKeptMovingError(in, conflict, attempts)
 }
 
 // landKeptMovingError returns the FailedPrecondition error for a landing that lost the
 // compare-and-swap on every attempt, or that cannot be retried inside the RPC.
-func landKeptMovingError(in *gitalypb.UserLandRequest, conflict landConflict, attempts int) error {
+func landKeptMovingError(in *gitalypb.UserLandRequest, conflict landConflictError, attempts int) error {
 	return structerr.NewFailedPrecondition(
 		"branch %q kept moving, giving up after %d attempts: %w",
 		string(in.GetBranch()), attempts, conflict,

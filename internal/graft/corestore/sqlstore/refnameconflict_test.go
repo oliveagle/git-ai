@@ -21,7 +21,7 @@ import (
 func requireNameConflict(t *testing.T, err error, name, existing string) {
 	t.Helper()
 
-	var conflict *corestore.ErrRefNameConflict
+	var conflict *corestore.RefNameConflictError
 	require.True(t, errors.As(err, &conflict), "error: %v", err)
 	require.Equal(t, name, conflict.Name)
 	require.Equal(t, existing, conflict.Existing)
@@ -224,7 +224,7 @@ func TestCommitChangesetOnExistingConflict(t *testing.T) {
 
 		// A new name below either side is still refused.
 		_, err = commit(ctx, s, repo.ID, create("refs/heads/a/b/c", oid(2)))
-		var conflict *corestore.ErrRefNameConflict
+		var conflict *corestore.RefNameConflictError
 		require.True(t, errors.As(err, &conflict), "error: %v", err)
 
 		_, err = commit(ctx, s, repo.ID, update("refs/heads/a", oid(1), oid(2)))
@@ -252,7 +252,7 @@ func TestRegisterRepositoryRefusesRefNameConflicts(t *testing.T) {
 				NodeID:    "node-a",
 			},
 		})
-		var conflict *corestore.ErrRefNameConflict
+		var conflict *corestore.RefNameConflictError
 		require.True(t, errors.As(err, &conflict), "error: %v", err)
 
 		_, err = s.GetRepository(ctx, testKey("r"))
@@ -485,7 +485,7 @@ func TestCommitChangesetOnlyConflictingNames(t *testing.T) {
 		require.ErrorIs(t, repair(ctx, s, repo.ID, "refs/heads/absent", oid(1)), corestore.ErrRefNotConflicting)
 		require.ErrorIs(t, repair(ctx, s, repo.ID, "refs/heads/a/b/c", oid(1)), corestore.ErrRefNotConflicting)
 
-		var conflict *corestore.ErrRefConflict
+		var conflict *corestore.RefConflictError
 		require.True(t, errors.As(repair(ctx, s, repo.ID, "refs/heads/a", oid(2)), &conflict), "the value is checked too")
 
 		// One side goes, and the other is no longer anything to repair.

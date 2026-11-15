@@ -11,10 +11,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 func key(i byte) Key { return Key{i} }
 
 // queued returns an admission whose onWait reports every queued writer.
@@ -27,7 +23,7 @@ func queued(waitBound, holdBound time.Duration) (*Admission, <-chan string) {
 
 // acquireAsync starts Acquire in the background, waits until the writer is
 // queued, and returns the channel of its result.
-func acquireAsync(ctx context.Context, t *testing.T, a *Admission, waiting <-chan string, path string, k Key) <-chan bool {
+func acquireAsync(t *testing.T, ctx context.Context, a *Admission, waiting <-chan string, path string, k Key) <-chan bool {
 	t.Helper()
 	result := make(chan bool, 1)
 	go func() { result <- a.Acquire(ctx, path, k, WriterHook) }()
@@ -42,9 +38,9 @@ func TestAdmissionAdmitsInArrivalOrder(t *testing.T) {
 
 	require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
 	results := []<-chan bool{
-		acquireAsync(ctx, t, a, waiting, "repo", key(1)),
-		acquireAsync(ctx, t, a, waiting, "repo", key(2)),
-		acquireAsync(ctx, t, a, waiting, "repo", key(3)),
+		acquireAsync(t, ctx, a, waiting, "repo", key(1)),
+		acquireAsync(t, ctx, a, waiting, "repo", key(2)),
+		acquireAsync(t, ctx, a, waiting, "repo", key(3)),
 	}
 	require.Equal(t, 3.0, testutil.ToFloat64(a.waiting))
 
@@ -75,7 +71,7 @@ func TestAdmissionReleaseIsIdempotentPerKey(t *testing.T) {
 	a, waiting := queued(time.Hour, time.Hour)
 
 	require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-	b := acquireAsync(ctx, t, a, waiting, "repo", key(1))
+	b := acquireAsync(t, ctx, a, waiting, "repo", key(1))
 
 	require.True(t, a.Release("repo", key(0)))
 	require.True(t, <-b)
@@ -85,7 +81,7 @@ func TestAdmissionReleaseIsIdempotentPerKey(t *testing.T) {
 	require.Equal(t, 0.0, testutil.ToFloat64(a.exited), "A released nothing at its exit")
 
 	// B still holds the admission: a third writer queues behind it.
-	c := acquireAsync(ctx, t, a, waiting, "repo", key(2))
+	c := acquireAsync(t, ctx, a, waiting, "repo", key(2))
 	select {
 	case <-c:
 		t.Fatal("the late release of A freed the admission of B")
@@ -107,7 +103,7 @@ func TestAdmissionReleaseUnreported(t *testing.T) {
 	a, waiting := queued(time.Hour, time.Hour)
 
 	require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-	b := acquireAsync(ctx, t, a, waiting, "repo", key(1))
+	b := acquireAsync(t, ctx, a, waiting, "repo", key(1))
 
 	require.False(t, a.ReleaseUnreported("repo", key(1)), "B is only queued")
 	require.Equal(t, 0.0, testutil.ToFloat64(a.exited))
@@ -130,7 +126,7 @@ func TestAdmissionReleaseUnreported(t *testing.T) {
 // givingUpWriter queues a writer with a context of its own, cancels it, and returns once the writer
 // stopped waiting and is paused before it takes the lock of the admission. resume lets it go on and
 // returns what Acquire returned.
-func givingUpWriter(ctx context.Context, t *testing.T, a *Admission, waiting <-chan string, path string, k Key) (resume func() bool) {
+func givingUpWriter(t *testing.T, ctx context.Context, a *Admission, waiting <-chan string, path string, k Key) (resume func() bool) {
 	t.Helper()
 
 	paused, proceed := make(chan struct{}), make(chan struct{})
@@ -141,7 +137,7 @@ func givingUpWriter(ctx context.Context, t *testing.T, a *Admission, waiting <-c
 
 	writerCtx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	result := acquireAsync(writerCtx, t, a, waiting, path, k)
+	result := acquireAsync(t, writerCtx, a, waiting, path, k)
 	cancel()
 	<-paused
 
@@ -163,9 +159,9 @@ func TestAdmissionWriterGivingUpAfterItsAdmissionEnded(t *testing.T) {
 		a, waiting := queued(time.Hour, time.Hour)
 
 		require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-		resume := givingUpWriter(ctx, t, a, waiting, "repo", key(1))
-		x := acquireAsync(ctx, t, a, waiting, "repo", key(2))
-		y := acquireAsync(ctx, t, a, waiting, "repo", key(3))
+		resume := givingUpWriter(t, ctx, a, waiting, "repo", key(1))
+		x := acquireAsync(t, ctx, a, waiting, "repo", key(2))
+		y := acquireAsync(t, ctx, a, waiting, "repo", key(3))
 
 		require.True(t, a.Release("repo", key(0)), "the holder ends, W is admitted")
 		require.True(t, a.Release("repo", key(1)), "the process of W ends, X is admitted")
@@ -192,7 +188,7 @@ func TestAdmissionWriterGivingUpAfterItsAdmissionEnded(t *testing.T) {
 		a, waiting := queued(time.Hour, time.Hour)
 
 		require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-		resume := givingUpWriter(ctx, t, a, waiting, "repo", key(1))
+		resume := givingUpWriter(t, ctx, a, waiting, "repo", key(1))
 
 		require.True(t, a.Release("repo", key(0)))
 		require.True(t, a.Release("repo", key(1)))
@@ -215,8 +211,8 @@ func TestAdmissionWriterGivingUpAfterItsAdmissionEnded(t *testing.T) {
 		a, waiting := queued(time.Hour, time.Hour)
 
 		require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-		resume := givingUpWriter(ctx, t, a, waiting, "repo", key(1))
-		x := acquireAsync(ctx, t, a, waiting, "repo", key(2))
+		resume := givingUpWriter(t, ctx, a, waiting, "repo", key(1))
+		x := acquireAsync(t, ctx, a, waiting, "repo", key(2))
 
 		require.True(t, a.Release("repo", key(0)), "W is admitted, with nobody using it")
 		require.False(t, resume())
@@ -234,8 +230,8 @@ func TestAdmissionCancelledWriterLeavesTheQueue(t *testing.T) {
 
 	require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
 	cancelCtx, cancel := context.WithCancel(ctx)
-	cancelled := acquireAsync(cancelCtx, t, a, waiting, "repo", key(1))
-	next := acquireAsync(ctx, t, a, waiting, "repo", key(2))
+	cancelled := acquireAsync(t, cancelCtx, a, waiting, "repo", key(1))
+	next := acquireAsync(t, ctx, a, waiting, "repo", key(2))
 
 	cancel()
 	require.False(t, <-cancelled)
@@ -272,7 +268,7 @@ func TestAdmissionHoldBoundEndsALostAdmission(t *testing.T) {
 	// Writer 0 never releases (git died between its phases); the hold bound
 	// ends its admission, which is what its timer calls.
 	require.True(t, a.Acquire(ctx, "repo", key(0), WriterHook))
-	second := acquireAsync(ctx, t, a, waiting, "repo", key(1))
+	second := acquireAsync(t, ctx, a, waiting, "repo", key(1))
 	a.mu.Lock()
 	lost := a.queues["repo"].holder
 	a.mu.Unlock()

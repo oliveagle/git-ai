@@ -154,7 +154,7 @@ func (b slowReads) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 
 // TestVerifyRepositoryStoredObjectsCheckIsBounded: the dry hydration runs under
 // the write deadline W from its start (GC BOUNDARY rule, enforcement): one that
-// outlives it is cancelled and fails as Unavailable.
+// outlives it is cancelled and fails as Internal.
 func TestVerifyRepositoryStoredObjectsCheckIsBounded(t *testing.T) {
 	var enabled atomic.Bool
 	h := setup(t, corestore.ModeShadow, sqlstore.SQLite, func(core *corestore.Core) {
@@ -168,6 +168,6 @@ func TestVerifyRepositoryStoredObjectsCheckIsBounded(t *testing.T) {
 
 	enabled.Store(true)
 	_, err := h.client.VerifyRepository(h.ctx, &gitalypb.VerifyRepositoryRequest{Repository: h.repo, CheckConnectivity: true})
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "did not finish within the write deadline 3s")
 }

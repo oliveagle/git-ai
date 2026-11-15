@@ -7,7 +7,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 )
@@ -144,6 +143,6 @@ func TestUpdater_longReferenceNames(t *testing.T) {
 
 		// Queued only: the deferred Close aborts it, so that git writes nothing.
 		require.NoError(t, updater.Start())
-		require.NoError(t, updater.Create(git.ReferenceName(long), commitID))
+		require.NoError(t, updater.Create(long, commitID))
 	})
 }

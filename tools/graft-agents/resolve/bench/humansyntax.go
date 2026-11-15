@@ -82,8 +82,10 @@ func HumanSyntax(ctx context.Context, cases []Case, clone func(repo string) stri
 		case errors.As(err, &se):
 			s.Checked++
 			s.Failed++
-			findings = append(findings, SyntaxFinding{ID: c.ID, Repo: c.Repo, Merge: c.Merge, Path: c.Path, Language: lang,
-				Reason: se.Error(), Markers: hasMarkers(blobs[0])})
+			findings = append(findings, SyntaxFinding{
+				ID: c.ID, Repo: c.Repo, Merge: c.Merge, Path: c.Path, Language: lang,
+				Reason: se.Error(), Markers: hasMarkers(blobs[0]),
+			})
 		default:
 			return nil, nil, err
 		}

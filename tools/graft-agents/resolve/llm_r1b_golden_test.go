@@ -26,17 +26,25 @@ func r1bGoldenFiles() map[string]LLMFile {
 	crlf := func(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
 	long := strings.Repeat("é", llmMaxMessageBytes)
 	return map[string]LLMFile{
-		"single-with-message": {Path: "a.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
-			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1)), TheirsMessage: "theirs did that\n\nwith a body"},
-		"single-no-message": {Path: "a.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
-			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1))},
+		"single-with-message": {
+			Path: "a.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
+			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1)), TheirsMessage: "theirs did that\n\nwith a body",
+		},
+		"single-no-message": {
+			Path: "a.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
+			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1)),
+		},
 		"two-regions": {Path: "two.go", Base: []byte(base), Ours: []byte(two("o")), Theirs: []byte(two("t")), TheirsMessage: "both lines"},
 		"first-line":  {Path: "f.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 1\n", "o1\n", 1)), Theirs: []byte(strings.Replace(base, "line 1\n", "t1\n", 1))},
 		"last-line":   {Path: "l.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 30\n", "o30\n", 1)), Theirs: []byte(strings.Replace(base, "line 30\n", "t30\n", 1))},
-		"crlf": {Path: "c.txt", Base: []byte(crlf(base)), Ours: []byte(crlf(strings.Replace(base, "line 5\n", "o5\n", 1))),
-			Theirs: []byte(crlf(strings.Replace(base, "line 5\n", "t5\n", 1))), TheirsMessage: "crlf"},
-		"cut-message": {Path: "m.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
-			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1)), TheirsMessage: long},
+		"crlf": {
+			Path: "c.txt", Base: []byte(crlf(base)), Ours: []byte(crlf(strings.Replace(base, "line 5\n", "o5\n", 1))),
+			Theirs: []byte(crlf(strings.Replace(base, "line 5\n", "t5\n", 1))), TheirsMessage: "crlf",
+		},
+		"cut-message": {
+			Path: "m.txt", Base: []byte(base), Ours: []byte(strings.Replace(base, "line 5\n", "o5\n", 1)),
+			Theirs: []byte(strings.Replace(base, "line 5\n", "t5\n", 1)), TheirsMessage: long,
+		},
 		"no-final-newline":  {Path: "n.txt", Base: []byte("a\nb\nc"), Ours: []byte("a\nX\nc"), Theirs: []byte("a\nY\nc"), TheirsMessage: "no newline"},
 		"marker-like-lines": {Path: "k.txt", Base: []byte("x\n=======\nm\n"), Ours: []byte("x\n=======\nours\n"), Theirs: []byte("x\n=======\ntheirs\n")},
 	}

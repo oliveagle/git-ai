@@ -1,4 +1,4 @@
-package blobstore_test
+package blobstore
 
 import (
 	"testing"

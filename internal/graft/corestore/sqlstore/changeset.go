@@ -109,8 +109,8 @@ func (s *Store) checkPackDeadline(ctx context.Context, tx *sql.Tx, deadline time
 // locked repository repo, and advances repo to the new sequences. It is shared
 // by CommitChangeset and the initial changeset of RegisterRepository.
 //
-// It returns *corestore.ErrRefConflict, writing nothing, when an expectation
-// fails and in.Force is not set, and *corestore.ErrRefNameConflict, in which case
+// It returns *corestore.RefConflictError, writing nothing, when an expectation
+// fails and in.Force is not set, and *corestore.RefNameConflictError, in which case
 // the caller's rollback undoes the writes, when a reference it creates cannot
 // exist in git next to another one (refuseRefNameConflicts).
 func (s *Store) commitChangeset(ctx context.Context, tx *sql.Tx, repo *repoState, in corestore.ChangesetInput) (corestore.CommitResult, error) {
@@ -151,7 +151,7 @@ func (s *Store) commitChangeset(ctx context.Context, tx *sql.Tx, repo *repoState
 	}
 
 	if len(conflicts) > 0 && !in.Force {
-		return corestore.CommitResult{}, &corestore.ErrRefConflict{Conflicts: conflicts}
+		return corestore.CommitResult{}, &corestore.RefConflictError{Conflicts: conflicts}
 	}
 	if !in.Force {
 		if err := s.refuseReleasedRoots(ctx, tx, repo.id, effective); err != nil {
@@ -239,7 +239,7 @@ func (s *Store) commitChangeset(ctx context.Context, tx *sql.Tx, repo *repoState
 	}, nil
 }
 
-// refuseRefNameConflicts returns *corestore.ErrRefNameConflict when a reference
+// refuseRefNameConflicts returns *corestore.RefNameConflictError when a reference
 // that updates created cannot exist in git next to another reference of the
 // repository: one of its parent directories is a reference, or a reference
 // exists below it. git itself checks this only against its local references,
@@ -291,7 +291,7 @@ func (s *Store) refuseRefNameConflicts(ctx context.Context, tx *sql.Tx, repoID i
 	for _, name := range created {
 		for _, parent := range corestore.ParentRefNames(name) {
 			if _, ok := existing[parent]; ok {
-				return &corestore.ErrRefNameConflict{Name: name, Existing: parent}
+				return &corestore.RefNameConflictError{Name: name, Existing: parent}
 			}
 		}
 	}
@@ -315,7 +315,7 @@ func (s *Store) refuseRefNameConflicts(ctx context.Context, tx *sql.Tx, repoID i
 		}
 		for _, name := range chunk {
 			if strings.HasPrefix(string(child), name+"/") {
-				return &corestore.ErrRefNameConflict{Name: name, Existing: string(child)}
+				return &corestore.RefNameConflictError{Name: name, Existing: string(child)}
 			}
 		}
 		return fmt.Errorf("storage core: reference %q is below none of the created references", child)
@@ -545,6 +545,7 @@ func (s *Store) ListChangesets(ctx context.Context, repoID int64, after, upTo ui
 		if err != nil {
 			return fmt.Errorf("list changesets: %w", err)
 		}
+		defer rows.Close()
 
 		index := map[uint64]int{}
 		for rows.Next() {
@@ -555,7 +556,6 @@ func (s *Store) ListChangesets(ctx context.Context, repoID int64, after, upTo ui
 				createdRaw any
 			)
 			if err := rows.Scan(&seq, &cs.Operation, &cs.Actor, &cs.NodeID, &packKey, &cs.PackBytes, &cs.Forced, &createdRaw); err != nil {
-				rows.Close()
 				return fmt.Errorf("scan changeset: %w", err)
 			}
 
@@ -564,7 +564,6 @@ func (s *Store) ListChangesets(ctx context.Context, repoID int64, after, upTo ui
 			cs.PackKey = packKey.String
 			cs.CreatedAt, err = scanTime(createdRaw)
 			if err != nil {
-				rows.Close()
 				return err
 			}
 
@@ -572,10 +571,8 @@ func (s *Store) ListChangesets(ctx context.Context, repoID int64, after, upTo ui
 			changesets = append(changesets, cs)
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
 			return fmt.Errorf("list changesets: %w", err)
 		}
-		rows.Close()
 
 		refRows, err := tx.QueryContext(ctx, s.bind(`
 			SELECT seq, name, old_target, new_target
