@@ -151,8 +151,10 @@ lists them.
   file protocol; a remote with unrelated history is kept and the task of the
   run is `diverged`; a target waits for its interval, and a person names it
   to publish it at once; the file of the queue holds the name of the token
-  variable and never the token; the commands of the queue refuse a command
-  line that cannot be run as written.
+  variable and never the token; a task whose token is not in the environment
+  says which variable is missing; the worker publishes the targets that are
+  due and stops when it is interrupted; the commands of the queue refuse a
+  command line that cannot be run as written.
 
 ## 9. The limits
 
