@@ -269,6 +269,20 @@ the read of the same state, and it needs the shared token as well.
 
 ### Turning the policy on for a server
 
+A server holds many repositories, and the policy is per repository, so the
+audit before `required = true` is one line per repository of the storage:
+
+```shell
+find /var/lib/graft/repos -maxdepth 4 -name '*.git' -type d | while read -r repo; do
+  rel=${repo#/var/lib/graft/repos/}
+  graft mirror status --repo "$rel" --json |
+    jq -r '"\(.code) \(.repository)"' || true
+done | sort | uniq -c
+```
+
+`allowed` is a repository the policy will let alone, and every other code is a
+repair this manual names.
+
 The order matters: the policy is a lock, and a lock that is turned on before
 the mirrors exist stops the work it is meant to protect. On a server, in four
 steps:
