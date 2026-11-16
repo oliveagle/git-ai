@@ -4,12 +4,33 @@
 #
 # Runs ON the deploy host:
 #
-#   LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION
+#   LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE
 #
 # The switch is a symlink swap: `current` names a directory under releases/ and
 # `bin` follows `current/bin`. Nothing is deleted, so the previous release stays
 # installed and a rollback is another switch.
 set -euo pipefail
+# ensure_image — build the lane image from ubuntu:24.04 when it is missing.
+#
+# The image is what the container starts from, so it carries the runtime the
+# bundled Git needs (see LANE_IMAGE in lanes.env). It is built once and kept:
+# a deploy that rebuilt it every time would need the package mirror to be up,
+# and a lane must be able to restart without one.
+ensure_image() {
+  [ -n "${LANE_IMAGE:-}" ] || return 0
+  if [ "${LANE_IMAGE_REBUILD:-0}" != "1" ] && docker image inspect "$LANE_IMAGE" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "  building $LANE_IMAGE (ubuntu:24.04 + the runtime of the bundled Git)"
+  docker build -t "$LANE_IMAGE" - >/dev/null <<'DOCKERFILE'
+FROM ubuntu:24.04
+RUN apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      ca-certificates libcurl3t64-gnutls libcurl4t64 openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+}
+
 
 target="$LANE_DIR/releases/$VERSION"
 [ -x "$target/bin/gitaly" ] || { echo "no gitaly in $target" >&2; exit 1; }
@@ -46,11 +67,12 @@ rm -rf "$LANE_DIR"/run/gitaly-[0-9]* 2>/dev/null || true
 
 # The server: a fresh container, so the mount and the command are the lane's
 # and not those of a container that was built months ago.
+ensure_image
 docker rm -f "$LANE_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$LANE_CONTAINER" --restart unless-stopped \
   --network host --user 1002:1003 \
   -v "$LANE_DIR:$LANE_DIR" -w "$LANE_DIR" \
-  ubuntu:24.04 "$LANE_DIR/run-gitaly.sh" >/dev/null
+  "$LANE_IMAGE" "$LANE_DIR/run-gitaly.sh" >/dev/null
 echo "  container $LANE_CONTAINER started"
 
 # The cache tiers run the release's binary too.

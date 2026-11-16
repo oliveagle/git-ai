@@ -317,6 +317,32 @@ else
   verdict 0 "skipped on the production lane"
 fi
 
+# --- 15. the container carries what the bundled Git needs ----------------
+# The release bundles its own Git, but that Git is not static: the helper that
+# speaks HTTPS is linked against libcurl. Running it is the cheapest proof that
+# the image the lane starts from still carries what it reaches for. Without
+# this, the gap surfaces much later, as a mirror push that dies with
+# "git-remote-https: cannot open shared object file".
+begin "container_runtime"
+helper="$( (ls -t "$LANE_DIR"/run/gitaly-*/git-exec-*/git-remote-https 2>/dev/null || true) | head -1)"
+if [ -z "$helper" ]; then
+  verdict 1 "no git-remote-https packed under $LANE_DIR/run"
+else
+  helper_out="$(docker exec "$LANE_CONTAINER" "$helper" 2>&1 || true)"
+  case "$helper_out" in
+    *"error while loading shared libraries"*)
+      verdict 1 "$helper_out" ;;
+    *"remote-curl: usage"*)
+      if docker exec "$LANE_CONTAINER" sh -c \
+          'test -s /etc/ssl/certs/ca-certificates.crt && command -v ssh >/dev/null' >/dev/null 2>&1; then
+        verdict 0 "the bundled git-remote-https loads; the CA bundle and ssh are present"
+      else
+        verdict 1 "git-remote-https loads but the CA bundle or ssh is missing"
+      fi ;;
+    *) verdict 1 "unexpected output from git-remote-https: $helper_out" ;;
+  esac
+fi
+
 # --- the report ------------------------------------------------------
 result="PASS"
 [ "$failures" -eq 0 ] || result="FAIL"

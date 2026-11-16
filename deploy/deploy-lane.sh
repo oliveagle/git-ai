@@ -93,7 +93,7 @@ ssh_script "$DEPLOY_DIR/host-scripts/prepare-lane.sh" \
 log "checking the lane before it starts"
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
-  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI \
+  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI LANE_IMAGE \
   OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
   OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT
 
@@ -109,7 +109,7 @@ log "switching to $version${previous:+ (from $previous)}"
 # is exactly the state the rollback restores, so the same path handles it.
 switched=0
 ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION && switched=1 || \
+  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE && switched=1 || \
   warn "the switch to $version did not complete"
 
 healthy=0
@@ -137,7 +137,7 @@ if [ "$healthy" != "1" ]; then
     VERSION="$previous"
     export VERSION
     ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-      LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION
+      LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE
     sleep 3
     # The lane runs the release it ran before this one now, so the health check
     # must not demand the version that failed.
@@ -152,7 +152,7 @@ if [ "$healthy" != "1" ]; then
 fi
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
-  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI \
+  LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI LANE_IMAGE \
   OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
   OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT REQUIRE_INSTALLED
 

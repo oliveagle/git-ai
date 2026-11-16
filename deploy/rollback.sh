@@ -55,7 +55,7 @@ fi
 log "rolling the $lane lane back from $current to $target"
 export VERSION="$target"
 ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION
+  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE
 
 healthy=0
 for attempt in 1 2 3 4 5 6 7 8 9 10; do

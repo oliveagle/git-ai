@@ -69,6 +69,30 @@ if [ -n "${LANE_PROGRAMS:-}" ] && [ -n "${LANE_SUPERVISOR_INI:-}" ]; then
   done
 fi
 
+# --- the image the lane's container starts from ---------------------------
+# A release carries its own Git, and that Git is not static: the helper that
+# speaks HTTPS needs libcurl, and a push over HTTPS needs a CA bundle. A bare
+# ubuntu:24.04 has neither, and the gap only shows up the first time something
+# reaches for the network, so it is asserted here instead.
+if [ -n "${LANE_IMAGE:-}" ]; then
+  if docker image inspect "$LANE_IMAGE" >/dev/null 2>&1; then
+    missing="$(docker run --rm "$LANE_IMAGE" sh -c '
+      for f in /usr/lib/x86_64-linux-gnu/libcurl-gnutls.so.4 \
+               /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
+               /etc/ssl/certs/ca-certificates.crt; do
+        [ -e "$f" ] || printf "%s " "${f##*/}"
+      done
+      command -v ssh >/dev/null || printf "ssh "' 2>/dev/null || true)"
+    if [ -z "$missing" ]; then
+      ok "image $LANE_IMAGE carries libcurl, the CA bundle and ssh"
+    else
+      bad "image $LANE_IMAGE lacks: $missing"
+    fi
+  else
+    bad "no image $LANE_IMAGE (switch-current.sh builds it)"
+  fi
+fi
+
 # --- isolation from the other lane ---------------------------------------
 if [ -n "${OTHER_DIR:-}" ] && [ -d "$OTHER_DIR" ]; then
   token_here="$(cat "$LANE_DIR/tokens/shared" 2>/dev/null || true)"

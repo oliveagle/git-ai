@@ -77,6 +77,33 @@ ubuntu 24.04): the bundled Git is dynamically linked, and the server runs in an
 `ubuntu:24.04` container on the NAS. A build from an older distribution will
 not start there — that is why the NAS runs the server in a container at all.
 
+### The lane image
+
+Both lanes start their container from `LANE_IMAGE` (`lanes.env`), which
+`switch-current.sh` builds from `ubuntu:24.04` the first time it is missing:
+
+```
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates libcurl3t64-gnutls libcurl4t64 openssh-client
+```
+
+The release bundles its own Git, but that Git is not static, and a bare
+`ubuntu:24.04` carries none of what it reaches for at runtime:
+
+| package | what breaks without it |
+|---|---|
+| `libcurl3t64-gnutls` | `git-remote-https` dies with "cannot open shared object file" — every HTTPS remote, so every mirror push |
+| `libcurl4t64` | the same helper, built on a machine whose libcurl is the OpenSSL flavour, cannot load |
+| `ca-certificates` | an HTTPS push fails to verify the mirror's certificate (`CAfile: none`) |
+| `openssh-client` | a mirror reached with `--ssh-key`, and `GIT_SSH_COMMAND=ssh`, find no `ssh` |
+
+A missing library is invisible until something reaches for the network: the
+server starts, serves, clones and lands without ever loading `git-remote-http`.
+That is why `check-lane.sh` asserts the image carries these four, and why
+`container_runtime` runs the bundled helper inside the container. Rebuild the
+image with `LANE_IMAGE_REBUILD=1` after changing the package list.
+
 The bundled Git comes from `https://github.com/git/git.git` (GitLab is
 unreachable from this network). Its MVCC build exists only on GitLab and is
 replaced by the default build: these lanes do not use Git's MVCC reference
@@ -86,7 +113,7 @@ passes it as the MVCC revision, so the two stay in step.
 ### The gate
 
 `deploy/integration-test.sh staging <version>` runs
-`host-scripts/integration-suite.sh` on the NAS: fourteen cases over the lane's
+`host-scripts/integration-suite.sh` on the NAS: fifteen cases over the lane's
 cache port, plus the checks only the host can make. It fails unless all of them
 pass:
 
@@ -106,6 +133,7 @@ pass:
 | `cache_serves` | repeated reads are served by the cache |
 | `restart_survives` | a restart keeps every changelog row and the state still answers |
 | `cache_rebuild` | a deleted local cache is rebuilt from the storage core (staging only) |
+| `container_runtime` | the container can load the bundled `git-remote-https`, and carries the CA bundle and `ssh` |
 
 The report lands in `<lane>/reports/integration-<version>-<run>.json` and names
 the release, the lane, each case and the totals. `host-scripts/gate-check.sh`
