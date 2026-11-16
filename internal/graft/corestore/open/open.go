@@ -76,6 +76,7 @@ func Open(ctx context.Context, cfg config.GraftStorage) (*corestore.Core, error)
 		NodeID:        nodeID,
 		Meta:          meta,
 		Blobs:         blobs,
+		Mirrors:       meta,
 		SyncTimeout:   syncTimeout,
 		ShadowTimeout: shadowTimeout,
 		GCGrace:       gcGrace,

@@ -194,6 +194,40 @@ var sqliteMigrations = []*migrate.Migration{
 			`DROP TABLE graft_land_identities`,
 		},
 	},
+	{
+		// The mirror targets of a repository and the state of their last
+		// publication (doc/graft/MIRROR.md). The state is keyed by the
+		// repository, not by its ID: a repository that the storage core does
+		// not track yet still has mirrors.
+		Id: "20261117000000_graft_mirror_state",
+		Up: []string{
+			`CREATE TABLE graft_mirror_targets (
+				storage       TEXT    NOT NULL,
+				relative_path TEXT    NOT NULL,
+				name          TEXT    NOT NULL,
+				url           TEXT    NOT NULL,
+				branches      TEXT    NOT NULL,
+				enabled       INTEGER NOT NULL DEFAULT 1,
+				created_at    TEXT    NOT NULL,
+				updated_at    TEXT    NOT NULL,
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+			`CREATE TABLE graft_mirror_syncs (
+				storage       TEXT    NOT NULL,
+				relative_path TEXT    NOT NULL,
+				name          TEXT    NOT NULL,
+				status        TEXT    NOT NULL,
+				branches      TEXT    NOT NULL,
+				published_at  TEXT    NOT NULL,
+				error         TEXT    NOT NULL DEFAULT '',
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+		},
+		Down: []string{
+			`DROP TABLE graft_mirror_syncs`,
+			`DROP TABLE graft_mirror_targets`,
+		},
+	},
 }
 
 // notOwnedPackKeyMessage is the error of the trigger that refuses a changeset
@@ -388,6 +422,37 @@ var postgresMigrations = []*migrate.Migration{
 		},
 		Down: []string{
 			`DROP TABLE graft_land_identities`,
+		},
+	},
+	{
+		// See the SQLite migration of the same ID.
+		Id: "20261117000000_graft_mirror_state",
+		Up: []string{
+			`CREATE TABLE graft_mirror_targets (
+				storage       TEXT        NOT NULL,
+				relative_path TEXT        NOT NULL,
+				name          TEXT        NOT NULL,
+				url           TEXT        NOT NULL,
+				branches      TEXT        NOT NULL,
+				enabled       BOOLEAN     NOT NULL DEFAULT TRUE,
+				created_at    TIMESTAMPTZ NOT NULL,
+				updated_at    TIMESTAMPTZ NOT NULL,
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+			`CREATE TABLE graft_mirror_syncs (
+				storage       TEXT        NOT NULL,
+				relative_path TEXT        NOT NULL,
+				name          TEXT        NOT NULL,
+				status        TEXT        NOT NULL,
+				branches      TEXT        NOT NULL,
+				published_at  TIMESTAMPTZ NOT NULL,
+				error         TEXT        NOT NULL DEFAULT '',
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+		},
+		Down: []string{
+			`DROP TABLE graft_mirror_syncs`,
+			`DROP TABLE graft_mirror_targets`,
 		},
 	},
 }
