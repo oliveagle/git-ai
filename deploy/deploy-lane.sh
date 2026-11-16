@@ -109,7 +109,7 @@ log "switching to $version${previous:+ (from $previous)}"
 # is exactly the state the rollback restores, so the same path handles it.
 switched=0
 ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE && switched=1 || \
+  LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE LANE_IMAGE_REBUILD && switched=1 || \
   warn "the switch to $version did not complete"
 
 healthy=0
@@ -137,7 +137,7 @@ if [ "$healthy" != "1" ]; then
     VERSION="$previous"
     export VERSION
     ssh_script "$DEPLOY_DIR/host-scripts/switch-current.sh" \
-      LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE
+      LANE_DIR LANE_CONTAINER LANE_PROGRAMS VERSION LANE_IMAGE LANE_IMAGE_REBUILD
     sleep 3
     # The lane runs the release it ran before this one now, so the health check
     # must not demand the version that failed.

@@ -22,12 +22,20 @@ ensure_image() {
     return 0
   fi
   echo "  building $LANE_IMAGE (ubuntu:24.04 + the runtime of the bundled Git)"
-  docker build -t "$LANE_IMAGE" - >/dev/null <<'DOCKERFILE'
+  # The container runs as the deploy user, and ssh refuses a uid it cannot
+  # name ("No user exists for uid 1002"), so the image carries one entry for
+  # it. Its home is the lane directory, which is mounted; the image makes none.
+  docker build -t "$LANE_IMAGE" \
+    --build-arg "LANE_UID=$(id -u)" --build-arg "LANE_GID=$(id -g)" - >/dev/null <<'DOCKERFILE'
 FROM ubuntu:24.04
+ARG LANE_UID=1002
+ARG LANE_GID=1003
 RUN apt-get update -qq \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
       ca-certificates libcurl3t64-gnutls libcurl4t64 openssh-client \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd -g "$LANE_GID" lane \
+ && useradd -u "$LANE_UID" -g "$LANE_GID" -M -d /home/oliveagle -s /bin/sh lane
 DOCKERFILE
 }
 
@@ -70,7 +78,7 @@ rm -rf "$LANE_DIR"/run/gitaly-[0-9]* 2>/dev/null || true
 ensure_image
 docker rm -f "$LANE_CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$LANE_CONTAINER" --restart unless-stopped \
-  --network host --user 1002:1003 \
+  --network host --user "$(id -u):$(id -g)" \
   -v "$LANE_DIR:$LANE_DIR" -w "$LANE_DIR" \
   "$LANE_IMAGE" "$LANE_DIR/run-gitaly.sh" >/dev/null
 echo "  container $LANE_CONTAINER started"

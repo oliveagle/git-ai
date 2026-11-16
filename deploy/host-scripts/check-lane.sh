@@ -88,8 +88,10 @@ if [ -n "${LANE_IMAGE:-}" ]; then
     else
       bad "image $LANE_IMAGE lacks: $missing"
     fi
-  else
+  elif [ "${REQUIRE_INSTALLED:-0}" = "1" ]; then
     bad "no image $LANE_IMAGE (switch-current.sh builds it)"
+  else
+    ok "no image $LANE_IMAGE yet (switch-current.sh builds it)"
   fi
 fi
 
