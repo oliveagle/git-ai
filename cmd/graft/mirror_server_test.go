@@ -141,19 +141,19 @@ func TestMirrorCredentialsByHost(t *testing.T) {
 func TestMirrorAuthorizationPrefersTheFlag(t *testing.T) {
 	t.Setenv("COMPANY_GIT_TOKEN", "s3cret")
 
-	f := &mirrorFlags{url: "https://github.com/group/shop.git", tokenEnv: "COMPANY_GIT_TOKEN", username: "bot"}
+	f := mirrorAuth{usage: "mirror push", url: "https://github.com/group/shop.git", tokenEnv: "COMPANY_GIT_TOKEN", username: "bot"}
 	header, err := mirrorAuthorization(f)
 	require.NoError(t, err)
 	require.Equal(t, "Basic Ym90OnMzY3JldA==", header, "the token is sent as Basic auth for the named user")
 
 	// An SSH mirror uses the key, not a header.
-	f = &mirrorFlags{url: "git@github.com:group/shop.git", sshKey: "/tmp/key"}
+	f = mirrorAuth{usage: "mirror push", url: "git@github.com:group/shop.git", sshKey: "/tmp/key"}
 	header, err = mirrorAuthorization(f)
 	require.NoError(t, err)
 	require.Empty(t, header)
 
 	// A public mirror has no token in the environment and needs no header.
-	f = &mirrorFlags{url: "https://git.example.com/group/shop.git"}
+	f = mirrorAuth{usage: "mirror push", url: "https://git.example.com/group/shop.git"}
 	header, err = mirrorAuthorization(f)
 	require.NoError(t, err)
 	require.Empty(t, header)

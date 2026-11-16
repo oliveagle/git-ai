@@ -16,10 +16,13 @@ import (
 )
 
 // mirrorSynopsis is the command line of graft mirror.
-const mirrorSynopsis = "usage: graft mirror push --repo REPO --url URL --branch PATTERN [--branch PATTERN]... [--json]"
+const mirrorSynopsis = "usage: graft mirror <push|queue|task> [flags]"
 
 // mirrorUsage lists the subcommands of graft mirror.
-const mirrorUsage = "mirror requires a subcommand: push (" + mirrorSynopsis + ")"
+const mirrorUsage = "mirror requires a subcommand: push (" + mirrorPushSynopsis + "), queue (" + mirrorQueueSynopsis + "), task (" + mirrorTaskSynopsis + ")"
+
+// mirrorPushSynopsis is the command line of graft mirror push.
+const mirrorPushSynopsis = "graft mirror push --repo REPO --url URL --branch PATTERN [--branch PATTERN]... [--json]"
 
 // mirrorHelp explains graft mirror below its synopsis.
 const mirrorHelp = `Publishes selected branches of a Graft repository to another Git host as a
@@ -60,6 +63,33 @@ Graft branch is the history to keep. Exit status: 0 when the selected
 references are on the mirror, 1 when a divergent ref was kept, 2 when the
 command line is wrong.`
 
+// mirrorQueueHelp explains the mirror queue below the command line.
+const mirrorQueueHelp = `The queue holds the mirrors of a client: the targets a Graft repository
+is published to, and the tasks that published them. One queue serves every
+host, so a GitHub mirror and a Gitee mirror are two targets of one queue.
+
+  graft mirror queue add github-shop --repo shop.git \
+    --url https://github.com/group/shop.git --branch main --interval 5m
+  graft mirror queue list
+  graft mirror queue run
+  graft mirror queue worker
+
+The queue is a file of the operator, by default the mirror-queue.json of the
+user's configuration directory, and --queue-file names another one. It holds
+no secret: a target names the environment variable that carries its token, and
+the value is read when the task runs. A queue of a client that has no token in
+its environment publishes to a public mirror.
+
+--interval is how often a target is published; --interval 0 with --manual
+keeps a target out of the schedule, so that it is only published when a
+person asks for it. The worker publishes the targets that are due and waits
+--tick between two looks. The queue run publishes the due targets once and
+exits, which is the run of a cron job.
+
+Every run records a task: what was published, when, and what happened. The
+history is what an operator reads when a mirror stopped moving, and it is
+kept in the same file.`
+
 // mirrorFlags holds the flags of graft mirror push.
 type mirrorFlags struct {
 	repo              string
@@ -91,10 +121,11 @@ type mirrorResult struct {
 // repository to another Git server for the workflows that still run there.
 func mirrorCommand() command {
 	f := &mirrorFlags{}
+	q := &mirrorQueueFlags{}
 	return command{
 		bind: func(fs *flag.FlagSet, o *options) {
 			fs.Usage = func() {
-				fmt.Fprintf(fs.Output(), "%s\n\n%s\n\nflags:\n", mirrorSynopsis, mirrorHelp)
+				fmt.Fprintf(fs.Output(), "%s\n\n%s\n\n%s\n\nflags:\n", mirrorSynopsis, mirrorHelp, mirrorQueueHelp)
 				fs.PrintDefaults()
 			}
 			fs.StringVar(&f.repo, "repo", "", "repository path, used with -address and -storage")
@@ -106,10 +137,18 @@ func mirrorCommand() command {
 			fs.StringVar(&f.knownHosts, "known-hosts", "", "host identities for strict SSH host-key checking")
 			fs.BoolVar(&f.force, "force", false, "overwrite a divergent remote branch with the Graft branch")
 			fs.BoolVar(&f.allowInsecureHTTP, "allow-insecure-http", false, "allow an http:// URL with a token")
+			fs.DurationVar(&q.interval, "interval", 0, "how often a target of the queue is published, such as 5m (0 with --manual: only when a person asks for it)")
+			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
+			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
+			fs.IntVar(&q.concurrency, "concurrency", defaultQueueConcurrency, "how many tasks of the queue run at the same time")
+			fs.StringVar(&q.queueFile, "queue-file", "", "file the mirror queue is kept in (env GRAFT_MIRROR_QUEUE)")
+			fs.StringVar(&q.target, "target", "", "name of the one target of the queue a command works on")
+			fs.IntVar(&q.limit, "limit", defaultTaskLimit, "how many tasks the task list prints")
+			fs.BoolVar(&q.all, "all", false, "publish every enabled target, not only the ones that are due")
 			fs.BoolVar(&o.jsonOut, "json", false, "print the result as one JSON object")
 		},
 		run: func(ctx context.Context, out io.Writer, o *options, args []string) error {
-			return cmdMirror(ctx, out, o, f, args)
+			return cmdMirror(ctx, out, o, f, q, args)
 		},
 	}
 }
@@ -159,12 +198,27 @@ func mirrorDefaults(raw string) mirrorCredential {
 
 // cmdMirror dispatches a mirror subcommand. The command line is checked before
 // the server is contacted.
-func cmdMirror(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, args []string) error {
+func cmdMirror(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) == 0 {
 		return usagef("%s", mirrorUsage)
 	}
-	if len(args) != 1 || args[0] != "push" {
-		return usagef("%s", mirrorSynopsis)
+	switch args[0] {
+	case "push":
+		return cmdMirrorPush(ctx, out, o, f, args[1:])
+	case "queue":
+		return cmdMirrorQueue(ctx, out, o, f, q, args[1:])
+	case "task":
+		return cmdMirrorTask(ctx, out, o, f, q, args[1:])
+	default:
+		return usagef("unknown mirror subcommand %q: %s", args[0], mirrorUsage)
+	}
+}
+
+// cmdMirrorPush publishes the selected branches of one repository to one
+// mirror. The command line is checked before the server is contacted.
+func cmdMirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("%s", mirrorPushSynopsis)
 	}
 	if f.repo == "" {
 		return usagef("mirror push requires --repo REPO")
@@ -181,7 +235,7 @@ func cmdMirror(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, a
 	// A token over plain HTTP is sent in cleartext to every hop. The check is
 	// here, before the server is contacted, so that a misconfigured schedule
 	// fails with the usage status and sends nothing.
-	if name, token := mirrorToken(f); token != "" && strings.HasPrefix(f.url, "http://") && !f.allowInsecureHTTP {
+	if name, token := mirrorToken(mirrorAuth{usage: "mirror push", url: f.url, tokenEnv: f.tokenEnv, sshKey: f.sshKey}); token != "" && strings.HasPrefix(f.url, "http://") && !f.allowInsecureHTTP {
 		return usagef("mirror push refuses to send %s over http://%s: use HTTPS, or pass --allow-insecure-http", name, strings.TrimPrefix(f.url, "http://"))
 	}
 	if _, err := mirrorPush(ctx, out, o, f); err != nil {
@@ -198,7 +252,13 @@ func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) 
 		return nil, err
 	}
 
-	authorization, err := mirrorAuthorization(f)
+	authorization, err := mirrorAuthorization(mirrorAuth{
+		usage:    "mirror push",
+		url:      f.url,
+		tokenEnv: f.tokenEnv,
+		username: f.username,
+		sshKey:   f.sshKey,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -246,22 +306,40 @@ func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) 
 	return res, nil
 }
 
+// mirrorAuth is the credential of one mirror: the URL it publishes to, the
+// name of the environment variable that holds the token, the HTTP Basic user
+// of the token, and the private key of an SSH remote. The push and the queue
+// build one, so that both reach a host the same way.
+type mirrorAuth struct {
+	// usage names the command in a refusal, so that the reason says which
+	// command refused.
+	usage string
+	// url is the Git URL of the mirror.
+	url string
+	// tokenEnv is the name of the environment variable that holds the token.
+	tokenEnv string
+	// username is the HTTP Basic user of the token.
+	username string
+	// sshKey is the path of the private key of an SSH remote.
+	sshKey string
+}
+
 // mirrorAuthorization builds the Authorization header from the environment.
 // The token itself is never printed, and never reaches argv.
-func mirrorAuthorization(f *mirrorFlags) (string, error) {
-	if f.sshKey != "" {
+func mirrorAuthorization(a mirrorAuth) (string, error) {
+	if a.sshKey != "" {
 		// The caller chose the SSH identity: no HTTP header is built.
 		return "", nil
 	}
-	tokenEnv, token := mirrorToken(f)
+	tokenEnv, token := mirrorToken(a)
 	if token == "" {
 		return "", nil
 	}
-	if !strings.HasPrefix(f.url, "https://") && !strings.HasPrefix(f.url, "http://") {
-		return "", usagef("mirror push: %s holds an HTTP token, but %q is not an HTTP URL (use --ssh-key for SSH)", tokenEnv, f.url)
+	if !strings.HasPrefix(a.url, "https://") && !strings.HasPrefix(a.url, "http://") {
+		return "", usagef("%s: %s holds an HTTP token, but %q is not an HTTP URL (use --ssh-key for SSH)", a.usage, tokenEnv, a.url)
 	}
-	defaults := mirrorDefaults(f.url)
-	user := f.username
+	defaults := mirrorDefaults(a.url)
+	user := a.username
 	if user == "" {
 		user = defaults.username
 	}
@@ -274,10 +352,10 @@ func mirrorAuthorization(f *mirrorFlags) (string, error) {
 // mirrorToken returns the token variable of the run and its value: the one the
 // caller named, else the one the host of the URL implies, and empty when the
 // variable is unset.
-func mirrorToken(f *mirrorFlags) (string, string) {
-	name := f.tokenEnv
+func mirrorToken(a mirrorAuth) (string, string) {
+	name := a.tokenEnv
 	if name == "" {
-		name = mirrorDefaults(f.url).tokenEnv
+		name = mirrorDefaults(a.url).tokenEnv
 	}
 	if name == "" {
 		return "", ""
