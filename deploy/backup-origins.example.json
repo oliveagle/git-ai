@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "repositories": {
+    "shop.git": {
+      "origins": [
+        {
+          "name": "github",
+          "url": "git@github.com:group/shop.git",
+          "branches": ["*"]
+        },
+        {
+          "name": "workstation",
+          "url": "ssh://build@build.example/home/build/origins/shop.git",
+          "branches": ["main", "release/*"],
+          "sync": "~/opt/git-ai/mirror/shop-mirror.sh"
+        }
+      ]
+    }
+  }
+}
