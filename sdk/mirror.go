@@ -33,6 +33,11 @@ type MirrorOptions struct {
 	// a mirror that has taken unrelated history must be repaired by a person,
 	// not overwritten by a retry.
 	KeepDivergentRefs bool
+	// Target is the name of the mirror target the publication is for, as it
+	// is registered with RegisterMirrorTarget. The server records what the
+	// mirror holds, and the mirror policy of the server decides the next push
+	// with it. Empty publishes the mirror without recording it.
+	Target string
 }
 
 // MirrorResult says what the server learned while pushing to the remote.
@@ -74,6 +79,7 @@ func (r *Repo) Mirror(ctx context.Context, opts MirrorOptions) (*MirrorResult, e
 		SshKey:            opts.SSHKey,
 		KnownHosts:        opts.KnownHosts,
 		KeepDivergentRefs: opts.KeepDivergentRefs,
+		Target:            opts.Target,
 	}
 
 	stream, err := gitalypb.NewRemoteServiceClient(r.client.conn).UpdateRemoteMirror(ctx)

@@ -14,12 +14,15 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/feder-cr/git-ai/internal/graft/mirrorqueue"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
 // mirrorQueueSynopsis is the command line of graft mirror queue.
-const mirrorQueueSynopsis = "usage: graft mirror queue <add|remove|list|show|enable|disable|run|worker> [flags]"
+const mirrorQueueSynopsis = "usage: graft mirror queue <add|remove|register|list|show|enable|disable|run|worker> [flags]"
 
 // mirrorQueueUsage lists the subcommands of graft mirror queue.
 const mirrorQueueUsage = "mirror queue requires a subcommand: " + mirrorQueueSynopsis
@@ -160,6 +163,8 @@ func cmdMirrorQueue(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		return mirrorQueueAdd(ctx, out, o, f, q, args[1:])
 	case "remove":
 		return mirrorQueueRemove(ctx, out, o, f, q, args[1:])
+	case "register":
+		return mirrorQueueRegister(ctx, out, o, f, q, args[1:])
 	case "enable":
 		return mirrorQueueToggle(ctx, out, o, f, q, args[1:], true)
 	case "disable":
@@ -256,6 +261,16 @@ func mirrorQueueAdd(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 	}); err != nil {
 		return err
 	}
+	// The server is what holds a push to the mirror policy: a target that the
+	// server does not know would count for the queue and for nothing else.
+	// The local queue is the source of the targets, so a server that refuses
+	// the target leaves the queue as it was.
+	if err := mirrorQueueRegisterTargets(ctx, o, target); err != nil {
+		_ = store.Update(func(queue *mirrorqueue.Queue) error {
+			return queue.RemoveTarget(target.Name)
+		})
+		return err
+	}
 	if o.jsonOut {
 		return mirrorQueueWriteJSON(out, mirrorQueueTargetJSON(target))
 	}
@@ -283,6 +298,12 @@ func mirrorQueueRemove(ctx context.Context, out io.Writer, o *options, f *mirror
 		removed = target
 		return queue.RemoveTarget(args[0])
 	}); err != nil {
+		return err
+	}
+	// The server stops counting the target, and tolerates a target it never
+	// knew: the queue of a client that was never registered is removed the
+	// same way.
+	if err := mirrorQueueUnregisterTarget(ctx, o, removed); err != nil {
 		return err
 	}
 	if o.jsonOut {
@@ -648,6 +669,10 @@ func mirrorQueuePush(ctx context.Context, o *options, tgt *mirrorqueue.Target) (
 		// The default is the safety net: a mirror that has unrelated history
 		// is a person's decision, not a retry's.
 		KeepDivergentRefs: !tgt.Force,
+		// The server records what the mirror holds under the name of the
+		// target, which is what the mirror policy of the server decides the
+		// next push with.
+		Target: tgt.Name,
 	})
 	if err != nil {
 		return nil, err
@@ -841,4 +866,118 @@ type mirrorQueueFlags struct {
 	// manual keeps a target out of the schedule: it is only published when a
 	// person asks for it.
 	manual bool
+}
+
+// mirrorQueueRegister records targets of the queue with the server, so that
+// the mirror policy of the server counts them. It is what a queue that was
+// added while the server was not reachable, or a server that lost its state,
+// is repaired with; running it again changes nothing.
+func mirrorQueueRegister(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
+	if len(args) > 1 {
+		return usagef("mirror queue register takes at most the name of one target")
+	}
+
+	store, err := mirrorQueueStore(q)
+	if err != nil {
+		return err
+	}
+	queue, err := store.Load()
+	if err != nil {
+		return err
+	}
+
+	var targets []*mirrorqueue.Target
+	if len(args) == 1 {
+		target, ok := queue.Target(args[0])
+		if !ok {
+			return fmt.Errorf("the mirror queue has no target named %q", args[0])
+		}
+		targets = append(targets, target)
+	} else {
+		targets = append(targets, queue.Targets...)
+	}
+
+	if len(targets) == 0 {
+		fmt.Fprintln(out, "the mirror queue has no target to register")
+		return nil
+	}
+
+	if err := mirrorQueueRegisterTargets(ctx, o, targets...); err != nil {
+		return err
+	}
+
+	if o.jsonOut {
+		list := make([]mirrorQueueTarget, 0, len(targets))
+		for _, target := range targets {
+			list = append(list, mirrorQueueTargetJSON(target))
+		}
+		return mirrorQueueWriteJSON(out, list)
+	}
+	for _, target := range targets {
+		fmt.Fprintf(out, "registered the mirror target %s of %s with the server (%s, branches: %s)\n",
+			target.Name, target.Repository, mirrorDisplayURL(target.URL), strings.Join(target.Branches, ", "))
+	}
+	return nil
+}
+
+// mirrorQueueRegisterTargets records targets with the server. The targets of
+// different servers are recorded with their own server.
+func mirrorQueueRegisterTargets(ctx context.Context, o *options, targets ...*mirrorqueue.Target) error {
+	for _, target := range targets {
+		backend, err := mirrorQueueBackend(ctx, o, target)
+		if err != nil {
+			return err
+		}
+		_, err = backend.repo.RegisterMirrorTarget(ctx, sdk.MirrorTargetOptions{
+			Name:     target.Name,
+			URL:      target.URL,
+			Branches: target.Branches,
+			Enabled:  target.Enabled,
+		})
+		closeErr := backend.Close()
+		if err != nil {
+			return fmt.Errorf("registering the mirror target %q with the server: %w", target.Name, err)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
+	return nil
+}
+
+// mirrorQueueUnregisterTarget stops the mirror policy of the server counting
+// a target. A server that never knew the target is not an error: the queue of
+// a client and the state of a server are repaired separately.
+func mirrorQueueUnregisterTarget(ctx context.Context, o *options, tgt *mirrorqueue.Target) error {
+	backend, err := mirrorQueueBackend(ctx, o, tgt)
+	if err != nil {
+		return err
+	}
+	err = backend.repo.UnregisterMirrorTarget(ctx, tgt.Name)
+	closeErr := backend.Close()
+	if err != nil && status.Code(err) != codes.NotFound {
+		return fmt.Errorf("unregistering the mirror target %q with the server: %w", tgt.Name, err)
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return nil
+}
+
+// mirrorQueueBackend returns the SDK backend of a target: the server it names,
+// else the one of the run, and the storage it names, else the one of the run.
+func mirrorQueueBackend(ctx context.Context, o *options, tgt *mirrorqueue.Target) (*sdkBackend, error) {
+	address := tgt.Address
+	if address == "" {
+		address = o.address
+	}
+	if address == "" {
+		return nil, fmt.Errorf("the mirror target %q names no server: set GRAFT_ADDRESS or pass -address", tgt.Name)
+	}
+	return openSDKBackend(ctx, target{
+		Address: address,
+		Token:   o.token,
+		Storage: pick(tgt.Storage, o.storage),
+		Repo:    tgt.Repository,
+	})
 }

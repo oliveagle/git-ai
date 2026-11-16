@@ -16,10 +16,10 @@ import (
 )
 
 // mirrorSynopsis is the command line of graft mirror.
-const mirrorSynopsis = "usage: graft mirror <push|queue|task> [flags]"
+const mirrorSynopsis = "usage: graft mirror <push|status|queue|task> [flags]"
 
 // mirrorUsage lists the subcommands of graft mirror.
-const mirrorUsage = "mirror requires a subcommand: push (" + mirrorPushSynopsis + "), queue (" + mirrorQueueSynopsis + "), task (" + mirrorTaskSynopsis + ")"
+const mirrorUsage = "mirror requires a subcommand: push (" + mirrorPushSynopsis + "), status (" + mirrorStatusSynopsis + "), queue (" + mirrorQueueSynopsis + "), task (" + mirrorTaskSynopsis + ")"
 
 // mirrorPushSynopsis is the command line of graft mirror push.
 const mirrorPushSynopsis = "graft mirror push --repo REPO --url URL --branch PATTERN [--branch PATTERN]... [--json]"
@@ -101,6 +101,9 @@ type mirrorFlags struct {
 	knownHosts        string
 	force             bool
 	allowInsecureHTTP bool
+	// target is the name of the registered mirror target a publication is
+	// for: the server records what the mirror holds under that name.
+	target string
 }
 
 // mirrorResult is the JSON output of graft mirror push.
@@ -125,7 +128,7 @@ func mirrorCommand() command {
 	return command{
 		bind: func(fs *flag.FlagSet, o *options) {
 			fs.Usage = func() {
-				fmt.Fprintf(fs.Output(), "%s\n\n%s\n\n%s\n\nflags:\n", mirrorSynopsis, mirrorHelp, mirrorQueueHelp)
+				fmt.Fprintf(fs.Output(), "%s\n\n%s\n\n%s\n\n%s\n\nflags:\n", mirrorSynopsis, mirrorHelp, mirrorStatusHelp, mirrorQueueHelp)
 				fs.PrintDefaults()
 			}
 			fs.StringVar(&f.repo, "repo", "", "repository path, used with -address and -storage")
@@ -137,6 +140,7 @@ func mirrorCommand() command {
 			fs.StringVar(&f.knownHosts, "known-hosts", "", "host identities for strict SSH host-key checking")
 			fs.BoolVar(&f.force, "force", false, "overwrite a divergent remote branch with the Graft branch")
 			fs.BoolVar(&f.allowInsecureHTTP, "allow-insecure-http", false, "allow an http:// URL with a token")
+			fs.StringVar(&f.target, "mirror-target", "", "name of the registered mirror target the publication is for (the server records what the mirror holds under it)")
 			fs.DurationVar(&q.interval, "interval", -1, "how often a target of the queue is published, such as 5m (default 5m; 0: only when a person asks for it)")
 			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
 			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
@@ -205,6 +209,8 @@ func cmdMirror(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q
 	switch args[0] {
 	case "push":
 		return cmdMirrorPush(ctx, out, o, f, args[1:])
+	case "status":
+		return cmdMirrorStatus(ctx, out, o, f, args[1:])
 	case "queue":
 		return cmdMirrorQueue(ctx, out, o, f, q, args[1:])
 	case "task":
@@ -269,6 +275,17 @@ func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) 
 		Branches:   append([]string(nil), f.branches...),
 		Force:      f.force,
 	}
+
+	// A named target is what the server records the publication under. A
+	// target the server does not know yet is registered with what the command
+	// line says, so that a one-off publication opens the repository; a target
+	// the server knows is left to the queue that declares it.
+	if f.target != "" {
+		if err := mirrorRegisterOneOffTarget(ctx, repo, f); err != nil {
+			return nil, err
+		}
+	}
+
 	answer, err := repo.Mirror(ctx, sdk.MirrorOptions{
 		URL:                     f.url,
 		Branches:                f.branches,
@@ -278,6 +295,9 @@ func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) 
 		// The default is the safety net: a mirror that has unrelated history
 		// is a person's decision, not a retry's.
 		KeepDivergentRefs: !f.force,
+		// A named target is what the server records the publication under,
+		// and what the mirror policy decides the next push with.
+		Target: f.target,
 	})
 	if err != nil {
 		return nil, err
@@ -379,4 +399,30 @@ func mirrorDisplayURL(raw string) string {
 	}
 	u.User = nil
 	return u.String()
+}
+
+// mirrorRegisterOneOffTarget records the target of a one-off publication with
+// the server, unless it is registered already: the queue that declares a
+// target is what changes it.
+func mirrorRegisterOneOffTarget(ctx context.Context, repo *sdk.Repo, f *mirrorFlags) error {
+	targets, _, err := repo.ListMirrorTargets(ctx, "")
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target.Name == f.target {
+			return nil
+		}
+	}
+
+	_, err = repo.RegisterMirrorTarget(ctx, sdk.MirrorTargetOptions{
+		Name:     f.target,
+		URL:      f.url,
+		Branches: f.branches,
+		Enabled:  true,
+	})
+	if err != nil {
+		return fmt.Errorf("registering the mirror target %q with the server: %w", f.target, err)
+	}
+	return nil
 }
