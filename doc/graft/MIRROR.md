@@ -202,6 +202,16 @@ targets decide which branches are covered: a push to a branch that no target
 publishes is a warning, not a refusal, because a repository publishes its
 mainline and still takes the branches a person works on.
 
+Being behind is a property of a branch, not of the repository: the policy
+compares the branch a push writes with the commit the mirror published for that
+very branch. A branch the mirror never published carries no lag — the next
+publication takes the whole branch — so a branch cut from a lagging mainline,
+and the temporary branch of a commit that is not landed yet, still reach the
+server while the mainline itself takes no push. The commits of the other
+branches of the mirror are not compared: if they were, every new branch would
+inherit the lag of the branch it was cut from, and a repository whose mirror is
+behind would take no commit at all, which is the one way to repair it.
+
 ### What the policy answers
 
 | Code | Push | Meaning |

@@ -165,69 +165,59 @@ func MirrorStore(ctx context.Context, core *corestore.Core, factory localrepo.Fa
 
 // mirrorLag returns how many commits of the branch the mirror does not hold,
 // and whether the mirror holds the branch at a commit the repository does not
-// have. A mirror that published nothing yet is not behind: there is nothing to
-// compare it with, and the next publication takes the whole branch.
+// have.
+//
+// Only the commit the mirror published for this very branch is compared: a
+// commit of another branch says nothing about this one, and a branch the
+// mirror never published is not behind — there is nothing to compare it with,
+// and the next publication takes the whole branch. Measuring against every
+// commit the mirror holds would make every new branch inherit the lag of the
+// mainline it was cut from: a repository whose mirror is behind would then
+// take no branch at all, not even the temporary branch of a commit that is not
+// landed yet, and the lag could not be repaired through that repository.
 func mirrorLag(ctx context.Context, local *localrepo.Repo, branch, tip string, sync mirrorstate.Sync) (int, bool, error) {
-	if tip == "" {
+	if tip == "" || branch == "" {
 		return 0, false, nil
 	}
 
-	published := make([]string, 0, len(sync.Branches))
-	diverged := false
-	for name, commit := range sync.Branches {
-		if commit == "" {
-			continue
-		}
-
-		known, err := local.HasRevision(ctx, git.Revision(commit))
-		if err != nil {
-			return 0, false, fmt.Errorf("reading the commit %s the mirror holds: %w", commit, err)
-		}
-		if !known {
-			// The mirror holds a commit the repository does not have: the
-			// branch was rewritten, or the mirror was published elsewhere.
-			diverged = true
-			continue
-		}
-
-		if name == branch {
-			ancestor, err := local.IsAncestor(ctx, git.Revision(commit), git.Revision(tip))
-			if err != nil {
-				return 0, false, fmt.Errorf("comparing the mirror of the branch %q: %w", branch, err)
-			}
-			if !ancestor {
-				diverged = true
-			}
-		}
-
-		published = append(published, commit)
+	mirrored := sync.Branches[branch]
+	if mirrored == "" {
+		return 0, false, nil
 	}
 
-	if len(published) == 0 {
-		return 0, diverged, nil
+	known, err := local.HasRevision(ctx, git.Revision(mirrored))
+	if err != nil {
+		return 0, false, fmt.Errorf("reading the commit %s the mirror holds: %w", mirrored, err)
+	}
+	if !known {
+		// The mirror holds a commit the repository does not have: the branch
+		// was rewritten, or the mirror was published elsewhere.
+		return 0, true, nil
 	}
 
-	lag, err := commitsNotOn(ctx, local, tip, published)
+	ancestor, err := local.IsAncestor(ctx, git.Revision(mirrored), git.Revision(tip))
+	if err != nil {
+		return 0, false, fmt.Errorf("comparing the mirror of the branch %q: %w", branch, err)
+	}
+	if !ancestor {
+		return 0, true, nil
+	}
+
+	lag, err := commitsNotOn(ctx, local, tip, mirrored)
 	if err != nil {
 		return 0, false, err
 	}
-	return lag, diverged, nil
+	return lag, false, nil
 }
 
-// commitsNotOn returns how many commits tip reaches that the commits of the
-// mirror do not.
-func commitsNotOn(ctx context.Context, local *localrepo.Repo, tip string, published []string) (int, error) {
-	args := make([]string, 0, len(published)+1)
-	args = append(args, tip)
-	for _, commit := range published {
-		args = append(args, "^"+commit)
-	}
-
+// commitsNotOn returns how many commits tip reaches that the published commit
+// of the mirror does not.
+func commitsNotOn(ctx context.Context, local *localrepo.Repo, tip, published string) (int, error) {
 	var stdout, stderr bytes.Buffer
 	if err := local.ExecAndWait(ctx, gitcmd.Command{
 		Name:  "rev-list",
 		Flags: []gitcmd.Option{gitcmd.Flag{Name: "--count"}},
-		Args:  args,
+		Args:  []string{tip, "^" + published},
 	}, gitcmd.WithStdout(&stdout), gitcmd.WithStderr(&stderr)); err != nil {
 		return 0, structerr.New("rev-list --count: %w", err).WithMetadata("stderr", stderr.String())
 	}

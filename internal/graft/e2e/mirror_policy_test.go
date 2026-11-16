@@ -221,3 +221,61 @@ func TestMirrorPolicyRefusesALaggingMirror(t *testing.T) {
 	require.Contains(t, out, "hold a push back")
 	require.Equal(t, tip, s.git(t, "rev-parse", "refs/heads/"+branch))
 }
+
+// TestMirrorPolicyMeasuresTheLagOfTheBranch checks that the lag of a mirror is
+// measured for the branch a push writes, not for every branch the mirror
+// holds. A branch the mirror never published carries no lag of its own, so the
+// temporary branch of a commit that is not landed yet still reaches the server
+// while the branch the mirror published is held back, and that branch itself
+// still takes no push.
+func TestMirrorPolicyMeasuresTheLagOfTheBranch(t *testing.T) {
+	t.Parallel()
+
+	s, token := startWithMirrorPolicy(t, config.GraftMirror{Required: true, WarnLag: 1, DenyLag: 2})
+	remote := newMirrorRemote(t, s)
+	const tracked = "topic/tracked"
+
+	base := writeBranch(t, s, tracked, "README.md", "branch\n")
+	repo := mirrorRepo(t, s, token)
+	_, err := repo.RegisterMirrorTarget(s.ctx, sdk.MirrorTargetOptions{
+		Name: "gitee", URL: remote, Branches: []string{"*"}, Enabled: true,
+	})
+	require.NoError(t, err)
+	_, err = repo.Mirror(s.ctx, sdk.MirrorOptions{URL: remote, Branches: []string{"*"}, Target: "gitee"})
+	require.NoError(t, err)
+
+	// The branch moves two commits past the mirror: the refusal threshold.
+	tip := base
+	for i := range 2 {
+		tip = writeBranch(t, s, tracked, fmt.Sprintf("behind-%d.txt", i), "x\n", tip)
+	}
+
+	clientPath := filepath.Join(t.TempDir(), "client")
+	gittest.Exec(t, s.cfg, "clone", "--quiet", "--branch", tracked, s.repoPath, clientPath)
+	gittest.Exec(t, s.cfg, "-C", clientPath, "reset", "--quiet", "--hard", tip)
+
+	// The temporary branch of a commit that is not landed yet: the mirror
+	// never published this branch, and the lag of another branch says nothing
+	// about it.
+	gittest.Exec(t, s.cfg, "-C", clientPath, "checkout", "--quiet", "-b", "graft/operator/provision")
+	require.NoError(t, os.WriteFile(filepath.Join(clientPath, "agent.txt"), []byte("agent\n"), 0o644))
+	gittest.Exec(t, s.cfg, "-C", clientPath, "add", "agent.txt")
+	gittest.Exec(t, s.cfg, "-C", clientPath, "-c", "user.name=operator", "-c", "user.email=operator@example.com", "commit", "--quiet", "-m", "agent")
+
+	out, ok := operatorPush(t, s, clientPath, "HEAD:refs/heads/graft/operator/provision")
+	require.True(t, ok, out)
+	require.NotContains(t, out, "hold a push back")
+
+	// The branch the mirror published is two commits behind, and a push to it
+	// is refused, whatever the temporary branches hold.
+	gittest.Exec(t, s.cfg, "-C", clientPath, "checkout", "--quiet", tracked)
+	require.NoError(t, os.WriteFile(filepath.Join(clientPath, "pushed.txt"), []byte("pushed\n"), 0o644))
+	gittest.Exec(t, s.cfg, "-C", clientPath, "add", "pushed.txt")
+	gittest.Exec(t, s.cfg, "-C", clientPath, "-c", "user.name=operator", "-c", "user.email=operator@example.com", "commit", "--quiet", "-m", "pushed")
+
+	out, ok = operatorPush(t, s, clientPath, "HEAD:refs/heads/"+tracked)
+	require.False(t, ok, out)
+	require.Contains(t, out, "hold a push back")
+	require.Contains(t, out, "the branch "+tracked)
+	require.Equal(t, tip, s.git(t, "rev-parse", "refs/heads/"+tracked))
+}
