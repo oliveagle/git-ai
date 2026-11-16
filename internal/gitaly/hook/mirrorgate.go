@@ -145,6 +145,15 @@ func MirrorStore(ctx context.Context, core *corestore.Core, factory localrepo.Fa
 			RelativePath: corestore.NormalizeRelativePath(repo.GetRelativePath()),
 		}, nil
 	}
+	if core != nil && core.Authoritative() {
+		// The state of a mirror cannot live in a file of one node when the
+		// repositories live in the storage core: the next push would be
+		// decided by the state of whichever node it reached, and the mirror
+		// policy would hold on one node and not on the next. A server that
+		// runs the storage core is misconfigured without this store, and it
+		// says so instead of writing a file nobody else reads.
+		return nil, mirrorstate.Key{}, fmt.Errorf("the authoritative storage core has no mirror store")
+	}
 
 	path, err := factory.Build(repo).Path(ctx)
 	if err != nil {

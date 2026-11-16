@@ -41,6 +41,11 @@ var AuthoritativeMutators = map[string]struct{}{
 	"/gitaly.ReviewService/AddReviewComment":    {},
 	"/gitaly.ReviewService/SubmitReviewVerdict": {},
 	"/gitaly.ReviewService/CloseReview":         {},
+	// The mirror policy: a target is a row of the database, so it is the same
+	// on every node, and the hook that decides a push reads it. The RPC moves
+	// no reference, so there is nothing to catch up and nothing to vote on.
+	"/gitaly.MirrorService/RegisterTarget":   {},
+	"/gitaly.MirrorService/UnregisterTarget": {},
 }
 
 // Passthrough are the services whose RPCs the gate never touches: the hook

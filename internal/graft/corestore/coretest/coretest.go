@@ -193,6 +193,7 @@ func Open(tb testing.TB, opts Options) *corestore.Core {
 		NodeID:        opts.NodeID,
 		Meta:          meta,
 		Blobs:         blobs,
+		Mirrors:       meta,
 		SyncTimeout:   10 * time.Second,
 		ShadowTimeout: opts.ShadowTimeout,
 		GCGrace:       opts.GCGrace,
