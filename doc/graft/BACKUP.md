@@ -109,7 +109,7 @@ push.
 
 The gate above guards the storage core. The workstation that keeps the
 checkouts has the same rule and its own gate,
-`deploy/host-scripts/local-backup-gate.sh`: every repository under the root
+`deploy/host-scripts/local-backup-gate.sh`: every repository under the roots
 must have an origin, and the origin must hold its commits.
 
 ```sh
@@ -150,7 +150,7 @@ commit the origin does not hold is a commit that has to land in the authority
 first, and the gate says exactly that.
 
 ```cron
-23 * * * * flock -n /tmp/local-backup-gate.lock ~/bin/local-backup-gate.sh --sync --report ~/backup-reports/local-origins-$(date -u +\%Y\%m\%dT\%H\%M\%SZ).json >> ~/backup-reports/local-backup-gate.log 2>&1
+23 * * * * flock -n /tmp/local-backup-gate.lock ~/bin/local-backup-gate.sh --root ~/repos --root ~/.agents --sync --report ~/backup-reports/local-origins-$(date -u +\%Y\%m\%dT\%H\%M\%SZ).json >> ~/backup-reports/local-backup-gate.log 2>&1
 ```
 
 ## The recovery
@@ -174,3 +174,11 @@ targets, publishes the ones that are due, and leaves a task behind for every
 run. The registry of this document is the shape of one target, so the two fit
 together: the registry is the place where the operator declares the origins,
 and the queue is the place where the publishing happens.
+A `.git` entry that does not lead to a repository — a submodule whose git
+directory moved away, for instance — holds no work and is not a repository
+any more: the gate names it and skips it, and the exit status does not change.
+
+A clone of an upstream project is out of the roots on purpose. It is
+reproducible from its upstream, so backing it up would duplicate somebody
+else's history; the repositories of the operator are the ones that need an
+origin of their own.

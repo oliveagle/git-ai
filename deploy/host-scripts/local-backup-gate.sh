@@ -4,10 +4,9 @@
 #
 # Runs on the workstation that keeps the checkouts:
 #
-#   local-backup-gate.sh [--root DIR] [--repo NAME] [--sync] [--report FILE]
-#                        [--quiet]
-#
-# The gate walks the root, finds every Git repository, and asks its origin
+#   local-backup-gate.sh [--root DIR]... [--registry FILE] [--repo NAME]
+#                        [--sync] [--report FILE] [--quiet]
+# The gate walks every root, finds every Git repository, and asks its origin
 # what it holds:
 #
 #   * a repository without an origin is a failure,
@@ -33,7 +32,7 @@
 # names a file.
 set -euo pipefail
 
-ROOT_DIR="${BACKUP_GATE_ROOT:-/mnt/data/repos/github.com/oliveagle}"
+ROOTS=()
 REGISTRY="${BACKUP_GATE_REGISTRY:-$HOME/etc/backup-origins.local.json}"
 REPORT=""
 SYNC=0
@@ -46,7 +45,7 @@ export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeou
 while [ $# -gt 0 ]; do
   case "$1" in
     --registry) REGISTRY="${2:?--registry needs a file}"; shift 2 ;;
-    --root)   ROOT_DIR="${2:?--root needs a directory}"; shift 2 ;;
+    --root)   ROOTS+=("${2:?--root needs a directory}"); shift 2 ;;
     --repo)   ONLY_REPO="${2:?--repo needs a repository}"; shift 2 ;;
     --report) REPORT="${2:?--report needs a file}"; shift 2 ;;
     --sync)   SYNC=1; shift ;;
@@ -59,7 +58,12 @@ done
 log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 say() { [ "$QUIET" = "1" ] || printf '%s\n' "$*"; }
 
-[ -d "$ROOT_DIR" ] || { log "ERROR: the root does not exist: $ROOT_DIR"; exit 1; }
+if [ "${#ROOTS[@]}" -eq 0 ]; then
+  ROOTS=("${BACKUP_GATE_ROOT:-/mnt/data/repos/github.com/oliveagle}")
+fi
+for root in "${ROOTS[@]}"; do
+  [ -d "$root" ] || { log "ERROR: the root does not exist: $root"; exit 1; }
+done
 
 RESULTS="$(mktemp)"
 trap 'rm -f "$RESULTS"' EXIT
@@ -161,6 +165,14 @@ while IFS= read -r dotgit; do
   name="$(basename "$repo_dir")"
   [ -n "$ONLY_REPO" ] && [ "$name" != "$ONLY_REPO" ] && continue
 
+  # A .git entry that does not lead to a repository is a broken checkout (a
+  # submodule whose git directory moved away, for instance). It holds no work
+  # and it is not a repository any more, so it is named and skipped.
+  if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+    say "note  $name: the checkout is broken ($dotgit does not lead to a repository)"
+    continue
+  fi
+
   url="$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)"
   if [ -z "$url" ]; then
     say "FAIL  $name: the repository has no origin"
@@ -223,14 +235,14 @@ while IFS= read -r dotgit; do
       say "note  $name: $uncommitted uncommitted change(s) are in the working tree; a backup of the history cannot hold them"
     fi
   fi
-done < <(find "$ROOT_DIR" -maxdepth 3 -name .git | sort)
+done < <(for root in "${ROOTS[@]}"; do find "$root" -maxdepth 3 -name .git; done | sort)
 
 if [ -n "$REPORT" ]; then
   mkdir -p "$(dirname "$REPORT")"
-  python3 - "$RESULTS" "$REPORT" "$FAILED" "$ROOT_DIR" <<'PY'
+  python3 - "$RESULTS" "$REPORT" "$FAILED" "${ROOTS[*]}" <<'PY'
 import json, sys, datetime
 
-rows, path, failed, root = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4]
+rows, path, failed, roots = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4]
 repositories = []
 with open(rows) as handle:
     for line in handle:
@@ -246,7 +258,7 @@ with open(rows) as handle:
         })
 report = {
     "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "root": root,
+    "roots": roots.split(),
     "result": "FAIL" if failed else "PASS",
     "repositories": repositories,
 }
