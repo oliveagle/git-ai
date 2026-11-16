@@ -298,3 +298,19 @@ func TestMirrorTaskThatIsNotThere(t *testing.T) {
 	require.Equal(t, exitError, code)
 	require.Contains(t, stderr, "has no task")
 }
+
+// TestMirrorQueueNamesTheFileOfAnEmptyQueue checks that a run which published
+// nothing says which file it read. The refusal a pusher reads sends them to
+// this command, and the file of the queue is named by a flag, then by the
+// environment, then by the default of the user: an empty queue of the wrong
+// user must not read as a queue with nothing to do.
+func TestMirrorQueueNamesTheFileOfAnEmptyQueue(t *testing.T) {
+	env := startServer(t)
+	queue := mirrorQueueFile(t)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "holds no target")
+	require.Contains(t, stdout, queue)
+	require.Contains(t, stdout, "GRAFT_MIRROR_QUEUE")
+}

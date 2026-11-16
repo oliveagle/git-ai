@@ -474,7 +474,15 @@ func mirrorQueueRun(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		if o.jsonOut {
 			return mirrorQueueWriteJSON(out, []mirrorQueueTask{})
 		}
-		fmt.Fprintln(out, "no mirror target is due")
+		if len(queue.Targets) == 0 {
+			// The file is named by --queue-file, then GRAFT_MIRROR_QUEUE, then
+			// the default of the user: a person who repairs a mirror by hand
+			// reads which file the run used, so an empty queue is not mistaken
+			// for an up-to-date one.
+			fmt.Fprintf(out, "the mirror queue %s holds no target, so nothing was published: name the queue of the worker with --queue-file or GRAFT_MIRROR_QUEUE\n", store.Path)
+			return nil
+		}
+		fmt.Fprintf(out, "no mirror target is due in %s\n", store.Path)
 		return nil
 	}
 	tasks := mirrorQueuePublish(ctx, out, o, f, q, store, targets)

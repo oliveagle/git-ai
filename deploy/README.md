@@ -302,6 +302,13 @@ The queue file is `~/opt/git-ai/mirror/mirror-queue.json`. It holds no secret:
 a target names the variable that carries its token or the path of its key, and
 the value is read when the task runs.
 
+The file is named by `--queue-file`, then by `GRAFT_MIRROR_QUEUE`, then by the
+default of the user (`~/.config/graft/mirror-queue.json`) — and the worker sets
+`GRAFT_MIRROR_QUEUE` to the path above, so a shell that runs `graft mirror queue
+run` by hand reads a different, empty queue unless it sets the variable or runs
+the wrapper. The run says which file it read, so an empty queue does not read
+as one with nothing to do.
+
 The production lane's targets reach GitHub over SSH on port 443
 (`ssh://git@ssh.github.com:443/OWNER/REPO.git`), because this network drops the
 connection to `github.com:443` often enough that an HTTPS push fails more often
