@@ -217,27 +217,32 @@ func mirrorStatusPrint(out io.Writer, status mirrorStatus) {
 		fmt.Fprintf(out, "a push would be refused: %s\n", status.Reason)
 	case status.Warning != "":
 		fmt.Fprintf(out, "a push would go through: %s\n", status.Warning)
-	case mirrorStatusLag(status.Targets) > 0 && status.Policy.WarnLag > 0:
+	case mirrorStatusLag(status.Branch, status.Targets) > 0 && status.Policy.WarnLag > 0:
 		// A mirror that is behind but inside the window is neither a refusal
 		// nor a warning; saying that the mirrors are up to date would hide the
 		// number an operator watches as it grows.
-		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, below the warn threshold of %d\n", mirrorStatusLag(status.Targets), status.Policy.WarnLag)
-	case mirrorStatusLag(status.Targets) > 0:
-		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, and the policy sets no warn threshold\n", mirrorStatusLag(status.Targets))
+		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, below the warn threshold of %d\n", mirrorStatusLag(status.Branch, status.Targets), status.Policy.WarnLag)
+	case mirrorStatusLag(status.Branch, status.Targets) > 0:
+		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, and the policy sets no warn threshold\n", mirrorStatusLag(status.Branch, status.Targets))
 	default:
 		fmt.Fprintln(out, "a push would go through: the mirrors are up to date")
 	}
 }
 
-// mirrorStatusLag is how far the mirrors of a repository are behind: the lag of
-// the enabled target that is furthest behind, which is the number the policy
-// compares its thresholds with.
-func mirrorStatusLag(targets []mirrorStatusTarget) int {
+// mirrorStatusLag is how far the mirrors of a branch are behind: the lag of the
+// enabled target that publishes the branch and is furthest behind, which is the
+// number the policy compares its thresholds with. An empty branch counts every
+// target, because the question is then about the repository as a whole.
+func mirrorStatusLag(branch string, targets []mirrorStatusTarget) int {
 	lag := 0
 	for _, target := range targets {
-		if target.Enabled && target.Lag > lag {
-			lag = target.Lag
+		if !target.Enabled || target.Lag <= lag {
+			continue
 		}
+		if branch != "" && !(mirrorgate.Target{Branches: target.Branches}).Publishes(branch) {
+			continue
+		}
+		lag = target.Lag
 	}
 	return lag
 }
