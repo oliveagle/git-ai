@@ -156,18 +156,21 @@ been redeployed is not a pass.
 
 ### What a deploy does to a lane
 
-1. the bundle is staged and its tools extracted to `<lane>/.tools`;
-2. `prepare-lane.sh` creates what is missing — directory, token, PostgreSQL
+1. the host scripts of this directory are copied to `<lane>/deploy/host-scripts`,
+   so the cron jobs of the host — the mirror worker, the backup gate, the
+   database dump — run the scripts of the release that was installed;
+2. the bundle is staged and its tools extracted to `<lane>/.tools`;
+3. `prepare-lane.sh` creates what is missing — directory, token, PostgreSQL
    role and database, bucket, `config.toml`, `run-gitaly.sh`, the two supervisor
    programs in the lane's own ini — and never rotates a secret or rewrites a
    `config.toml` that already exists. `lanes.env` names the ini; production
    keeps the `git-ai.ini` it has had since before the lanes existed;
-3. `check-lane.sh` refuses a lane whose identity or isolation does not hold;
-4. `install-release.sh` verifies the checksums and unpacks into
+4. `check-lane.sh` refuses a lane whose identity or isolation does not hold;
+5. `install-release.sh` verifies the checksums and unpacks into
    `releases/<version>/`;
-5. `switch-current.sh` moves the `current` symlink, recreates the container and
+6. `switch-current.sh` moves the `current` symlink, recreates the container and
    restarts the two cache tiers — the switch itself is one `mv` of a symlink;
-6. `healthcheck.sh` probes container, socket, both ports, cache stats, the
+7. `healthcheck.sh` probes container, socket, both ports, cache stats, the
    version the process reports against the release on disk, the storage core,
    the lane's database and the bucket. Failure rolls the lane back to the
    release that ran before.

@@ -71,6 +71,11 @@ github      ole-utils-ci.git     5m   main release/* feat/* feature/* merge/* op
 github      fastapi_mojo.git     5m   *
 github      ole-eval.git         5m   *
 github      maxllm.git           5m   *
+github      dot_agents.git       5m   *
+github      assistant-demo.git   5m   *
+github      demo.git             5m   *
+github      smoke2.git           5m   *
+github      imp-test.git         5m   *
 workstation laya-workflow.git    5m   main release/* feat/* feature/* merge/* opt/*
 workstation ole-utils-ci.git     5m   main release/* feat/* feature/* merge/* opt/*
 workstation fastapi_mojo.git     5m   *

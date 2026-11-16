@@ -82,6 +82,19 @@ else
   ssh_script "$DEPLOY_DIR/host-scripts/stage-bundle.sh" LANE_DIR VERSION BUNDLE
 fi
 
+
+# The cron jobs of the host run the scripts of the lane — the mirror worker,
+# the backup gate, the database dump — so the lane carries the version of them
+# that this deploy was cut with. A script that is only copied by hand drifts
+# from the repository, and a cron job then runs a worker nobody reviewed.
+log "installing the host scripts"
+ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
+  "mkdir -p '$LANE_DIR/deploy/host-scripts'"
+for script in "$DEPLOY_DIR"/host-scripts/*.sh; do
+  ssh_put "$script" "$LANE_DIR/deploy/host-scripts/$(basename "$script")"
+done
+ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
+  "chmod 755 '$LANE_DIR'/deploy/host-scripts/*.sh"
 log "preparing the lane"
 ssh_script "$DEPLOY_DIR/host-scripts/prepare-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
