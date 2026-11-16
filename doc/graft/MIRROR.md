@@ -130,7 +130,8 @@ The commands of the queue:
 | `graft mirror queue show NAME` | shows one target |
 | `graft mirror queue enable NAME` | lets the worker publish the target again |
 | `graft mirror queue disable NAME` | leaves the target alone, keeping its history |
-| `graft mirror queue remove NAME` | takes the target out of the queue |
+| `graft mirror queue remove NAME` | takes the target out of the queue, and out of the mirror policy of the server |
+| `graft mirror queue register NAME` | registers a target the queue already holds with the server, without publishing it |
 | `graft mirror queue run` | publishes the targets that are due, and exits |
 | `graft mirror queue worker` | publishes the targets that are due, over and over |
 | `graft mirror task list` | lists the tasks, newest first |
@@ -153,6 +154,113 @@ a remote branch with unrelated history keeps that branch, the task of the run
 is `diverged`, and the run exits 1. Only a target that was given `--force`
 overwrites it, and that is a decision of a person, made once, on the target
 and not on the run.
+
+## The mirror policy
+
+A queue that nobody watches does not make a mirror. The server can hold the
+pushes of a repository to the mirrors that repository declares, so that the
+mirror of a repository is as much a part of accepting a push as its branch is:
+
+```toml
+[graft.mirror]
+# A repository that no mirror target publishes, and whose mirrors never
+# published successfully, takes no push.
+required = true
+# A mirror this many commits behind the branch warns the pusher (default 10).
+warn_lag = 10
+# A mirror this many commits behind refuses the push. Zero, the default, never
+# refuses: a server warns first, and the operator turns the refusal on once a
+# worker publishes every mirror on a schedule.
+deny_lag = 50
+```
+
+The policy is off unless configured: a server that sets none of the three keys
+takes every push. `deny_lag` must be greater than `warn_lag`, and a server
+whose configuration refuses that at load time does not start.
+
+The policy decides on the state of the publications, not on the queue of any
+client. The server records, for every target and every branch, the commit the
+mirror holds: `graft mirror push --mirror-target NAME` records it, and so does
+every `queue run` of a target. A target that the server does not know counts
+for nothing, so `graft mirror queue add` registers the target with the server
+as it adds it, and `graft mirror queue register NAME` registers a target that
+the queue already holds — the repair when the server was unreachable when the
+target was added, or when the server's state was lost.
+
+The gate runs in the `prepared` phase of the reference transaction, while git
+holds the locks of the references and before it writes them, so it holds for
+every update of a branch, whatever asked for it. The branch patterns of the
+targets decide which branches are covered: a push to a branch that no target
+publishes is a warning, not a refusal, because a repository publishes its
+mainline and still takes the branches a person works on.
+
+### What the policy answers
+
+| Code | Push | Meaning |
+|---|---|---|
+| `allowed` | yes | every mirror that covers the branch is up to date |
+| `no_mirror_target` | no (with `required`) | the repository declares no mirror target |
+| `mirror_never_synced` | no (with `required`) | no mirror of the repository ever published successfully |
+| `mirror_diverged` | no (with `required`, else a warning) | a mirror holds the branch at a commit the repository does not have |
+| `mirror_lagging` | yes with a warning, no from `deny_lag` | a mirror is behind the branch |
+| `branch_not_mirrored` | yes, with a warning | no target publishes this branch |
+
+The strictest mirror that covers the branch decides: one mirror that is behind
+holds the push back, whatever the others hold.
+
+### `graft mirror status`
+
+The command asks the question the hook decides, with the same targets and the
+same policy, so it explains a refusal and a warning before they happen:
+
+```shell
+graft mirror status --repo shop.git --branch main
+graft mirror status --repo shop.git --branch main --json
+```
+
+It prints every target with the commit it holds, how far behind it is, the
+policy, and the decision — and it exits 0 when a push would go through and 1
+when it would not, so a schedule or an agent reads the same answer the push
+gets. The `--json` form is the same object with the fields of a machine:
+
+```json
+{
+  "repository": "shop.git",
+  "branch": "main",
+  "policy": {"required": true, "warn_lag": 10, "deny_lag": 50},
+  "targets": [
+    {"name": "github-shop", "url": "https://github.com/group/shop.git",
+     "branches": ["main"], "enabled": true, "status": "ok",
+     "published": {"main": "0d1e..."}, "lag": 12}
+  ],
+  "allowed": true,
+  "code": "mirror_lagging",
+  "warning": "the mirror github-shop of shop.git is 12 commits behind the branch main (a push is refused from 50 commits behind): publish it with \"graft mirror queue run\""
+}
+```
+
+### Repairing a refusal
+
+The refusal names the command that repairs it, and the warning is written to
+the stderr of the push, where git shows it to the pusher as `remote:` lines:
+
+| Code | What the operator does |
+|---|---|
+| `no_mirror_target` | `graft mirror queue add NAME --repo REPO --url URL --branch PATTERN`, or `graft mirror queue register NAME` when the queue already holds the target |
+| `mirror_never_synced` | `graft mirror queue run`, and check the token of the target in the environment of the worker |
+| `mirror_lagging` | `graft mirror queue run`; if the mirror stays behind, the worker is not running, or its schedule is longer than the lag the policy allows |
+| `mirror_diverged` | someone committed to the mirror, or the branch was rewritten: import the work or decide that Graft is authoritative, then publish the target again with `--force` |
+| `branch_not_mirrored` | add the branch to a target with `--branch PATTERN` if it must be mirrored |
+
+A push is also the moment a person reads the answer: a warning says which
+mirror is behind and which command publishes it, before the policy refuses
+anything.
+
+The commands of this table are the operator's: `MirrorService` is not on the
+agent allowlist, because an agent that could remove a target would open the
+repository the policy holds, so an agent that reads a refusal reports it with
+the reason, which names the target and the command. `graft mirror status` is
+the read of the same state, and it needs the shared token as well.
 
 ## Divergence and force
 

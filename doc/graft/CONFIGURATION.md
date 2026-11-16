@@ -31,6 +31,7 @@ the example stays a working configuration.
 | `agent_rpcs` | array of strings | empty | Extra full gRPC method names (for example `/gitaly.RepositoryService/RepositorySize`) that agents may call on top of the built-in allowlist. Startup fails on an unregistered method or on a method that agents may never call. See [AGENT-SECURITY.md](AGENT-SECURITY.md). |
 | `land` | table | | `[graft.land.batch]`: batching of concurrent lands, and `[graft.land.resolver]`: the conflict resolver of `UserLand`, see below. |
 | `storage` | table | | `[graft.storage]`: the storage core (database plus object storage), see below. |
+| `mirror` | table | | `[graft.mirror]`: the mirror policy, see below and [MIRROR.md](MIRROR.md). |
 
 ### Request defaults (standalone mode)
 
@@ -180,6 +181,27 @@ with the state of the branch (exit 0 when the change may land, 1 when the
 policy refuses it, 2 when the command line is wrong). `graft gate rules` prints
 the rules the server enforces.
 
+### `[graft.mirror]`
+
+The mirror policy: a repository is published to a mirror before it takes a
+push, and a mirror that falls behind holds the pushes back. The policy is
+decided by the reference-transaction hook, in its prepared phase, with the
+state the `MirrorService` holds: the targets of the repository, and the commit
+every mirror holds for every branch, recorded by `graft mirror push
+--mirror-target NAME` and by every `graft mirror queue run`. See
+[MIRROR.md](MIRROR.md).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `required` | bool | `false` | A repository that declares no mirror target, or whose mirrors never published successfully, takes no push. A push to a branch that no target publishes is a warning, not a refusal. |
+| `warn_lag` | int | `10` | A mirror this many commits behind the pushed branch warns the pusher, and the push goes through. A negative value turns the warning off; the warning is written to the stderr of the push. |
+| `deny_lag` | int | `0` (never) | A mirror this many commits behind refuses the push. It must be greater than `warn_lag`, so that a push is warned about before it is refused, and a server whose configuration refuses that at load time does not start. |
+
+The policy is off unless one of the three keys is set: a server that sets
+none of them takes every push. The refusals are the codes of
+`graft mirror status`, which asks the same question the hook decides and exits
+1 when a push would be refused.
+
 ### `[[graft.agent]]`
 
 | Key | Type | Default | Description |
@@ -297,146 +319,3 @@ generated or minified, checked in that order (see [RESOLVE.md](RESOLVE.md)).
 Startup fails when both or neither of `command` and `url` are set, the URL has
 another scheme, `timeout` is not a duration, a bound or a threshold is
 negative, a glob is empty or invalid, a lockfile is not a base name, or a
-generated marker is not a valid regular expression.
-
-### `[graft.storage]`
-
-The storage core: the state of every repository in a database plus object
-storage, with the local repositories as caches that any node can rebuild. Off
-by default. Defined in `internal/gitaly/config/config_graft_storage.go`. The
-architecture, the modes and the operations (import, verify, switching modes)
-are in [STORAGE.md](STORAGE.md).
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `mode` | string | `"off"` | `"off"` (also the empty string): nothing is opened and nothing changes. `"shadow"`: every reference transaction of an imported repository is also committed to the database and its pack uploaded; the database never rejects a write, and every storage core error is logged and counted while the git write proceeds. `"authoritative"`: the database is the source of truth; a write commits only if its database compare-and-swap succeeds, every request first catches the local repository up, and the changelog and the reviews are served from the database. Authoritative mode requires `[graft] standalone = true` and is not supported behind Praefect. |
-| `database` | string | required when on | `sqlite:///absolute/path.db`, or `postgres://user@host:port/db?sslmode=...` (`postgresql://` too). All nodes use the same database. Credentials are not written here: Postgres reads the `PG*` environment variables and `.pgpass`. The schema is created at startup. |
-| `bucket` | string | required when on | gocloud URL of the object storage: `file:///absolute/dir`, `s3://bucket?region=...`, `gs://bucket` or `azblob://container`. All nodes use the same bucket. Credentials come from the cloud SDK's environment (`AWS_*`, `GOOGLE_APPLICATION_CREDENTIALS`, `AZURE_*`). |
-| `node_id` | string | the host name | Name of this node in the database (changesets record it, and `graft storage state` shows it). Must not contain spaces or slashes. Give every node its own. |
-| `sync_timeout` | string (Go duration) | `"10s"` | Budget of one sync round before a request in authoritative mode. A round that cannot reach the head in time keeps what it did: the local repository stays at the changeset it reached, the request fails with `Unavailable`, and the next request's round goes on from there. A round that cannot finish at all (for example because the database is unreachable or a local writer holds a reference lock) fails the request with `Unavailable` too. Concurrent requests share a round; a request that arrives during a round that read the head before it then runs one of its own, so it waits at most two rounds (and stops waiting with `Unavailable` after twice `sync_timeout` plus a second per round, should a round not end within its budget). Clients retry `Unavailable`: the SDK does it for every land (`LandOptions.RetryUnavailable`, see [LAND-BATCHING](LAND-BATCHING.md#limits)): the retry of a land whose response was lost answers `already_landed` from the server's record of the first land, rebase lands included (that record needs a server released after v0.2.0 with its changeset log on, `[graft.changelog]` not disabled; against another server the retry of a lost rebase land replays the change, and `SkipRebaseLands` turns the retry of rebase lands off). A client without the SDK must follow the same rules. Must be positive. |
-| `shadow_timeout` | string (Go duration) | `"5s"` | Budget of the shadow-mode work of one reference transaction, for its Preparing phase (pack build and upload, before git locks the references) and its Prepared phase together. When it runs out, the work is abandoned, logged and counted, and the git write proceeds. Must be positive. |
-| `gc_grace` | string (Go duration) | `"1h"` | How long garbage collection waits before it deletes a pack it observed unreferenced, and how old a checkpoint must be before the packs it covers are deleted. Must be greater than `sync_timeout + gc_margin`. |
-| `gc_margin` | string (Go duration) | `"5m"` | Safety margin of the writers' deadline: a write uploads its pack and commits its changeset within `gc_grace - gc_margin`, else it fails. It also covers the difference between a node's clock and the database's. Must be positive. |
-| `checkpoints` | string | `"auto"` in authoritative mode, `"off"` otherwise | `"auto"` runs the background checkpoints: every `maintenance_interval`, every repository this node has a current copy of is checkpointed when the thresholds below say so, under a per-repository lease so that two nodes do not do the same work. On by default: a checkpoint deletes nothing (it adds a pack and database rows), and without checkpoints a node that joins replays every changeset of a repository. `"off"` turns them off. `"auto"` requires authoritative mode. |
-| `gc` | string | `"off"` | `"auto"` runs the background garbage collection: every `maintenance_interval`, the packs of removed repositories are deleted, and so are the dead packs of every repository this node has a current copy of, under the same lease. Off by default because it is the operation that deletes data. Authoritative mode only. `graft storage gc` does the same on demand in either case. |
-| `maintenance_interval` | string (Go duration) | `"1h"` | Time between two runs of the background checkpoints and garbage collection. Must be positive. |
-| `checkpoint_changesets` | integer | `1000` | Checkpoint a repository once this many changesets follow its newest checkpoint. `0` never checkpoints by count. |
-| `checkpoint_pack_bytes` | integer | `268435456` (256 MiB) | Checkpoint a repository once the packs of the changesets after its newest checkpoint hold this many bytes. `0` never checkpoints by size. |
-| `lease_ttl` | string (Go duration) | `"10m"` | How long a node holds a repository's maintenance lease; renewed every third of it while the work runs. Must be positive. |
-| `database_max_open_conns` | integer | `32` | Postgres only: the most connections this node opens to the database. A request that finds them all in use waits for one, as long as its own deadline allows. Every node opens up to this many, and during a graceful upgrade the old and the new process of a node each have a pool, so one node can briefly use twice as many. Keep the sum, plus what other clients use, below the server's `max_connections` (100 by default in PostgreSQL, minus its `superuser_reserved_connections`): a connection the server refuses (error 53300) fails the operation and is not retried. With the default, the database-only benchmark on a 16-CPU machine commits 2,019 to 2,127 changesets per second for 16 writers in separate repositories and 2,586 to 2,630 for 64 writers queued on the 32 connections, more than twenty times what one node committed end to end in the land benchmarks. At least 1. |
-| `database_max_idle_conns` | integer | `database_max_open_conns` | Postgres only: how many of those connections stay open while unused, so that steady load reuses them instead of opening a connection per transaction. Between 0 and `database_max_open_conns`. |
-| `database_conn_max_idle_time` | string (Go duration) | `"5m"` | Postgres only: a connection unused for this long is closed, so that the pool shrinks after a burst. Must be positive. |
-| `database_conn_max_lifetime` | string (Go duration) | `"30m"` | Postgres only: a connection is replaced this long after it was opened, so that the pool follows a failover or a changed DNS name. Must be positive. |
-
-```toml
-[graft.storage]
-mode = "authoritative"
-database = "sqlite:///var/opt/graft/meta.db"
-bucket = "file:///var/opt/graft/objects"
-node_id = "node-a"
-gc = "auto"             # checkpoints are on by default in authoritative mode
-```
-
-Startup fails when the mode is unknown, authoritative mode is set without
-`standalone = true`, the database URL is missing or has another scheme, the
-bucket is missing or not a URL, `node_id` contains spaces or slashes, a
-duration is not a positive Go duration, `gc_grace` is not greater than
-`sync_timeout + gc_margin`, `checkpoints` or `gc` is neither `off` nor `auto`,
-either is `"auto"` outside authoritative mode, `checkpoint_pack_bytes` is
-negative, a `database_*` connection setting is given for a SQLite database,
-`database_max_open_conns` is below 1, or `database_max_idle_conns` is outside 0
-to `database_max_open_conns`. A SQLite database is opened as before: its writers
-are queued by the storage core and its connections are local files.
-
-## `graft-cache` flags
-
-The cache is configured on its command line, not in `config.toml`.
-
-| Flag | Default | Description |
-|---|---|---|
-| `--listen` | required | Where to serve: `unix:<path>` or `tcp://<host:port>`. |
-| `--upstream` | required | Gitaly or another cache tier, in the same forms. |
-| `--tier` | `cache` | `cache` (regional; may use `--disk-dir`) or `daemon` (per node; memory only). The tier is reported in the statistics. |
-| `--max-bytes` | `268435456` (256 MiB) | Byte budget of the in-memory object and tree cache. Objects larger than the budget are not cached. |
-| `--max-request-bytes` | `67108864` (64 MiB) | Bytes of objects that are not in memory (disk hits and misses) that one `GetObjects` request may buffer, and the largest `GetTree` listing buffered for caching. A larger request is streamed through the upstream without caching. |
-| `--max-objects` | `1000` | Object IDs per `GetObjects` request. Match the upstream's `max_objects`. |
-| `--chunk-size` | `1048576` | Data bytes per `GetObjects` message. Match the upstream's `chunk_size`. |
-| `--disk-dir` | empty | On-disk object store. Only valid with `--tier cache`; the daemon tier refuses it. |
-| `--disk-max-bytes` | `10737418240` (10 GiB) | Byte budget of the on-disk store. The oldest objects are evicted first. |
-| `--metrics-addr` | empty | HTTP address that serves Prometheus metrics at `/metrics` and the statistics as JSON at `/stats`. Disabled when empty. |
-| `--token` | empty | Sent upstream on requests that carry no `authorization` header of their own. Requests that carry one always use their own. Every client that can reach the tier without credentials gets this token's access, so set it only when all of them may use it. |
-| `--seed` | empty | Comma-separated seed files (`FILE[,FILE]`), written by `graft-cache snapshot`, loaded in order into the cache before the tier serves. Every object is verified against its object ID; a damaged record is skipped and counted, and a file that cannot be opened or is not a seed file stops the start. Objects go into memory and, with `--disk-dir`, onto disk; an object larger than `--max-bytes` is skipped. Seeded objects are served without upstream object reads, but every read is still authorized by the upstream first. |
-
-Chaining: point the `--upstream` of a daemon tier at a cache tier, and the cache
-tier's `--upstream` at Gitaly. Each tier serves its own hits and forwards its
-misses in one batched call.
-
-### `graft-cache snapshot`
-
-`graft-cache snapshot` writes a seed file with every tree and blob reachable
-from the root tree of one revision, read from the upstream with a recursive
-`GetTree` and batched `GetObjects` calls. Every object is verified; a mismatch
-fails the snapshot. The file is written to a temporary file next to `--out` and
-renamed into place only when the snapshot succeeded.
-
-```shell
-graft-cache snapshot --upstream unix:/run/gitaly.sock --repo demo.git --rev main --out demo.seed
-graft-cache --listen unix:/run/graft-cache.sock --upstream unix:/run/gitaly.sock --seed demo.seed
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--upstream` | required | Gitaly or a cache tier to read from: `unix:<path>` or `tcp://<host:port>`. |
-| `--token` | empty | Token sent upstream as the caller's credentials. |
-| `--storage` | `default` | Storage name of the repository. Must not be empty. |
-| `--repo` | required | Relative path of the repository below the storage. |
-| `--rev` | required | Revision whose root tree is snapshotted, for example `main`. |
-| `--out` | required | Seed file to write. |
-
-It prints `snapshot: <objects> objects, <bytes> bytes, <missing> missing -> <out>`.
-
-### Seed statistics
-
-`/stats` (JSON) and `/metrics` report the seeding of a tier:
-
-| `/stats` field | Metric | Description |
-|---|---|---|
-| `seeded_objects` | `graft_cache_seeded_objects_total` | Objects loaded from seed files. |
-| `seeded_bytes` | `graft_cache_seeded_bytes_total` | Data bytes loaded from seed files. |
-| `seed_corrupt` | `graft_cache_seed_corrupt_total` | Seed records skipped because they were damaged. |
-
-## `graft` CLI
-
-The CLI reads these environment variables. Each one can also be passed as a flag
-(`--address`, `--token`, `--storage`, `--user`, `--author`).
-
-| Variable | Default | Description |
-|---|---|---|
-| `GRAFT_ADDRESS` | from the workspace | Gitaly or `graft-cache` address. |
-| `GRAFT_TOKEN` | none | The agent token, or the shared token. |
-| `GRAFT_STORAGE` | `default` | Storage name. |
-| `GRAFT_USER` | empty | The acting user ID of writes. It names the temporary branches of `graft commit` (`graft/<user>/...`), verbatim when it is a valid reference name component and as a lowercase slug otherwise. Set it to the agent name of `GRAFT_TOKEN`. With an agent token the server replaces it with the token's agent (standalone mode) and the policy decides on that agent; with the shared token it decides on this ID. Without it, the CLI sends the user ID `anonymous` and commits on a temporary branch named after the author, which a policy that scopes temporary branches per agent may deny. |
-| `GRAFT_AUTHOR` | `graft <graft@localhost>` | Author of `graft commit`, as `Name <email>`. |
-
-The workspace flag `-C DIR` selects a workspace. Without it, the CLI looks for
-the workspace above the current directory.
-
-## Minimal example
-
-```toml
-[graft]
-standalone = true
-
-[[graft.agent]]
-name = "planner"
-token_file = "/etc/graft/tokens/planner"
-
-[[graft.policy]]
-actor = "planner"
-allow = true
-```
-
-With this policy, `planner` may update any reference and every other caller is
-denied, because no rule applies to them. Add a final `allow = true` rule to
-change that. The annotated example in `examples/graft/config.toml` is the
-starting point for a real deployment.
