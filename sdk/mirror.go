@@ -24,9 +24,13 @@ type MirrorOptions struct {
 	// HTTPAuthorizationHeader is the value of the Authorization header used
 	// for HTTP and HTTPS remotes. It is never logged.
 	HTTPAuthorizationHeader string
-	// SSHKey is the path of the private key used for SSH remotes.
+	// SSHKey is the contents of the private key used for SSH remotes: the
+	// server writes them to a file of its own for the length of the call. A
+	// caller that holds a path reads the file first, which is what the CLI
+	// does with --ssh-key.
 	SSHKey string
-	// KnownHosts is the path of the host identities checked by SSH.
+	// KnownHosts is the contents of the host identities that strict SSH
+	// checking compares against, in the same way as SSHKey.
 	KnownHosts string
 	// KeepDivergentRefs leaves a remote branch alone when it is not an
 	// ancestor of the local branch, and reports it. A backup leaves this set:

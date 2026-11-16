@@ -55,6 +55,14 @@ variable is not set fails with the name of that variable. `--ssh-key` (usually
 with `--known-hosts`) is the SSH alternative for any host. A token over
 `http://` is refused unless `--allow-insecure-http` is explicit.
 
+`--ssh-key` and `--known-hosts` name **files**, not key material: the client
+reads them when it runs, and the contents travel in the request, where the
+server writes them into a private file for the length of the Git connection.
+A target of the queue stores the two paths and never the secret, so the queue
+file can be read by anyone who can read the checkout, and the read happens
+again on every run. A path that does not exist, or a file that is empty, is
+refused before the Git connection is made, with the path in the message.
+
 The server makes the Git connection and holds the credential for the length of
 the call. The CLI needs the shared (operator) token, and the remote token is
 read from the environment, so it never appears in `argv` or in the output.

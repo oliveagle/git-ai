@@ -136,8 +136,8 @@ func mirrorCommand() command {
 			fs.Var(&f.branches, "branch", "branch pattern to push (repeatable, * is a wildcard)")
 			fs.StringVar(&f.tokenEnv, "token-env", "", "environment variable that holds the HTTPS token (default: the host's usual variable, such as GITHUB_TOKEN)")
 			fs.StringVar(&f.username, "username", "", `HTTP Basic user for the token (default: by host, such as "oauth2")`)
-			fs.StringVar(&f.sshKey, "ssh-key", "", "private key for an SSH remote")
-			fs.StringVar(&f.knownHosts, "known-hosts", "", "host identities for strict SSH host-key checking")
+			fs.StringVar(&f.sshKey, "ssh-key", "", "path of the private key for an SSH remote")
+			fs.StringVar(&f.knownHosts, "known-hosts", "", "path of the host identities for strict SSH host-key checking")
 			fs.BoolVar(&f.force, "force", false, "overwrite a divergent remote branch with the Graft branch")
 			fs.BoolVar(&f.allowInsecureHTTP, "allow-insecure-http", false, "allow an http:// URL with a token")
 			fs.StringVar(&f.target, "mirror-target", "", "name of the registered mirror target the publication is for (the server records what the mirror holds under it)")
@@ -253,6 +253,18 @@ func cmdMirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlag
 // mirrorPush asks the server to reconcile the selected references with the
 // mirror.
 func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) (*mirrorResult, error) {
+	// The flags name files; the request carries the contents. The read happens
+	// before the server is contacted, so a path that does not exist fails with
+	// the usage status and publishes nothing.
+	sshKey, err := mirrorCredentialFile("mirror push", "--ssh-key", f.sshKey)
+	if err != nil {
+		return nil, err
+	}
+	knownHosts, err := mirrorCredentialFile("mirror push", "--known-hosts", f.knownHosts)
+	if err != nil {
+		return nil, err
+	}
+
 	repo, _, _, err := gateRepo(ctx, o, &gateFlags{repo: f.repo})
 	if err != nil {
 		return nil, err
@@ -290,8 +302,8 @@ func mirrorPush(ctx context.Context, out io.Writer, o *options, f *mirrorFlags) 
 		URL:                     f.url,
 		Branches:                f.branches,
 		HTTPAuthorizationHeader: authorization,
-		SSHKey:                  f.sshKey,
-		KnownHosts:              f.knownHosts,
+		SSHKey:                  sshKey,
+		KnownHosts:              knownHosts,
 		// The default is the safety net: a mirror that has unrelated history
 		// is a person's decision, not a retry's.
 		KeepDivergentRefs: !f.force,
@@ -388,6 +400,26 @@ func mirrorToken(a mirrorAuth) (string, string) {
 		return "", ""
 	}
 	return name, os.Getenv(name)
+}
+
+// mirrorCredentialFile reads a credential file that the caller named by path,
+// such as --ssh-key or --known-hosts. The request of the server carries the
+// contents, because the server writes them into a private file of its own and
+// lets the Git connection use it for the length of the call. The read happens
+// in the client so that the path is resolved where the person wrote it, and a
+// path that is wrong fails before any Git connection is made.
+func mirrorCredentialFile(usage, flag, path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", usagef("%s: %s %s: %s", usage, flag, path, err)
+	}
+	if strings.TrimSpace(string(content)) == "" {
+		return "", usagef("%s: %s %s is empty", usage, flag, path)
+	}
+	return string(content), nil
 }
 
 // mirrorDisplayURL hides the user information of a URL that a person may have

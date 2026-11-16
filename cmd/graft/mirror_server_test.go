@@ -100,6 +100,14 @@ func TestMirrorPushUsage(t *testing.T) {
 			},
 			want: "refuses to send GITEE_TOKEN over http://",
 		},
+		{
+			desc: "with a key file that is not readable",
+			args: []string{
+				"mirror", "push", "--repo", "shop.git", "--url", "ssh://git@gitee.com/group/shop.git",
+				"--branch", "main", "--ssh-key", "/tmp/graft-test-missing-key",
+			},
+			want: "--ssh-key /tmp/graft-test-missing-key",
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Setenv("GITEE_TOKEN", "secret")
@@ -157,4 +165,58 @@ func TestMirrorAuthorizationPrefersTheFlag(t *testing.T) {
 	header, err = mirrorAuthorization(f)
 	require.NoError(t, err)
 	require.Empty(t, header)
+}
+
+// TestMirrorCredentialFileIsRead checks what --ssh-key and --known-hosts name: a
+// file. The request to the server carries the contents, because the server
+// writes them into a file of its own for the Git connection, so a path that
+// travels as if it were the key itself leaves SSH with a broken identity. The
+// read is the step that turns the one into the other, and it refuses a path
+// that is wrong or empty before anything is published.
+func TestMirrorCredentialFileIsRead(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "identity")
+	const material = "test key material\nsecond line\n"
+	require.NoError(t, os.WriteFile(key, []byte(material), 0o600))
+
+	content, err := mirrorCredentialFile("mirror push", "--ssh-key", key)
+	require.NoError(t, err)
+	require.Equal(t, material, content)
+
+	blank := filepath.Join(dir, "blank")
+	require.NoError(t, os.WriteFile(blank, []byte(" \n"), 0o600))
+	_, err = mirrorCredentialFile("mirror push", "--ssh-key", blank)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "is empty")
+
+	missing := filepath.Join(dir, "gone")
+	_, err = mirrorCredentialFile("mirror push", "--ssh-key", missing)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), missing)
+
+	content, err = mirrorCredentialFile("mirror push", "--ssh-key", "")
+	require.NoError(t, err)
+	require.Empty(t, content)
+}
+
+// TestMirrorPushWithAnSSHKeyPath publishes through a remote that needs no SSH,
+// with a credential named by path: reading the file must not change how the
+// reference reconciliation ends up.
+func TestMirrorPushWithAnSSHKeyPath(t *testing.T) {
+	env := startServer(t)
+	tip := env.seedMain(t, map[string]string{"a.txt": "a\n"})
+
+	remote := filepath.Join(t.TempDir(), "mirror.git")
+	gittest.Exec(t, env.cfg, "init", "--bare", "--initial-branch=main",
+		"--object-format="+gittest.DefaultObjectHash.Format, remote)
+
+	key := filepath.Join(t.TempDir(), "identity")
+	require.NoError(t, os.WriteFile(key, []byte("test key material\n"), 0o600))
+
+	code, stdout, stderr := runCLI(t, append([]string{
+		"mirror", "push", "--url", remote, "--branch", "main", "--ssh-key", key,
+	}, "-address", env.addr, "-storage", env.storage, "--repo", env.relPath)...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "mirrored "+env.relPath)
+	require.Equal(t, tip.String(), strings.TrimSpace(string(gittest.Exec(t, env.cfg, "-C", remote, "rev-parse", "refs/heads/main"))))
 }

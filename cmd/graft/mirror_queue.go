@@ -654,6 +654,17 @@ func mirrorQueuePush(ctx context.Context, o *options, tgt *mirrorqueue.Target) (
 		return nil, err
 	}
 
+	// The queue keeps the paths of the SSH credential, not the secret itself;
+	// the worker reads them when the task runs and sends the contents.
+	sshKey, err := mirrorCredentialFile("mirror queue", "--ssh-key", tgt.SSHKey)
+	if err != nil {
+		return nil, err
+	}
+	knownHosts, err := mirrorCredentialFile("mirror queue", "--known-hosts", tgt.KnownHosts)
+	if err != nil {
+		return nil, err
+	}
+
 	backend, err := openSDKBackend(ctx, target{Address: address, Token: o.token, Storage: pick(tgt.Storage, o.storage), Repo: tgt.Repository})
 	if err != nil {
 		return nil, err
@@ -664,8 +675,8 @@ func mirrorQueuePush(ctx context.Context, o *options, tgt *mirrorqueue.Target) (
 		URL:                     tgt.URL,
 		Branches:                tgt.Branches,
 		HTTPAuthorizationHeader: header,
-		SSHKey:                  tgt.SSHKey,
-		KnownHosts:              tgt.KnownHosts,
+		SSHKey:                  sshKey,
+		KnownHosts:              knownHosts,
 		// The default is the safety net: a mirror that has unrelated history
 		// is a person's decision, not a retry's.
 		KeepDivergentRefs: !tgt.Force,

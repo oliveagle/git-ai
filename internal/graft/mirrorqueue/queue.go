@@ -53,9 +53,12 @@ type Target struct {
 	TokenEnv string `json:"token_env,omitempty"`
 	// Username is the HTTP Basic user of the token.
 	Username string `json:"username,omitempty"`
-	// SSHKey is the path of the private key of an SSH mirror.
+	// SSHKey is the path of the private key of an SSH mirror. The queue keeps
+	// the path, never the key: the worker reads the file when the task runs,
+	// so the queue file holds no secret.
 	SSHKey string `json:"ssh_key,omitempty"`
-	// KnownHosts is the path of the host identities that SSH checks.
+	// KnownHosts is the path of the host identities that SSH checks, read in
+	// the same way as SSHKey.
 	KnownHosts string `json:"known_hosts,omitempty"`
 	// AllowInsecureHTTP permits a token to be sent over http://.
 	AllowInsecureHTTP bool `json:"allow_insecure_http,omitempty"`
