@@ -30,6 +30,11 @@ Read the relevant context before starting a task:
   push a commit. Editing the title alone starts no pipeline, and a manually triggered one can still
   be skipped: the merge ref keeps the old title until it is regenerated, which a push guarantees.
 
+- **Every repository in the storage core has a backup origin.** A backup counts
+  only when `deploy/host-scripts/backup-origin-gate.sh` reads the origin back and
+  finds the same commit ids; a push is not a backup. Do not create or keep a
+  repository without an origin — see [doc/graft/BACKUP.md](doc/graft/BACKUP.md).
+
 ## Project notes
 
 - Gitaly is a gRPC server that provides RPC access to Git repositories by running Git close to disk.
