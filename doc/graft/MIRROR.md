@@ -369,6 +369,18 @@ deny_lag = 50   # a mirror 50 commits behind holds the pushes of its repository
 Restart the server, and push once with a mirror that is behind to read the
 warning where the pusher reads a refusal — the stderr of the push.
 
+A mirror is a copy of the repository, so it follows it: a branch the target
+published and that the repository no longer has is deleted from the mirror by
+the next publication. What tells the two apart is the state recorded for the
+target: a branch this server published is removed when it goes, while a branch
+that appeared on the mirror without the repository having it is somebody's
+work and is kept — the boundary below applies to it, and only `--force`
+crosses it.
+
+The branches of a workspace are not published at all. `refs/heads/graft/<agent>/`
+names a change that has not landed, so even a target that publishes `*`
+publishes the branches a person can name, not the drafts of a workspace.
+
 ## Divergence and force
 
 By default, `graft mirror push` keeps a remote branch whose history is not an

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +27,10 @@ const (
 	// maxDivergentRefs is the maximum number of divergent refs to return in UpdateRemoteMirror's
 	// response.
 	maxDivergentRefs = 100
+	// workspaceBranchPrefix is the namespace of the temporary branches of a
+	// workspace. They are the server's bookkeeping of an unlanded change, not
+	// branches of the repository, so a mirror does not publish them.
+	workspaceBranchPrefix = "refs/heads/graft/"
 )
 
 func (s *server) UpdateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMirrorServer) error {
@@ -122,6 +127,31 @@ func (s *server) updateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 	if err != nil {
 		return fmt.Errorf("get local references: %w", err)
 	}
+	// A workspace's temporary branch is the server's bookkeeping of a change
+	// that has not landed, not a branch of the repository. A mirror is the
+	// repository, so it is not published — a "publish every branch" pattern
+	// means every branch a person can name, not the drafts of a workspace.
+	localRefs = slices.DeleteFunc(localRefs, func(ref git.Reference) bool {
+		return strings.HasPrefix(ref.Name.String(), workspaceBranchPrefix)
+	})
+
+	// What this target published last time. A branch this target published,
+	// and that the repository no longer has, left the repository: the mirror
+	// carries what the repository holds, so the publication removes it. It is
+	// not a stranger's work on the mirror — this server put it there — so the
+	// guard that keeps divergent references does not apply to it.
+	var publishedBefore map[string]string
+	if target := firstRequest.GetTarget(); target != "" {
+		if store, key, err := hook.MirrorStore(ctx, s.core, s.localRepoFactory, firstRequest.GetRepository()); err == nil {
+			if syncs, err := store.ListSyncs(ctx, key); err == nil {
+				for _, sync := range syncs {
+					if sync.Target == target {
+						publishedBefore = sync.Branches
+					}
+				}
+			}
+		}
+	}
 
 	defaultBranch, err := repo.HeadReference(ctx)
 	if err != nil {
@@ -213,6 +243,27 @@ func (s *server) updateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 		// The commit in the extra branch in the remote repository has not been merged in to the
 		// local repository's default branch. Keep it to avoid losing work.
 		delete(toDelete, remoteRef)
+	}
+
+	// A branch this target published before, and that the repository no
+	// longer has, goes with the branch: the mirror carries the branches of the
+	// repository, and a person who deleted one did not mean to keep a copy on
+	// every mirror. The ancestry guard above protects work that came from
+	// somewhere else; this is refs this server published itself.
+	local := make(map[git.ReferenceName]struct{}, len(localRefs))
+	for _, localRef := range localRefs {
+		local[localRef.Name] = struct{}{}
+	}
+	for branch := range publishedBefore {
+		remoteRef := git.ReferenceName("refs/heads/" + branch)
+		if _, stillLocal := local[remoteRef]; stillLocal {
+			continue
+		}
+		remoteCommitOID, onRemote := remoteRefs[remoteRef]
+		if !onRemote {
+			continue
+		}
+		toDelete[remoteRef] = remoteCommitOID
 	}
 
 	var refspecs []string

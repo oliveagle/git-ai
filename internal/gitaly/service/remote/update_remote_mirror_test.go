@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	repositorysvc "github.com/feder-cr/git-ai/internal/gitaly/service/repository"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorstate"
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/testhelper"
@@ -48,11 +50,18 @@ func TestUpdateRemoteMirror(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		desc                 string
-		sourceRefs           refs
-		sourceSymRefs        map[string]string
-		mirrorRefs           refs
-		mirrorSymRefs        map[string]string
+		desc          string
+		sourceRefs    refs
+		sourceSymRefs map[string]string
+		mirrorRefs    refs
+		mirrorSymRefs map[string]string
+		// target, when set, names the mirror target the publication is for:
+		// the server records what the target published, and the next
+		// publication removes what left the repository.
+		target string
+		// publishedBranches are branches the recorded state of the target says
+		// the mirror holds, read from the mirror as the test builds it.
+		publishedBranches    []string
 		keepDivergentRefs    bool
 		onlyBranchesMatching []string
 		wrapCommandFactory   func(testing.TB, gitcmd.CommandFactory) gitcmd.CommandFactory
@@ -61,6 +70,40 @@ func TestUpdateRemoteMirror(t *testing.T) {
 		response             *gitalypb.UpdateRemoteMirrorResponse
 		expectedMirrorRefs   map[string]string
 	}{
+		{
+			desc: "a workspace branch is not published, and the one the target published before leaves with it",
+			sourceRefs: refs{
+				string(git.DefaultRef): {"commit 1"},
+			},
+			mirrorRefs: refs{
+				string(git.DefaultRef):              {"commit 1"},
+				"refs/heads/graft/ole/0a1b2c3d4e5f": {"commit 1"},
+			},
+			target:            "workstation",
+			publishedBranches: []string{"refs/heads/graft/ole/0a1b2c3d4e5f"},
+			keepDivergentRefs: true,
+			response:          &gitalypb.UpdateRemoteMirrorResponse{},
+			expectedMirrorRefs: map[string]string{
+				string(git.DefaultRef): "commit 1",
+			},
+		},
+		{
+			desc: "deletes the branch the target published before and the repository no longer has",
+			sourceRefs: refs{
+				string(git.DefaultRef): {"commit 1"},
+			},
+			mirrorRefs: refs{
+				string(git.DefaultRef):   {"commit 1"},
+				"refs/heads/release-1.0": {"commit 1", "commit 2"},
+			},
+			target:            "workstation",
+			publishedBranches: []string{"refs/heads/release-1.0"},
+			keepDivergentRefs: true,
+			response:          &gitalypb.UpdateRemoteMirrorResponse{},
+			expectedMirrorRefs: map[string]string{
+				string(git.DefaultRef): "commit 1",
+			},
+		},
 		{
 			desc: "empty mirror source works",
 			mirrorRefs: refs{
@@ -654,6 +697,24 @@ func TestUpdateRemoteMirror(t *testing.T) {
 				}
 			}
 
+			// The recorded state of the target is what the next publication
+			// reconciles against: a branch it says the mirror holds, and that
+			// the repository no longer has, is stale.
+			if len(tc.publishedBranches) > 0 {
+				published := map[string]string{}
+				for _, name := range tc.publishedBranches {
+					published[strings.TrimPrefix(name, "refs/heads/")] = strings.TrimSpace(string(
+						gittest.Exec(t, cfg, "-C", mirrorRepoPath, "rev-parse", name)))
+				}
+				store := mirrorstate.Open(sourceRepoPath)
+				require.NoError(t, store.RecordSync(ctx, mirrorstate.Key{Path: sourceRepoPath}, mirrorstate.Sync{
+					Target:      tc.target,
+					Status:      mirrorstate.SyncOK,
+					Branches:    published,
+					PublishedAt: time.Now().UTC(),
+				}))
+			}
+
 			client, conn := newRemoteClient(t, addr)
 			defer conn.Close()
 
@@ -666,6 +727,7 @@ func TestUpdateRemoteMirror(t *testing.T) {
 					Url: mirrorRepoPath,
 				},
 				KeepDivergentRefs: tc.keepDivergentRefs,
+				Target:            tc.target,
 			}))
 
 			for _, pattern := range tc.onlyBranchesMatching {
