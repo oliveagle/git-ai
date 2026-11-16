@@ -332,6 +332,12 @@ with no mirror and pushes to them on purpose.
   environment of the worker; `mirror-queue-seed.sh` gains a line per host and a
   token variable, and `graft mirror push` needs no new code for it. Until then
   a repository whose only mirror is GitHub is one host away from having none.
+- **`dot_agents.git` is not on GitHub.** Its history carries a 166 MB file
+  (`cache/llama_cpp_prism/llama-prism.tgz`), and GitHub refuses any push with a
+  file over 100 MB before it even reads the refs, so the target could never
+  publish and was removed from the queue and from the seed table. The
+  repository is mirrored to the workstation, which the policy counts; getting
+  it onto GitHub needs the history rewritten or the file moved to Git LFS.
 - **The object store account is shared** by both lanes (see above).
 - **`graft-cache` logs are not rotated**; they are appended under the lane's
   `logs/`.

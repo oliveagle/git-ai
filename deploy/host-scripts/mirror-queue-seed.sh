@@ -64,6 +64,14 @@ say() { printf '  %s\n' "$*"; }
 #
 # Both are mirrors in the sense of the policy: a place the repository is
 # published to, and a place the policy can see.
+#
+# A line is absent only when the destination cannot take the repository at all.
+# `dot_agents.git` has no `github` line: its history holds a 166 MB file
+# (cache/llama_cpp_prism/llama-prism.tgz) and GitHub refuses any push above
+# 100 MB before it reads the refs, so the target could never publish. The
+# repository is still mirrored — to the workstation — and the policy counts
+# that. Publishing it to GitHub needs the history rewritten or the file moved to
+# LFS first, and then a line here.
 targets() {
   cat <<'TABLE'
 github      laya-workflow.git    5m   main release/* feat/* feature/* merge/* opt/*
@@ -71,7 +79,6 @@ github      ole-utils-ci.git     5m   main release/* feat/* feature/* merge/* op
 github      fastapi_mojo.git     5m   *
 github      ole-eval.git         5m   *
 github      maxllm.git           5m   *
-github      dot_agents.git       5m   *
 github      assistant-demo.git   5m   *
 github      demo.git             5m   *
 github      smoke2.git           5m   *
