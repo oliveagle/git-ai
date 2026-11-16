@@ -93,11 +93,13 @@ The policy is off unless configured. The gate fails closed: a server that sets
 taking every push — the alternative would turn the lock off where it is
 supposed to be.
 
-The warning reaches the pusher: git gives the reference-transaction hook no
-side band, so the hook service settles a `hook.TransactionMessages` per call
-and writes what it holds to the stderr of the response, then answers exit 0. On
-SSH the pusher reads it as `remote:` lines, which is where a refusal is read
-too. It is logged as well, with the lag of every mirror as a field.
+The pusher reads the decision: git gives the reference-transaction hook no
+side band, so the hook service writes both to the stderr of the response — the
+warning as `hook.TransactionMessages`, then exit 0, and a refusal as its own
+reason, then exit 1, which aborts the update. On SSH both reach the client as
+`remote:` lines, so a person reads what to repair where they would read a git
+refusal. Every decision is logged as well, with the lag of every mirror as a
+field.
 
 ## 5. The client
 

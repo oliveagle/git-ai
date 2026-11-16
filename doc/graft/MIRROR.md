@@ -208,6 +208,11 @@ mainline and still takes the branches a person works on.
 The strictest mirror that covers the branch decides: one mirror that is behind
 holds the push back, whatever the others hold.
 
+What a push reads is the sentence of the decision, on its stderr, next to the
+`remote:` lines of the server: the hook exits 1 and git aborts the update, so
+the reason and the command that repairs it are in front of the pusher rather
+than in a log.
+
 ### `graft mirror status`
 
 The command asks the question the hook decides, with the same targets and the
