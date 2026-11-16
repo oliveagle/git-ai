@@ -186,6 +186,14 @@ The policy is off unless configured: a server that sets none of the three keys
 takes every push. `deny_lag` must be greater than `warn_lag`, and a server
 whose configuration refuses that at load time does not start.
 
+A mirror target is any Git remote, and neither the policy nor the queue knows
+or cares who serves it: a GitHub, Gitee or GitLab repository, a Gitea or Codeup
+instance, or a bare repository on a second machine all count, and a target
+whose URL is a `file://` path counts too. What `required` asks is that the
+repository is published somewhere else and that the publication succeeded at
+least once — the copy, not the product. A remote that shares a disk or a
+machine with the server is a copy without the point of one.
+
 The policy decides on the state of the publications, not on the queue of any
 client. The server records, for every target and every branch, the commit the
 mirror holds: `graft mirror push --mirror-target NAME` records it, and so does
