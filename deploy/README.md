@@ -214,8 +214,24 @@ On `oleNas01`: docker (the user is in the `docker` group, there is no sudo),
 A promotion dumps the production database before it installs anything
 (`host-scripts/backup-db.sh`, through the PostgreSQL container), keeps the
 newest ten dumps per release in `~/backups/git-ai/`, and names the dump in
-`reports/promote-<version>-<ts>.json`. That is a per-promotion safety net, not
-a backup schedule: nothing dumps `gitai` between promotions.
+`reports/promote-<version>-<ts>.json`. That is a per-promotion safety net.
+
+The schedule is `host-scripts/pg-dump.sh`: it reads the database the lane's
+`config.toml` names and runs the host's `~/bin/pg_backup.sh` against it — the
+dump, a check that the archive is a readable `pg_dump` TOC, a restore drill
+that compares the row count of every user table on both sides, and a rotation
+of the newest dumps — into `~/backups/pg-gitai/`. It is a read of the lane, so
+it needs no window. The crontab of the host runs it once a day:
+
+```sh
+40 3 * * * /home/oliveagle/opt/git-ai/deploy/host-scripts/pg-dump.sh --lane prod \
+  >> /home/oliveagle/backups/pg-gitai/backup.log 2>&1
+```
+
+What it covers is what the storage core keeps in PostgreSQL: the changeset log,
+the refs, the mirror targets and their publications, and the policies. The
+packs are in the object store and the repositories on disk; those are what
+`backup-origin-gate.sh` reads back.
 
 ## The backup of a repository
 
@@ -295,15 +311,16 @@ with no mirror and pushes to them on purpose.
 
 ## Known gaps
 
-- **Nothing backs up `gitai` on a schedule.** The NAS's daily `pg_backup.sh`
-  dumps the `research` database only; the storage core's changesets, refs and
-  changelog live in `gitai` (and the packs in RustFS), so only a promotion
-  leaves a dump behind.
 - **Only GitHub and the workstation are mirrors today.** A Gitee, GitLab or
   Codeup target needs a token for that host and nobody has put one in the
   environment of the worker; `mirror-queue-seed.sh` gains a line per host and a
   token variable, and `graft mirror push` needs no new code for it. Until then
   a repository whose only mirror is GitHub is one host away from having none.
+- **A target cannot be re-scheduled in place.** `mirror queue add` refuses a
+  name it already holds, so changing the interval of a target means removing
+  and re-adding it, which drops the publication the policy reads until the next
+  run. Until there is an `update`, declare a schedule with which you can live:
+  `deny_lag` must be well above the commits a repository makes per interval.
 - **The object store account is shared** by both lanes (see above).
 - **`graft-cache` logs are not rotated**; they are appended under the lane's
   `logs/`.
