@@ -291,8 +291,17 @@ of `add`.
 
 ```toml
 [graft.mirror]
-required = true
-warn_lag = 10
+required = true    # a repository with no mirror, or no successful publication, takes no push
+warn_lag = 10      # a mirror this far behind warns the pusher
+deny_lag = 50      # and this far behind holds the push back
+```
+
+The production lane runs with all three set. `deny_lag` was turned on after
+every repository of the lane reported `allowed` with a lag of zero and the
+worker had published every mirror on its schedule, which is the order
+`doc/graft/MIRROR.md` asks for; a mirror that reaches 50 commits behind means
+the worker has stopped rather than that the pusher is behind, and the refusal
+says which command repairs it.
 ```
 
 The worker is one cron line, every five minutes: `host-scripts/
