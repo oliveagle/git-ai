@@ -147,6 +147,52 @@ func TestMirrorQueueHoldsNoSecret(t *testing.T) {
 	require.Contains(t, string(data), "GITEE_TOKEN")
 }
 
+// TestMirrorQueueFailsWithTheNameOfTheToken checks that a task whose token is
+// not in the environment of the worker says which variable is missing, and
+// not the error of the host.
+func TestMirrorQueueFailsWithTheNameOfTheToken(t *testing.T) {
+	env := startServer(t)
+	queue := mirrorQueueFile(t)
+	t.Setenv("GITEE_TOKEN", "s3cret-token-value")
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", "https://gitee.com/group/shop.git", "--branch", "main",
+		"--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	// The worker runs on a machine that has no token for the mirror.
+	require.NoError(t, os.Unsetenv("GITEE_TOKEN"))
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitError, code)
+	require.Contains(t, stdout, "failed to publish")
+	require.Contains(t, stdout, "GITEE_TOKEN is not set in the environment")
+	require.Contains(t, stderr, "mirror tasks did not publish")
+}
+
+// TestMirrorQueueKeepsATargetWithoutAScheduleOutOfTheSchedule checks that a
+// target with no interval is only published when a person names it.
+func TestMirrorQueueKeepsATargetWithoutAScheduleOutOfTheSchedule(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "0", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "every manual")
+
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "no mirror target is due")
+
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--target", "gitee", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "published "+env.relPath)
+}
+
 // TestMirrorQueueManagesItsTargets checks the management of the queue: the
 // targets are listed, disabled, enabled and removed.
 func TestMirrorQueueManagesItsTargets(t *testing.T) {

@@ -137,7 +137,7 @@ func mirrorCommand() command {
 			fs.StringVar(&f.knownHosts, "known-hosts", "", "host identities for strict SSH host-key checking")
 			fs.BoolVar(&f.force, "force", false, "overwrite a divergent remote branch with the Graft branch")
 			fs.BoolVar(&f.allowInsecureHTTP, "allow-insecure-http", false, "allow an http:// URL with a token")
-			fs.DurationVar(&q.interval, "interval", 0, "how often a target of the queue is published, such as 5m (0 with --manual: only when a person asks for it)")
+			fs.DurationVar(&q.interval, "interval", -1, "how often a target of the queue is published, such as 5m (default 5m; 0: only when a person asks for it)")
 			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
 			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
 			fs.IntVar(&q.concurrency, "concurrency", defaultQueueConcurrency, "how many tasks of the queue run at the same time")
@@ -332,6 +332,13 @@ func mirrorAuthorization(a mirrorAuth) (string, error) {
 		return "", nil
 	}
 	tokenEnv, token := mirrorToken(a)
+	if tokenEnv != "" && token == "" {
+		// The host of the URL has a convention for its token, or the caller
+		// named one. A mirror that needs a credential and does not get one
+		// would fail later, with the error of the host in the way. The name
+		// of the variable is what the operator needs.
+		return "", fmt.Errorf("%s: %s is not set in the environment", a.usage, tokenEnv)
+	}
 	if token == "" {
 		return "", nil
 	}

@@ -195,10 +195,12 @@ func mirrorQueueAdd(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		return usagef("mirror queue add takes either --token-env or --ssh-key, not both")
 	}
 	interval := q.interval
-	if interval < 0 {
-		return usagef("mirror queue add refuses a negative --interval")
-	}
-	if interval == 0 && !q.manual {
+	switch {
+	case q.manual && interval >= 0:
+		return usagef("mirror queue add takes either --interval or --manual, not both")
+	case q.manual:
+		interval = 0
+	case interval < 0:
 		interval = defaultQueueInterval
 	}
 	credential := mirrorAuth{
