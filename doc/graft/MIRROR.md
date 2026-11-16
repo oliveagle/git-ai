@@ -135,6 +135,7 @@ The commands of the queue:
 |---|---|
 | `graft mirror queue add NAME` | puts a target into the queue |
 | `graft mirror queue list` | lists the targets and their last outcome |
+| `graft mirror queue update NAME` | restates a target the queue holds: the same flags as `add`, applied where the target is, keeping its history |
 | `graft mirror queue show NAME` | shows one target |
 | `graft mirror queue enable NAME` | lets the worker publish the target again |
 | `graft mirror queue disable NAME` | leaves the target alone, keeping its history |
@@ -144,6 +145,21 @@ The commands of the queue:
 | `graft mirror queue worker` | publishes the targets that are due, over and over |
 | `graft mirror task list` | lists the tasks, newest first |
 | `graft mirror task show ID` | shows one task |
+
+The declaration of a target changes: a schedule that is too slow for the lag
+the policy allows, a branch a release added, a URL that moved. `queue update`
+takes the same flags as `add` and applies them where the target is, so the
+target keeps the outcome of its last publication — the mirror policy reads that
+outcome, and adding the same mirror under a new name would make the repository
+look unpublished until the next run. The flags that are left out are the
+defaults of a new target, not the values the target had, so an update restates
+the declaration rather than editing one field of it.
+
+The interval is a policy input, not only a convenience: `warn_lag` counts
+commits, and a mirror published once an hour is an hour behind whatever the
+repository accepted meanwhile. Publish a mirror often enough that ordinary work
+does not reach the lag the policy warns about, or the warning — and from
+`deny_lag`, the refusal — becomes the normal answer to a push.
 
 `queue run` is the run of a cron job: the queue decides what is due, and the
 cron job decides how often the queue is looked at. `queue worker` is the

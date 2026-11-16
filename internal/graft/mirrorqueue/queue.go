@@ -205,6 +205,30 @@ func (q *Queue) AddTarget(t *Target) error {
 	return nil
 }
 
+// UpdateTarget replaces the declaration of a target the queue holds, and
+// returns the target as it is stored: the history of the target — when it was
+// added, and what its last task did — is kept, because a new schedule is not a
+// new mirror, and the policy of the server reads that history.
+func (q *Queue) UpdateTarget(t *Target) (*Target, error) {
+	if err := t.Validate(); err != nil {
+		return nil, err
+	}
+	for i, target := range q.Targets {
+		if target.Name != t.Name {
+			continue
+		}
+		t.CreatedAt = target.CreatedAt
+		t.Enabled = target.Enabled
+		t.LastTask = target.LastTask
+		t.LastStatus = target.LastStatus
+		t.LastError = target.LastError
+		t.UpdatedAt = time.Now()
+		q.Targets[i] = t
+		return t, nil
+	}
+	return nil, fmt.Errorf("the mirror queue has no target named %q", t.Name)
+}
+
 // RemoveTarget takes a target out of the queue. The tasks of the target stay
 // in the history: they record what the queue did.
 func (q *Queue) RemoveTarget(name string) error {

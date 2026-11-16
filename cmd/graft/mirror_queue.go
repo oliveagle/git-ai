@@ -22,7 +22,7 @@ import (
 )
 
 // mirrorQueueSynopsis is the command line of graft mirror queue.
-const mirrorQueueSynopsis = "usage: graft mirror queue <add|remove|register|list|show|enable|disable|run|worker> [flags]"
+const mirrorQueueSynopsis = "usage: graft mirror queue <add|update|remove|register|list|show|enable|disable|run|worker> [flags]"
 
 // mirrorQueueUsage lists the subcommands of graft mirror queue.
 const mirrorQueueUsage = "mirror queue requires a subcommand: " + mirrorQueueSynopsis
@@ -161,6 +161,8 @@ func cmdMirrorQueue(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 	switch args[0] {
 	case "add":
 		return mirrorQueueAdd(ctx, out, o, f, q, args[1:])
+	case "update":
+		return mirrorQueueUpdate(ctx, out, o, f, q, args[1:])
 	case "remove":
 		return mirrorQueueRemove(ctx, out, o, f, q, args[1:])
 	case "register":
@@ -187,70 +189,14 @@ func mirrorQueueAdd(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 	if len(args) != 1 {
 		return usagef("mirror queue add takes the name of the target")
 	}
-	if f.repo == "" {
-		return usagef("mirror queue add requires --repo REPO")
-	}
-	if f.url == "" {
-		return usagef("mirror queue add requires --url URL")
-	}
-	if len(f.branches) == 0 {
-		return usagef("mirror queue add requires --branch PATTERN: name the branches the mirror may publish")
-	}
-	if f.sshKey != "" && f.tokenEnv != "" {
-		return usagef("mirror queue add takes either --token-env or --ssh-key, not both")
-	}
-	interval := q.interval
-	switch {
-	case q.manual && interval >= 0:
-		return usagef("mirror queue add takes either --interval or --manual, not both")
-	case q.manual:
-		interval = 0
-	case interval < 0:
-		interval = defaultQueueInterval
-	}
-	credential := mirrorAuth{
-		usage:    "mirror queue add",
-		url:      f.url,
-		tokenEnv: f.tokenEnv,
-		username: f.username,
-		sshKey:   f.sshKey,
-	}
-	// The queue names the variable that carries the token, so that an
-	// operator reads the queue and knows what to put in the environment of
-	// the worker. The value of the variable is never stored.
-	tokenEnv := credential.tokenEnv
-	if tokenEnv == "" {
-		tokenEnv = mirrorDefaults(f.url).tokenEnv
-	}
-	// The token is not stored, so the check that refuses a token in cleartext
-	// is made here and again when the task runs.
-	if name, token := mirrorToken(credential); token != "" && strings.HasPrefix(f.url, "http://") && !f.allowInsecureHTTP {
-		return usagef("mirror queue add refuses to send %s over http://%s: use HTTPS, or pass --allow-insecure-http", name, strings.TrimPrefix(f.url, "http://"))
+	target, err := mirrorQueueDeclare(o, f, q, "mirror queue add", args[0])
+	if err != nil {
+		return err
 	}
 	now := time.Now()
-	target := &mirrorqueue.Target{
-		Name:              args[0],
-		Repository:        f.repo,
-		Address:           o.address,
-		Storage:           o.storage,
-		URL:               f.url,
-		Branches:          append([]string(nil), f.branches...),
-		TokenEnv:          tokenEnv,
-		Username:          f.username,
-		SSHKey:            f.sshKey,
-		KnownHosts:        f.knownHosts,
-		AllowInsecureHTTP: f.allowInsecureHTTP,
-		Force:             f.force,
-		Interval:          interval,
-		Enabled:           true,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}
-	// A target that was added is due right away, so that the queue publishes
-	// it without waiting for the next tick of the worker.
-	if target.Interval > 0 {
-		target.NextRun = now
-	}
+	target.Enabled = true
+	target.CreatedAt = now
+	target.UpdatedAt = now
 
 	store, err := mirrorQueueStore(q)
 	if err != nil {
@@ -278,6 +224,124 @@ func mirrorQueueAdd(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		target.Name, target.Repository, mirrorDisplayURL(target.URL),
 		strings.Join(target.Branches, ", "), mirrorQueueInterval(target.Interval))
 	return nil
+}
+
+// mirrorQueueUpdate restates the declaration of a target the queue holds: a
+// schedule, a URL or a set of branches that changed is a declaration that
+// changed, and the history of the target — when it was added, what its last
+// task did — is what makes the queue a record rather than a guess. It takes
+// the same flags as add, so the flags that are left out are the defaults of a
+// new target, not the values the target had.
+func mirrorQueueUpdate(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
+	if len(args) != 1 {
+		return usagef("mirror queue update takes the name of the target")
+	}
+	target, err := mirrorQueueDeclare(o, f, q, "mirror queue update", args[0])
+	if err != nil {
+		return err
+	}
+
+	store, err := mirrorQueueStore(q)
+	if err != nil {
+		return err
+	}
+	var kept *mirrorqueue.Target
+	if err := store.Update(func(queue *mirrorqueue.Queue) error {
+		var err error
+		kept, err = queue.UpdateTarget(target)
+		return err
+	}); err != nil {
+		return err
+	}
+	// The server decides on the branches and the URL it holds for the target,
+	// so a target that is published under new ones is registered again.
+	if err := mirrorQueueRegisterTargets(ctx, o, kept); err != nil {
+		return err
+	}
+	if o.jsonOut {
+		return mirrorQueueWriteJSON(out, mirrorQueueTargetJSON(kept))
+	}
+	fmt.Fprintf(out, "updated the mirror target %s: %s -> %s (branches: %s, every %s, %s)\n",
+		kept.Name, kept.Repository, mirrorDisplayURL(kept.URL),
+		strings.Join(kept.Branches, ", "), mirrorQueueInterval(kept.Interval),
+		mirrorQueueEnabled(kept.Enabled))
+	return nil
+}
+
+// mirrorQueueEnabled says whether the target is published on its schedule.
+func mirrorQueueEnabled(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+// mirrorQueueDeclare builds the declaration of a target from the flags of add
+// and update. usage names the command in a refusal, so that the operator
+// reads which one refused.
+func mirrorQueueDeclare(o *options, f *mirrorFlags, q *mirrorQueueFlags, usage, name string) (*mirrorqueue.Target, error) {
+	if f.repo == "" {
+		return nil, usagef("%s requires --repo REPO", usage)
+	}
+	if f.url == "" {
+		return nil, usagef("%s requires --url URL", usage)
+	}
+	if len(f.branches) == 0 {
+		return nil, usagef("%s requires --branch PATTERN: name the branches the mirror may publish", usage)
+	}
+	if f.sshKey != "" && f.tokenEnv != "" {
+		return nil, usagef("%s takes either --token-env or --ssh-key, not both", usage)
+	}
+	interval := q.interval
+	switch {
+	case q.manual && interval >= 0:
+		return nil, usagef("%s takes either --interval or --manual, not both", usage)
+	case q.manual:
+		interval = 0
+	case interval < 0:
+		interval = defaultQueueInterval
+	}
+	credential := mirrorAuth{
+		usage:    usage,
+		url:      f.url,
+		tokenEnv: f.tokenEnv,
+		username: f.username,
+		sshKey:   f.sshKey,
+	}
+	// The queue names the variable that carries the token, so that an
+	// operator reads the queue and knows what to put in the environment of
+	// the worker. The value of the variable is never stored.
+	tokenEnv := credential.tokenEnv
+	if tokenEnv == "" {
+		tokenEnv = mirrorDefaults(f.url).tokenEnv
+	}
+	// The token is not stored, so the check that refuses a token in cleartext
+	// is made here and again when the task runs.
+	if name, token := mirrorToken(credential); token != "" && strings.HasPrefix(f.url, "http://") && !f.allowInsecureHTTP {
+		return nil, usagef("%s refuses to send %s over http://%s: use HTTPS, or pass --allow-insecure-http", usage, name, strings.TrimPrefix(f.url, "http://"))
+	}
+
+	target := &mirrorqueue.Target{
+		Name:              name,
+		Repository:        f.repo,
+		Address:           o.address,
+		Storage:           o.storage,
+		URL:               f.url,
+		Branches:          append([]string(nil), f.branches...),
+		TokenEnv:          tokenEnv,
+		Username:          f.username,
+		SSHKey:            f.sshKey,
+		KnownHosts:        f.knownHosts,
+		AllowInsecureHTTP: f.allowInsecureHTTP,
+		Force:             f.force,
+		Interval:          interval,
+	}
+	// A target with a schedule is due right away, so that the queue publishes
+	// it without waiting for the next tick of the worker.
+	if target.Interval > 0 {
+		target.NextRun = time.Now()
+	}
+	return target, nil
 }
 
 // mirrorQueueRemove takes a target out of the queue.

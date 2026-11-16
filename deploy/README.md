@@ -280,6 +280,12 @@ what its targets last published (`doc/graft/MIRROR.md`). A repository whose
 mirror was never declared therefore counts as having none, which the policy of
 the production lane refuses:
 
+The table is the declaration, and re-running the script applies it: a target the
+queue already holds is restated — URL, branches, interval — while the outcome of
+its last publication stays, because that outcome is what the policy reads.
+`graft mirror queue update NAME` is the same restatement by hand, with the flags
+of `add`.
+
 ```toml
 [graft.mirror]
 required = true
@@ -323,11 +329,6 @@ with no mirror and pushes to them on purpose.
   environment of the worker; `mirror-queue-seed.sh` gains a line per host and a
   token variable, and `graft mirror push` needs no new code for it. Until then
   a repository whose only mirror is GitHub is one host away from having none.
-- **A target cannot be re-scheduled in place.** `mirror queue add` refuses a
-  name it already holds, so changing the interval of a target means removing
-  and re-adding it, which drops the publication the policy reads until the next
-  run. Until there is an `update`, declare a schedule with which you can live:
-  `deny_lag` must be well above the commits a repository makes per interval.
 - **The object store account is shared** by both lanes (see above).
 - **`graft-cache` logs are not rotated**; they are appended under the lane's
   `logs/`.

@@ -314,3 +314,54 @@ func TestMirrorQueueNamesTheFileOfAnEmptyQueue(t *testing.T) {
 	require.Contains(t, stdout, queue)
 	require.Contains(t, stdout, "GRAFT_MIRROR_QUEUE")
 }
+
+// TestMirrorQueueUpdatesATargetInPlace checks that a declaration which changed
+// is restated where the target already is: the schedule and the branches the
+// queue and the server hold change, and what the last publication did stays.
+func TestMirrorQueueUpdatesATargetInPlace(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+	common := []string{"--queue-file", queue, "-address", env.addr, "-storage", env.storage}
+
+	code, _, stderr := runCLI(t, append([]string{
+		"mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main", "--interval", "1h",
+	}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, _, stderr = runCLI(t, append([]string{"mirror", "queue", "run", "--target", "gitee"}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := runCLI(t, append([]string{
+		"mirror", "queue", "update", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main", "--branch", "release/*",
+		"--interval", "5m0s",
+	}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "updated the mirror target gitee")
+	require.Contains(t, stdout, "every 5m0s")
+	require.Contains(t, stdout, "enabled")
+
+	// The queue holds one target, with the new declaration and the outcome of
+	// the publication it already had.
+	code, stdout, stderr = runCLI(t, append([]string{"mirror", "queue", "show", "gitee", "--json"}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+	var target mirrorQueueTarget
+	require.NoError(t, json.Unmarshal([]byte(stdout), &target))
+	require.Equal(t, "5m0s", target.Interval)
+	require.Equal(t, []string{"main", "release/*"}, target.Branches)
+	require.Equal(t, "ok", target.LastStatus)
+	require.NotEmpty(t, target.LastTask)
+
+	// The server decides the policy on the branches it holds for the target,
+	// so the new pattern reaches it too.
+	code, stdout, stderr = runCLI(t, append([]string{
+		"mirror", "status", "--repo", env.relPath, "--branch", "release/1.0",
+		"--json",
+	}, "-address", env.addr, "-storage", env.storage)...)
+	require.Equal(t, exitOK, code, stderr)
+	require.NotContains(t, stderr, "error")
+	require.NotContains(t, stdout, "not published to any mirror target")
+}

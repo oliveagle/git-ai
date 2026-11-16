@@ -143,3 +143,45 @@ func TestValidateRefusesAQueueOfAnUnknownVersion(t *testing.T) {
 	q.Version = 99
 	require.ErrorContains(t, q.Validate(), "version 99")
 }
+
+// TestUpdateTargetKeepsTheHistory checks that restating a target — a new
+// schedule, a new URL, other branches — is not the target being added again:
+// what the queue recorded about it, and whether a person disabled it, stays.
+func TestUpdateTargetKeepsTheHistory(t *testing.T) {
+	q := New()
+	added := newTarget("gitee")
+	added.CreatedAt = time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	added.Interval = time.Hour
+	added.LastTask = "task-1"
+	added.LastStatus = TaskOK
+	require.NoError(t, q.AddTarget(added))
+
+	restated := newTarget("gitee")
+	restated.URL = "https://gitee.com/group/shop-mirror.git"
+	restated.Branches = []string{"main", "release/*"}
+	restated.Interval = 5 * time.Minute
+	restated.Enabled = false
+	stored, err := q.UpdateTarget(restated)
+	require.NoError(t, err)
+
+	require.Equal(t, "https://gitee.com/group/shop-mirror.git", stored.URL)
+	require.Equal(t, []string{"main", "release/*"}, stored.Branches)
+	require.Equal(t, 5*time.Minute, stored.Interval)
+	require.True(t, stored.Enabled, "a restatement of the schedule is not a target that a person enabled")
+	require.Equal(t, added.CreatedAt, stored.CreatedAt)
+	require.Equal(t, "task-1", stored.LastTask)
+	require.Equal(t, TaskOK, stored.LastStatus)
+	require.False(t, stored.UpdatedAt.IsZero())
+
+	require.Len(t, q.Targets, 1, "an update replaces the target instead of adding one")
+}
+
+// TestUpdateTargetRefusesATargetTheQueueDoesNotHold checks that an update
+// cannot create a target: that is what add is for, and a typo in a name must
+// not declare a mirror.
+func TestUpdateTargetRefusesATargetTheQueueDoesNotHold(t *testing.T) {
+	q := New()
+	_, err := q.UpdateTarget(newTarget("gitee"))
+	require.ErrorContains(t, err, "no target named")
+	require.Empty(t, q.Targets)
+}
