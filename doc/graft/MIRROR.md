@@ -267,6 +267,52 @@ repository the policy holds, so an agent that reads a refusal reports it with
 the reason, which names the target and the command. `graft mirror status` is
 the read of the same state, and it needs the shared token as well.
 
+### Turning the policy on for a server
+
+The order matters: the policy is a lock, and a lock that is turned on before
+the mirrors exist stops the work it is meant to protect. On a server, in four
+steps:
+
+```shell
+# 1. The server runs the mirror policy as a warning first (config.toml).
+#    [graft.mirror]
+#    required = true
+#    warn_lag = 10
+
+# 2. For every repository, declare its mirror and publish it once. The
+#    command registers the target with the server as it adds it.
+graft mirror queue add codeup --repo shop.git \
+  --url https://codeup.aliyun.com/group/shop.git --branch 'main' --branch 'release/*' \
+  --interval 5m
+graft mirror queue run --target codeup
+
+# 3. Read the answer the push will get, before a person meets it.
+graft mirror status --repo shop.git --branch main
+#   It prints the code of the decision (allowed, mirror_lagging, ...) and
+#   exits 1 when a push would be refused.
+
+# 4. Keep the worker running, or the mirrors fall behind and — from deny_lag —
+#    the pushes stop. A systemd timer runs `graft mirror queue run` on the
+#    schedule of the targets; `graft mirror queue worker` is the same thing as
+#    a process.
+```
+
+A repository that reports `no_mirror_target` is not ready for `required = true`,
+and one that reports `mirror_never_synced` is not ready for `deny_lag`. Repair
+those first; the status names the command.
+
+Once every repository in scope is `allowed`, the second step of the policy:
+
+```toml
+[graft.mirror]
+required = true
+warn_lag = 10
+deny_lag = 50   # a mirror 50 commits behind holds the pushes of its repository
+```
+
+Restart the server, and push once with a mirror that is behind to read the
+warning where the pusher reads a refusal — the stderr of the push.
+
 ## Divergence and force
 
 By default, `graft mirror push` keeps a remote branch whose history is not an
