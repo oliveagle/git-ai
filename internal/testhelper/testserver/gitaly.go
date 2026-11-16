@@ -406,6 +406,10 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 	hookManagerOpts = append(hookManagerOpts,
 		hook.WithBranchPolicy(branchPolicy),
 		hook.WithBranchGate(hook.NewBranchGateSource(gsd.graftStorage,
+			localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))),
+		// The mirror policy decides every push against the mirrors of the
+		// repository, as in serve.go (doc/graft/MIRROR.md).
+		hook.WithMirrorGate(hook.NewMirrorGateSource(gsd.graftStorage,
 			localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))))
 	if gsd.graftStorage.Enabled() {
 		if gsd.catfileCache == nil {

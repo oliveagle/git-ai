@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/feder-cr/git-ai/internal/git/updateref"
 	"github.com/feder-cr/git-ai/internal/gitaly/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
@@ -64,6 +67,24 @@ func (s *server) ReferenceTransactionHook(stream gitalypb.HookService_ReferenceT
 		if errors.As(err, &nameConflict) {
 			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
 				Stderr: []byte(hook.RefNameConflictMessage(nameConflict) + "\n"),
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				ExitStatus: &gitalypb.ExitStatus{Value: 1},
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			return nil
+		}
+
+		// A policy refusal is the pusher's to read, and git gives this hook no
+		// side band: the reason goes to stderr and the hook exits 1, which aborts
+		// the update. A failure stays a gRPC error, so that a client cannot read
+		// it as a decision.
+		if status.Code(err) == codes.PermissionDenied {
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				Stderr: []byte(err.Error() + "\n"),
 			}); err != nil {
 				return structerr.NewInternal("sending response: %w", err)
 			}

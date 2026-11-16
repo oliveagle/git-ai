@@ -163,7 +163,7 @@ func Decide(in Input) Decision {
 			return Decision{
 				Code: CodeNeverSynced,
 				Reason: fmt.Sprintf(
-					"no mirror of the repository %s ever published successfully: publish one with \"graft mirror queue run\" (or \"graft mirror push --target <name> ...\") and push again",
+					"no mirror of the repository %s ever published successfully: publish one with \"graft mirror queue run\" (or \"graft mirror push --mirror-target NAME ...\") and push again",
 					in.Repository),
 			}
 		}
