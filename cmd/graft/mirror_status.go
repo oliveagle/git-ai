@@ -94,11 +94,16 @@ func cmdMirrorStatus(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 		return err
 	}
 
-	targets, policy, err := repo.ListMirrorTargets(ctx, branch)
+	targets, policy, measured, err := repo.ListMirrorTargets(ctx, branch)
 	if err != nil {
 		return err
 	}
 
+	if branch == "" {
+		// The server measured the default branch of the repository, and its
+		// name is what the sentence of the decision names.
+		branch = measured
+	}
 	// The decision is the one the hook makes: the same targets, the same
 	// policy, and the lag the server measured.
 	decided := make([]mirrorgate.Target, 0, len(targets))

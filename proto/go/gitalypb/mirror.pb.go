@@ -506,7 +506,11 @@ type ListMirrorTargetsResponse struct {
 	// targets are the mirror targets of the repository, by name.
 	Targets []*MirrorTarget `protobuf:"bytes,1,rep,name=targets,proto3" json:"targets,omitempty"`
 	// policy is the mirror policy the server enforces.
-	Policy        *MirrorPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	Policy *MirrorPolicy `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	// branch is the branch the lag was measured for, without the refs/heads/
+	// prefix: the one the request named, or the default branch of the
+	// repository.
+	Branch        string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -555,6 +559,13 @@ func (x *ListMirrorTargetsResponse) GetPolicy() *MirrorPolicy {
 	return nil
 }
 
+func (x *ListMirrorTargetsResponse) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
 var File_mirror_proto protoreflect.FileDescriptor
 
 const file_mirror_proto_rawDesc = "" +
@@ -600,10 +611,11 @@ const file_mirror_proto_rawDesc = "" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
 	"repository\x12\x16\n" +
-	"\x06branch\x18\x02 \x01(\tR\x06branch\"y\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\"\x91\x01\n" +
 	"\x19ListMirrorTargetsResponse\x12.\n" +
 	"\atargets\x18\x01 \x03(\v2\x14.gitaly.MirrorTargetR\atargets\x12,\n" +
-	"\x06policy\x18\x02 \x01(\v2\x14.gitaly.MirrorPolicyR\x06policy2\xbb\x02\n" +
+	"\x06policy\x18\x02 \x01(\v2\x14.gitaly.MirrorPolicyR\x06policy\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch2\xbb\x02\n" +
 	"\rMirrorService\x12c\n" +
 	"\x0eRegisterTarget\x12#.gitaly.RegisterMirrorTargetRequest\x1a$.gitaly.RegisterMirrorTargetResponse\"\x06\xfa\x97(\x02\b\x01\x12i\n" +
 	"\x10UnregisterTarget\x12%.gitaly.UnregisterMirrorTargetRequest\x1a&.gitaly.UnregisterMirrorTargetResponse\"\x06\xfa\x97(\x02\b\x01\x12Z\n" +

@@ -117,13 +117,15 @@ func (r *Repo) UnregisterMirrorTarget(ctx context.Context, name string) error {
 // ListMirrorTargets lists the mirror targets of the repository and the state
 // of their last publication. branch is the branch the lag is measured for,
 // without the refs/heads/ prefix; empty measures it for the default branch.
-func (r *Repo) ListMirrorTargets(ctx context.Context, branch string) ([]MirrorTarget, MirrorPolicy, error) {
+// It also returns the branch the server measured, which is the branch an empty
+// request means.
+func (r *Repo) ListMirrorTargets(ctx context.Context, branch string) ([]MirrorTarget, MirrorPolicy, string, error) {
 	resp, err := gitalypb.NewMirrorServiceClient(r.client.conn).ListTargets(ctx, &gitalypb.ListMirrorTargetsRequest{
 		Repository: r.repository(),
 		Branch:     branch,
 	})
 	if err != nil {
-		return nil, MirrorPolicy{}, err
+		return nil, MirrorPolicy{}, "", err
 	}
 
 	targets := make([]MirrorTarget, 0, len(resp.GetTargets()))
@@ -136,7 +138,7 @@ func (r *Repo) ListMirrorTargets(ctx context.Context, branch string) ([]MirrorTa
 		WarnLag:  int(resp.GetPolicy().GetWarnLag()),
 		DenyLag:  int(resp.GetPolicy().GetDenyLag()),
 	}
-	return targets, policy, nil
+	return targets, policy, resp.GetBranch(), nil
 }
 
 // mirrorTargetOf returns the target as the SDK carries it.

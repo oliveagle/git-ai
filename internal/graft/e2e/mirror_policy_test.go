@@ -170,7 +170,7 @@ func TestMirrorPolicyHoldsOnPush(t *testing.T) {
 	require.Contains(t, out, "graft mirror queue run")
 
 	// The decision the command reports is the one the push took.
-	targets, policy, err := repo.ListMirrorTargets(s.ctx, branch)
+	targets, policy, _, err := repo.ListMirrorTargets(s.ctx, branch)
 	require.NoError(t, err)
 	require.True(t, policy.Required)
 	require.Equal(t, 10, policy.WarnLag)

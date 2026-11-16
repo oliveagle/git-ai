@@ -437,7 +437,7 @@ func mirrorDisplayURL(raw string) string {
 // the server, unless it is registered already: the queue that declares a
 // target is what changes it.
 func mirrorRegisterOneOffTarget(ctx context.Context, repo *sdk.Repo, f *mirrorFlags) error {
-	targets, _, err := repo.ListMirrorTargets(ctx, "")
+	targets, _, _, err := repo.ListMirrorTargets(ctx, "")
 	if err != nil {
 		return err
 	}

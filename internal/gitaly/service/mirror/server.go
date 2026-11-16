@@ -109,6 +109,7 @@ func (s *server) ListTargets(ctx context.Context, req *gitalypb.ListMirrorTarget
 	policy := s.deps.GetCfg().Graft.Mirror.Policy()
 	resp := &gitalypb.ListMirrorTargetsResponse{
 		Targets: make([]*gitalypb.MirrorTarget, 0, len(state.Targets)),
+		Branch:  branch,
 		Policy: &gitalypb.MirrorPolicy{
 			Required: policy.Required,
 			WarnLag:  int32(policy.WarnLag),

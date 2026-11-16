@@ -41,6 +41,7 @@ func (f *fakeMirrors) UnregisterTarget(ctx context.Context, req *gitalypb.Unregi
 func (f *fakeMirrors) ListTargets(ctx context.Context, req *gitalypb.ListMirrorTargetsRequest) (*gitalypb.ListMirrorTargetsResponse, error) {
 	f.listed = append(f.listed, req)
 	return &gitalypb.ListMirrorTargetsResponse{
+		Branch: req.GetBranch(),
 		Policy: &gitalypb.MirrorPolicy{Required: true, WarnLag: 10, DenyLag: 20},
 		Targets: []*gitalypb.MirrorTarget{{
 			Name:        "codeup",
@@ -143,11 +144,12 @@ func TestListMirrorTargetsReadsTheStateAndThePolicy(t *testing.T) {
 		gitalypb.RegisterMirrorServiceServer(srv, fake)
 	})
 
-	targets, policy, err := client.Repo("shop.git").ListMirrorTargets(t.Context(), "main")
+	targets, policy, measured, err := client.Repo("shop.git").ListMirrorTargets(t.Context(), "main")
 	require.NoError(t, err)
 
 	require.Len(t, fake.listed, 1)
 	require.Equal(t, "main", fake.listed[0].GetBranch())
+	require.Equal(t, "main", measured)
 
 	require.True(t, policy.Required)
 	require.Equal(t, 10, policy.WarnLag)

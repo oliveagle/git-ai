@@ -134,4 +134,8 @@ message ListMirrorTargetsResponse {
   repeated MirrorTarget targets = 1;
   // policy is the mirror policy the server enforces.
   MirrorPolicy policy = 2;
+  // branch is the branch the lag was measured for, without the refs/heads/
+  // prefix: the one the request named, or the default branch of the
+  // repository.
+  string branch = 3;
 }

@@ -110,7 +110,13 @@ func TestMirrorStatusGuidesTheRepair(t *testing.T) {
 	require.Equal(t, exitError, code, stderr)
 	require.False(t, status.Allowed)
 	require.Equal(t, mirrorgate.CodeLagging, status.Code)
-	require.Contains(t, status.Reason, "20 commits hold a push back")
+
+	// Without --branch the command measures the default branch, and the
+	// sentence it prints names it instead of leaving the word empty.
+	code, status, stderr = mirrorStatusOf(t, env, "")
+	require.Equal(t, exitError, code, stderr)
+	require.Equal(t, "main", status.Branch)
+	require.Contains(t, status.Reason, "the branch main")
 
 	// The branch the push writes is the branch the lag is measured for: the
 	// mainline is behind, a topic branch no target publishes is not.
