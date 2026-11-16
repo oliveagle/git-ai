@@ -79,13 +79,20 @@ refused, both when the target is added and when the task runs, because the
 environment of the worker is not the environment of the operator who added
 the target.
 
+A host with a convention names the variable that carries its token, and a
+mirror whose variable is not set fails with the name of that variable, in the
+push and in the task alike. The error of the host would hide what the
+operator has to put in the environment of the worker. A host without a
+convention needs no credential at all, and its mirror is published without
+one.
+
 ## 5. The schedule
 
 A target carries an interval. A target with an interval is published again
-when the interval has passed since its last run, and a target without one is
-only published when a person names it. The queue run publishes the targets
-that are due and exits; the worker publishes them, waits a tick and looks
-again.
+when the interval has passed since its last run, and a target without one
+(`--interval 0`, or `--manual`) is only published when a person names it. The
+queue run publishes the targets that are due and exits; the worker publishes
+them, waits a tick and looks again.
 
 A target that was added is due right away, so that the queue publishes it
 without waiting for the next tick. A run that failed is not a lost run: the

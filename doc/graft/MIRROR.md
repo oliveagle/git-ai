@@ -49,9 +49,11 @@ GITLAB_TOKEN="$GITLAB_ACCESS_TOKEN" graft mirror push --repo shop.git \
 | `gitlab.com` | `GITLAB_TOKEN` | `oauth2` |
 | anything else | none | `oauth2` |
 
-A public mirror needs no credential at all. `--ssh-key` (usually with
-`--known-hosts`) is the SSH alternative for any host. A token over `http://` is
-refused unless `--allow-insecure-http` is explicit.
+A mirror of a host without a convention needs no credential at all. A
+well-known host names the variable that carries its token, and a push whose
+variable is not set fails with the name of that variable. `--ssh-key` (usually
+with `--known-hosts`) is the SSH alternative for any host. A token over
+`http://` is refused unless `--allow-insecure-http` is explicit.
 
 The server makes the Git connection and holds the credential for the length of
 the call. The CLI needs the shared (operator) token, and the remote token is
@@ -114,9 +116,10 @@ configuration directory of the user, and `--queue-file` names another one. It
 holds no secret: a target names the environment variable that carries its
 token — `GITHUB_TOKEN` for a GitHub mirror, `GITEE_TOKEN` for a Gitee mirror,
 by the convention of the host — and the value of that variable is read when
-the task runs. A queue on a machine without a token in its environment
-publishes to a public mirror, and a queue whose token is missing fails with
-the name of the variable, not with a secret.
+the task runs. A target of a host without a convention needs no credential at
+all and publishes to a public mirror. A target whose variable is not set
+fails with the name of the variable, not with a secret, so the task of the
+history says what the operator has to put in the environment of the worker.
 
 The commands of the queue:
 
@@ -140,10 +143,10 @@ again, until it is interrupted.
 
 The schedule of a target is its `--interval`. A target with an interval is
 published again when the interval has passed since the last run, and a target
-without one (`--interval 0 --manual`) is only published when a person names
-it with `--target NAME`. A failed run is not a lost run: the target keeps its
-schedule, the failure is the task of the history, and the next run tries
-again.
+without one (`--interval 0`, or `--manual`) is only published when a person
+names it with `--target NAME`. A failed run is not a lost run: the target
+keeps its schedule, the failure is the task of the history, and the next run
+tries again.
 
 The safety of the push is the safety of the queue. A target that publishes to
 a remote branch with unrelated history keeps that branch, the task of the run
