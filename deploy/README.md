@@ -183,6 +183,33 @@ newest ten dumps per release in `~/backups/git-ai/`, and names the dump in
 `reports/promote-<version>-<ts>.json`. That is a per-promotion safety net, not
 a backup schedule: nothing dumps `gitai` between promotions.
 
+## The backup of a repository
+
+Every repository in the storage core must have a backup origin, and a backup
+counts only when the origin has been read back and carries the same commits.
+The rule has no exception; `doc/graft/BACKUP.md` says what an origin is and
+what makes a backup count.
+
+The origins are named in `~/opt/git-ai/mirror/backup-origins.json` (the
+template is `backup-origins.example.json`), and two host scripts enforce the
+rule:
+
+| Script | Does |
+|---|---|
+| `host-scripts/backup-origin-gate.sh` | reads the authoritative refs from the storage core and asks every origin what it holds; exits non-zero when a repository has no origin, an origin cannot be reached, or an origin is out of sync |
+| `host-scripts/mirror-push.sh` | publishes one repository to one remote from the node host, then reads the remote back |
+
+```sh
+~/opt/git-ai/bin/backup-origin-gate.sh                  # verify only
+~/opt/git-ai/bin/backup-origin-gate.sh --sync            # publish, then verify
+~/opt/git-ai/bin/backup-origin-gate.sh --repo shop.git   # one repository
+```
+
+The gate is run from cron, next to the mirror jobs it verifies; `--sync`
+repairs what drifted and the run still fails when the repair did not work. A
+gate that nobody runs is a wish, and a backup that was pushed once by hand is
+not a fallback.
+
 ## Known gaps
 
 - **Nothing backs up `gitai` on a schedule.** The NAS's daily `pg_backup.sh`
