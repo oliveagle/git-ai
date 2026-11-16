@@ -248,12 +248,56 @@ repairs what drifted and the run still fails when the repair did not work. A
 gate that nobody runs is a wish, and a backup that was pushed once by hand is
 not a fallback.
 
+## The mirror queue
+
+A mirror is declared, not remembered: `host-scripts/mirror-queue-seed.sh` reads
+the table at its top — one line per repository and destination — and puts every
+line into the mirror queue as a target. Adding a target is also what registers
+it with the server, and the server decides the next push of a repository on
+what its targets last published (`doc/graft/MIRROR.md`). A repository whose
+mirror was never declared therefore counts as having none, which the policy of
+the production lane refuses:
+
+```toml
+[graft.mirror]
+required = true
+warn_lag = 10
+```
+
+The worker is one cron line, every five minutes: `host-scripts/
+mirror-queue-run.sh` publishes the targets whose interval has passed, and the
+queue decides what is due.
+
+```sh
+~/opt/git-ai/deploy/host-scripts/mirror-queue-seed.sh            # declare, idempotent
+~/opt/git-ai/deploy/host-scripts/mirror-queue-run.sh             # publish what is due
+~/opt/git-ai/deploy/host-scripts/mirror-queue-run.sh --all       # publish everything
+~/opt/git-ai/deploy/host-scripts/mirror-queue-run.sh --target github-laya-workflow
+graft mirror status --repo laya-workflow.git --branch main       # what a push will get
+```
+
+The queue file is `~/opt/git-ai/mirror/mirror-queue.json`. It holds no secret:
+a target names the variable that carries its token or the path of its key, and
+the value is read when the task runs.
+
+The production lane's targets reach GitHub over SSH on port 443
+(`ssh://git@ssh.github.com:443/OWNER/REPO.git`), because this network drops the
+connection to `github.com:443` often enough that an HTTPS push fails more often
+than it succeeds; the workstation's copies are reached over SSH as well. The
+staging lane keeps the policy off: the integration suite creates repositories
+with no mirror and pushes to them on purpose.
+
 ## Known gaps
 
 - **Nothing backs up `gitai` on a schedule.** The NAS's daily `pg_backup.sh`
   dumps the `research` database only; the storage core's changesets, refs and
   changelog live in `gitai` (and the packs in RustFS), so only a promotion
   leaves a dump behind.
+- **Only GitHub and the workstation are mirrors today.** A Gitee, GitLab or
+  Codeup target needs a token for that host and nobody has put one in the
+  environment of the worker; `mirror-queue-seed.sh` gains a line per host and a
+  token variable, and `graft mirror push` needs no new code for it. Until then
+  a repository whose only mirror is GitHub is one host away from having none.
 - **The object store account is shared** by both lanes (see above).
 - **`graft-cache` logs are not rotated**; they are appended under the lane's
   `logs/`.
