@@ -73,9 +73,11 @@ tarball of that directory is what a lane installs; `install-release.sh` refuses
 one whose checksums do not match.
 
 The server is built on a machine with glibc 2.39 (`oleworkstation01`,
-ubuntu 24.04): the bundled Git is dynamically linked, and the server runs in an
-`ubuntu:24.04` container on the NAS. A build from an older distribution will
-not start there — that is why the NAS runs the server in a container at all.
+ubuntu 24.04) and runs in an `ubuntu:24.04` container on the NAS: the bundled
+Git is dynamically linked, and a build from an older distribution will not
+start there. That is the one coordinate that has to match — what the Git
+reaches for at runtime is the image's job, so the bundle does not have to be
+cut in a container of the target distribution.
 
 ### The lane image
 
@@ -86,6 +88,10 @@ Both lanes start their container from `LANE_IMAGE` (`lanes.env`), which
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libcurl3t64-gnutls libcurl4t64 openssh-client
+# the container runs as the deploy user, and ssh refuses a uid it cannot
+# name ("No user exists for uid 1002")
+RUN groupadd -g 1003 lane \
+ && useradd -u 1002 -g 1003 -M -d /home/oliveagle -s /bin/sh lane
 ```
 
 The release bundles its own Git, but that Git is not static, and a bare
