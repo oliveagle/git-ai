@@ -217,7 +217,27 @@ func mirrorStatusPrint(out io.Writer, status mirrorStatus) {
 		fmt.Fprintf(out, "a push would be refused: %s\n", status.Reason)
 	case status.Warning != "":
 		fmt.Fprintf(out, "a push would go through: %s\n", status.Warning)
+	case mirrorStatusLag(status.Targets) > 0 && status.Policy.WarnLag > 0:
+		// A mirror that is behind but inside the window is neither a refusal
+		// nor a warning; saying that the mirrors are up to date would hide the
+		// number an operator watches as it grows.
+		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, below the warn threshold of %d\n", mirrorStatusLag(status.Targets), status.Policy.WarnLag)
+	case mirrorStatusLag(status.Targets) > 0:
+		fmt.Fprintf(out, "a push would go through: the mirrors are %d commit(s) behind, and the policy sets no warn threshold\n", mirrorStatusLag(status.Targets))
 	default:
 		fmt.Fprintln(out, "a push would go through: the mirrors are up to date")
 	}
+}
+
+// mirrorStatusLag is how far the mirrors of a repository are behind: the lag of
+// the enabled target that is furthest behind, which is the number the policy
+// compares its thresholds with.
+func mirrorStatusLag(targets []mirrorStatusTarget) int {
+	lag := 0
+	for _, target := range targets {
+		if target.Enabled && target.Lag > lag {
+			lag = target.Lag
+		}
+	}
+	return lag
 }

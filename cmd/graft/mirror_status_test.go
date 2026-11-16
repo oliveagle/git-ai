@@ -142,3 +142,41 @@ func TestMirrorStatusWithoutThePolicy(t *testing.T) {
 	require.False(t, status.Policy.Required)
 	require.Empty(t, status.Targets)
 }
+
+// TestMirrorStatusNamesTheDistanceToTheMirror checks the sentence an operator
+// reads while the mirrors fall behind: the number is shown before it reaches
+// the threshold of the policy, so that the warning is never the first news of
+// a mirror that is drifting.
+func TestMirrorStatusNamesTheDistanceToTheMirror(t *testing.T) {
+	env := startServer(t, func(cfg *config.Cfg) {
+		cfg.Graft.Mirror = config.GraftMirror{Required: true, WarnLag: 10, DenyLag: 20}
+	})
+	tip := env.seedMain(t, map[string]string{"a.txt": "a\n"})
+
+	queueFile := filepath.Join(t.TempDir(), "queue.json")
+	remote := filepath.Join(t.TempDir(), "mirror.git")
+	gittest.Exec(t, env.cfg, "init", "--bare", "--initial-branch=main",
+		"--object-format="+gittest.DefaultObjectHash.Format, remote)
+
+	common := []string{"-address", env.addr, "-storage", env.storage, "--queue-file", queueFile}
+	code, _, stderr := runCLI(t, append([]string{
+		"mirror", "queue", "add", "codeup",
+		"--repo", env.relPath, "--url", remote, "--branch", "main", "--manual",
+	}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+	code, _, stderr = runCLI(t, append([]string{"mirror", "queue", "run", "--target", "codeup"}, common...)...)
+	require.Equal(t, exitOK, code, stderr)
+
+	gittest.WriteCommit(t, env.cfg, env.repoPath,
+		gittest.WithTree(env.writeTree(t, map[string]string{"a.txt": tip.String()})),
+		gittest.WithParents(tip),
+		gittest.WithBranch("main"),
+	)
+
+	code, stdout, stderr := runCLI(t, append([]string{
+		"mirror", "status", "--repo", env.relPath, "--branch", "main",
+	}, "-address", env.addr, "-storage", env.storage)...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "1 commit(s) behind")
+	require.Contains(t, stdout, "below the warn threshold of 10")
+}
