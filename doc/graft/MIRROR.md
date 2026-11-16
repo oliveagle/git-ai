@@ -86,6 +86,71 @@ purpose, review it there, and let the next push replace the mirror. If the
 mirror becomes the source of truth, that is a different system and this
 one-way mirror must be turned off first.
 
+## The mirror queue
+
+One push publishes one repository to one remote. An operator with several
+repositories and several hosts — a GitHub mirror and a Gitee mirror of the
+same shop — needs more than that, so the client keeps a queue of mirrors:
+
+```shell
+graft mirror queue add github-shop --repo shop.git \
+  --url https://github.com/group/shop.git --branch main --interval 5m
+
+graft mirror queue add gitee-shop --repo shop.git \
+  --url https://gitee.com/group/shop.git --branch main --interval 5m
+
+graft mirror queue list
+graft mirror queue run
+```
+
+A **target** of the queue is one destination: the graft repository, the Git
+URL it is published to, the branches that may reach it, the credential it
+uses, and how often it is published. A **task** is one attempt to publish a
+target. The queue holds both, and every run leaves a task behind, so an
+operator can see what the queue published, when, and what happened.
+
+The queue is a file of the operator, by default `mirror-queue.json` in the
+configuration directory of the user, and `--queue-file` names another one. It
+holds no secret: a target names the environment variable that carries its
+token — `GITHUB_TOKEN` for a GitHub mirror, `GITEE_TOKEN` for a Gitee mirror,
+by the convention of the host — and the value of that variable is read when
+the task runs. A queue on a machine without a token in its environment
+publishes to a public mirror, and a queue whose token is missing fails with
+the name of the variable, not with a secret.
+
+The commands of the queue:
+
+| Command | What it does |
+|---|---|
+| `graft mirror queue add NAME` | puts a target into the queue |
+| `graft mirror queue list` | lists the targets and their last outcome |
+| `graft mirror queue show NAME` | shows one target |
+| `graft mirror queue enable NAME` | lets the worker publish the target again |
+| `graft mirror queue disable NAME` | leaves the target alone, keeping its history |
+| `graft mirror queue remove NAME` | takes the target out of the queue |
+| `graft mirror queue run` | publishes the targets that are due, and exits |
+| `graft mirror queue worker` | publishes the targets that are due, over and over |
+| `graft mirror task list` | lists the tasks, newest first |
+| `graft mirror task show ID` | shows one task |
+
+`queue run` is the run of a cron job: the queue decides what is due, and the
+cron job decides how often the queue is looked at. `queue worker` is the
+same thing as a process: it publishes what is due, waits `--tick` and looks
+again, until it is interrupted.
+
+The schedule of a target is its `--interval`. A target with an interval is
+published again when the interval has passed since the last run, and a target
+without one (`--interval 0 --manual`) is only published when a person names
+it with `--target NAME`. A failed run is not a lost run: the target keeps its
+schedule, the failure is the task of the history, and the next run tries
+again.
+
+The safety of the push is the safety of the queue. A target that publishes to
+a remote branch with unrelated history keeps that branch, the task of the run
+is `diverged`, and the run exits 1. Only a target that was given `--force`
+overwrites it, and that is a decision of a person, made once, on the target
+and not on the run.
+
 ## Divergence and force
 
 By default, `graft mirror push` keeps a remote branch whose history is not an
