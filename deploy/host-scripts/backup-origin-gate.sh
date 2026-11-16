@@ -96,7 +96,8 @@ PY
 
 # branch_allowed reports whether a branch name matches one of the patterns of
 # an origin. The patterns are the shape of `graft mirror push --branch`: no
-# refs/heads/ prefix, and * is allowed.
+# refs/heads/ prefix, and * is allowed. The list arrives quoted, because an
+# unquoted * would be expanded against the files of the working directory.
 branch_allowed() {
   local branch="$1"; shift
   local pattern
@@ -114,12 +115,14 @@ wanted_refs() {
   local patterns="$1"
   local refs="$2"
   local ref oid branch
+  local -a allowed
+  read -r -a allowed <<< "$patterns"
   while read -r ref oid; do
     [ -n "$ref" ] || continue
     case "$ref" in
       refs/heads/*)
         branch="${ref#refs/heads/}"
-        branch_allowed "$branch" $patterns || continue
+        branch_allowed "$branch" "${allowed[@]}" || continue
         ;;
       refs/tags/*) ;;
       *) continue ;;
@@ -132,6 +135,10 @@ wanted_refs() {
 FAILED=0
 SYNC_LOG="$ROOT/logs/backup-origin-gate-sync.log"
 mkdir -p "$ROOT/logs"
+
+# The publisher: beside this script, or an installed copy in bin/.
+PUBLISH="$ROOT/bin/mirror-push.sh"
+[ -x "$PUBLISH" ] || PUBLISH="$(dirname "$(readlink -f "$0")")/mirror-push.sh"
 
 REPOSITORIES="$(psql_ "select repo_id, relative_path from graft_repositories order by repo_id")"
 while IFS='|' read -r repo_id repository; do
@@ -161,7 +168,7 @@ while IFS='|' read -r repo_id repository; do
       if [ -n "$sync_cmd" ]; then
         bash -c "$sync_cmd" >>"$SYNC_LOG" 2>&1 || true
       else
-        "$ROOT/bin/mirror-push.sh" "$repository" "$url" >>"$SYNC_LOG" 2>&1 || true
+        "$PUBLISH" "$repository" "$url" >>"$SYNC_LOG" 2>&1 || true
       fi
     fi
 
@@ -172,27 +179,30 @@ while IFS='|' read -r repo_id repository; do
       continue
     fi
 
-    WANT_PAIRS=()
     WANT_NAMES=()
+    WANT_OIDS=()
     while read -r ref oid; do
       [ -n "$ref" ] || continue
-      WANT_PAIRS+=("$ref $oid")
       WANT_NAMES+=("$ref")
+      WANT_OIDS+=("$oid")
     done < <(wanted_refs "$patterns" "$REFS")
 
     mismatch=0
     detail=""
-    for pair in ${WANT_PAIRS[@]+"${WANT_PAIRS[@]}"}; do
-      ref="${pair% *}"
-      oid="${pair#* }"
-      got="$(printf '%s\n' "$REMOTE_REFS" | awk -v r="$ref" '$2 == r {print $1; exit}')"
-      if [ "$got" != "$oid" ]; then
-        mismatch=$((mismatch + 1))
-        detail="$detail $ref"
-      fi
-    done
+    if [ "${#WANT_NAMES[@]}" -gt 0 ]; then
+      for i in "${!WANT_NAMES[@]}"; do
+        ref="${WANT_NAMES[$i]}"
+        oid="${WANT_OIDS[$i]}"
+        got="$(printf '%s\n' "$REMOTE_REFS" | awk -v r="$ref" '$2 == r {print $1; exit}')"
+        if [ "$got" != "$oid" ]; then
+          mismatch=$((mismatch + 1))
+          detail="$detail $ref"
+        fi
+      done
+    fi
 
     extra=0
+    extra_detail=""
     while read -r r_oid r_name; do
       [ -n "$r_name" ] || continue
       case "$r_name" in
@@ -201,19 +211,33 @@ while IFS='|' read -r repo_id repository; do
         *) continue ;;
       esac
       found=0
-      for name in ${WANT_NAMES[@]+"${WANT_NAMES[@]}"}; do
-        [ "$name" = "$r_name" ] && { found=1; break; }
-      done
-      [ "$found" -eq 0 ] && { extra=$((extra + 1)); detail="$detail +$r_name"; }
+      if [ "${#WANT_NAMES[@]}" -gt 0 ]; then
+        for name in "${WANT_NAMES[@]}"; do
+          if [ "$name" = "$r_name" ]; then found=1; break; fi
+        done
+      fi
+      if [ "$found" -eq 0 ]; then
+        extra=$((extra + 1))
+        extra_detail="$extra_detail +$r_name"
+      fi
     done < <(printf '%s\n' "$REMOTE_REFS" | awk 'NF == 2')
 
+    # An origin that another mechanism keeps in sync (the registry names its
+    # sync command) prunes what the storage core does not know, so a ref that
+    # is still there is a moment of that race and not a broken backup. An
+    # origin the gate owns must carry exactly the authoritative refs.
+    if [ "$sync_cmd" != "" ] && [ "$extra" -ne 0 ]; then
+      say "note  $repository/$origin_name: $extra ref(s) on the origin are unknown to the storage core and are being pruned by its own sync:$extra_detail"
+      extra=0
+      extra_detail=""
+    fi
     if [ "$mismatch" -ne 0 ] || [ "$extra" -ne 0 ]; then
-      say "FAIL  $repository/$origin_name: $mismatch ref(s) differ and $extra ref(s) are unknown to the storage core:$detail"
-      printf '%s\t%s\t%s\t%s\t%s\n' "$repository" "$origin_name" "$url" "out_of_sync" "$mismatch wrong, $extra unknown:$detail" >>"$RESULTS"
+      say "FAIL  $repository/$origin_name: $mismatch ref(s) differ and $extra ref(s) are unknown to the storage core:$detail$extra_detail"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$repository" "$origin_name" "$url" "out_of_sync" "$mismatch wrong, $extra unknown:$detail$extra_detail" >>"$RESULTS"
       FAILED=1
     else
-      say "ok    $repository/$origin_name: ${#WANT_PAIRS[@]} ref(s) match $url"
-      printf '%s\t%s\t%s\t%s\t%s\n' "$repository" "$origin_name" "$url" "in_sync" "${#WANT_PAIRS[@]} refs match" >>"$RESULTS"
+      say "ok    $repository/$origin_name: ${#WANT_NAMES[@]} ref(s) match $url"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$repository" "$origin_name" "$url" "in_sync" "${#WANT_NAMES[@]} refs match" >>"$RESULTS"
     fi
   done <<< "$ORIGINS"
 done <<< "$REPOSITORIES"

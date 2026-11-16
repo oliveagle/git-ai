@@ -54,7 +54,10 @@ origin has been read back and holds the commits of the authoritative refs:
 - with the same commit id as the storage core holds for it,
 - and the tags are on the origin too,
 - and the origin holds nothing else, because a ref that the storage core does
-  not know is a divergence that a person has to look at.
+  not know is a divergence that a person has to look at — except on an origin
+  whose registry entry names a `sync` command: that origin is pruned by its
+  own sync, so a ref that is still there is a moment of a race, and the gate
+  prints it as a note.
 
 Anything else is a failure, and the failure is what the operator reads.
 
@@ -88,7 +91,7 @@ happened.
 The gate belongs to a cron job, next to the mirror jobs it verifies:
 
 ```cron
-17 * * * * ~/opt/git-ai/bin/backup-origin-gate.sh --sync >> ~/opt/git-ai/logs/backup-origin-gate.log 2>&1
+17 * * * * ~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh --sync >> ~/opt/git-ai/logs/backup-origin-gate.log 2>&1
 ```
 
 The `--sync` run publishes first and verifies second, so a repository that
@@ -101,6 +104,54 @@ authoritative refs from the storage core, copies the objects out of the node
 copy, pushes the heads and the tags, and then reads the remote back and
 compares it with what it wanted. A push that cannot be proven is a failed
 push.
+
+## The other side: the checkouts
+
+The gate above guards the storage core. The workstation that keeps the
+checkouts has the same rule and its own gate,
+`deploy/host-scripts/local-backup-gate.sh`: every repository under the root
+must have an origin, and the origin must hold its commits.
+
+```sh
+local-backup-gate.sh                  # verify only
+local-backup-gate.sh --sync           # publish what is missing, then verify
+local-backup-gate.sh --repo shop      # one repository
+```
+
+The unit of the check is the commit, not the name of a branch. The gate asks
+the origin for the tip of every local branch: an origin that serves the tip
+holds the commits of that branch, whatever name the origin gives it, and an
+origin that serves another commit instead does not hold the local work. A
+deleted or renamed branch therefore does not un-back-up the commits it
+carried, and a branch that is only behind the origin is not a failure.
+
+Two things are reported and not fixed, because they are not the gate's
+business:
+
+- a branch that diverged is not forced; Git refuses the push and the gate
+  says so,
+- uncommitted changes are counted and printed: a backup of the history
+  cannot hold work that was never committed.
+
+### The origins that are mirrors
+
+Some checkouts are copies of a repository whose authority is the storage
+core: their GitHub origin is a one-way mirror that another script keeps in
+sync, and that script prunes whatever the storage core does not know. A push
+from the checkout into such an origin would be deleted again within minutes.
+The registry `backup-origins.local.json` names them:
+
+```json
+{"version": 1, "mirrored": ["shop", "site"]}
+```
+
+For a repository in that list the gate verifies and does not publish: a
+commit the origin does not hold is a commit that has to land in the authority
+first, and the gate says exactly that.
+
+```cron
+23 * * * * flock -n /tmp/local-backup-gate.lock ~/bin/local-backup-gate.sh --sync --report ~/backup-reports/local-origins-$(date -u +\%Y\%m\%dT\%H\%M\%SZ).json >> ~/backup-reports/local-backup-gate.log 2>&1
+```
 
 ## The recovery
 

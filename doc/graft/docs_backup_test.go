@@ -61,3 +61,24 @@ func TestSpecBackupRecovery(t *testing.T) {
 		}
 	}
 }
+
+// Spec: the checkouts on the workstation obey the same rule, with its own
+// gate, and the unit of the check is the commit and not the name of a branch.
+func TestSpecBackupOfTheCheckouts(t *testing.T) {
+	const file = "BACKUP.md"
+	text := specDoc(t, file)
+
+	for _, want := range []string{
+		"local-backup-gate.sh",
+		"backup-origins.local.json",
+		"the unit of the check is the commit",
+		"uncommitted changes are counted",
+	} {
+		if !strings.Contains(strings.ToLower(text), strings.ToLower(want)) {
+			t.Errorf("%s must mention %q", file, want)
+		}
+	}
+	if !specLine(text, `not forced`) {
+		t.Errorf("%s: the document must say that a diverged branch is not forced", file)
+	}
+}

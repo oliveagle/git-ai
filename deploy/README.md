@@ -194,15 +194,25 @@ The origins are named in `~/opt/git-ai/mirror/backup-origins.json` (the
 template is `backup-origins.example.json`), and two host scripts enforce the
 rule:
 
-| Script | Does |
-|---|---|
-| `host-scripts/backup-origin-gate.sh` | reads the authoritative refs from the storage core and asks every origin what it holds; exits non-zero when a repository has no origin, an origin cannot be reached, or an origin is out of sync |
-| `host-scripts/mirror-push.sh` | publishes one repository to one remote from the node host, then reads the remote back |
+| Script | Runs on | Does |
+|---|---|---|
+| `host-scripts/backup-origin-gate.sh` | the node host | reads the authoritative refs from the storage core and asks every origin what it holds; exits non-zero when a repository has no origin, an origin cannot be reached, or an origin is out of sync |
+| `host-scripts/mirror-push.sh` | the node host | publishes one repository to one remote from the node host, then reads the remote back |
+| `host-scripts/local-backup-gate.sh` | the workstation | walks the checkouts, and exits non-zero when a repository has no origin or the origin does not hold its commits |
+
+The checkouts on the workstation obey the same rule: the unit of that check is
+the commit, not the name of a branch, so a renamed or deleted branch does not
+lose its backup and a branch that is only behind the origin is not a failure.
+A checkout whose origin is a one-way mirror of the storage core is named in
+`~/etc/backup-origins.local.json` (`backup-origins.local.example.json`), and
+the gate only verifies it: a commit the mirror does not hold has to land in the
+storage core first, because the mirror prunes what the storage core does not
+know.
 
 ```sh
-~/opt/git-ai/bin/backup-origin-gate.sh                  # verify only
-~/opt/git-ai/bin/backup-origin-gate.sh --sync            # publish, then verify
-~/opt/git-ai/bin/backup-origin-gate.sh --repo shop.git   # one repository
+~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh                  # verify only
+~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh --sync            # publish, then verify
+~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh --repo shop.git   # one repository
 ```
 
 The gate is run from cron, next to the mirror jobs it verifies; `--sync`
