@@ -57,6 +57,10 @@ type Graft struct {
 	// Storage configures the storage core: repository state in a database
 	// plus object storage (doc/graft/STORAGE.md).
 	Storage GraftStorage `json:"storage" toml:"storage,omitempty"`
+	// Mirror is the mirror policy: every repository is published to a
+	// mirror, and a mirror that falls behind holds the pushes back
+	// (doc/graft/MIRROR.md).
+	Mirror GraftMirror `json:"mirror" toml:"mirror,omitempty"`
 }
 
 // GraftSearch configures code search.
@@ -581,6 +585,9 @@ func (g Graft) Validate() error {
 		return fmt.Errorf("graft derived: workers and queue_size must not be negative")
 	}
 	if err := g.Storage.validate(g.Standalone); err != nil {
+		return err
+	}
+	if err := g.Mirror.validate(); err != nil {
 		return err
 	}
 

@@ -102,6 +102,10 @@ type GitLabHookManager struct {
 	// the answer a CI reads and the refusal it meets are made with one policy,
 	// also across a reload of the rules.
 	branchPolicy *branchgate.Store
+	// mirrorGate gives the mirror policy the state of the mirrors of a
+	// repository: the targets and how far they are behind. It is nil when the
+	// server has none, and a policy in force then refuses every push.
+	mirrorGate MirrorGateSource
 	// startLandIntentsCompaction starts a compaction of land intents that a prepared
 	// transaction asked for, without the hook waiting for it. Nil runs it in a goroutine;
 	// tests set it.
@@ -145,6 +149,14 @@ func WithBranchGate(source BranchGateSource) ManagerOption {
 func WithBranchPolicy(store *branchgate.Store) ManagerOption {
 	return func(m *GitLabHookManager) {
 		m.branchPolicy = store
+	}
+}
+
+// WithMirrorGate sets the source of the state the mirror policy decides with,
+// see enforceMirrorGate.
+func WithMirrorGate(source MirrorGateSource) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.mirrorGate = source
 	}
 }
 

@@ -7,11 +7,14 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
+	"github.com/feder-cr/git-ai/internal/gitaly/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorstate"
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -36,6 +39,9 @@ func (s *server) UpdateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 	}
 
 	if err := s.updateRemoteMirror(stream, firstRequest); err != nil {
+		// The publication did not finish: the state of the mirror says so, so
+		// that an operator reads what failed rather than a stale success.
+		s.recordMirrorSync(stream.Context(), firstRequest.GetRepository(), firstRequest.GetTarget(), nil, false, err)
 		return structerr.NewInternal("%w", err)
 	}
 
@@ -135,6 +141,10 @@ func (s *server) updateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 
 	var defaultBranchExists bool
 	var divergentRefs [][]byte
+	// kept holds the branches the mirror keeps with history the repository
+	// does not have, by reference: they are reported, and the state of the
+	// mirror records the commit the mirror holds.
+	kept := map[git.ReferenceName]string{}
 	toUpdate := map[git.ReferenceName]string{}
 	for _, localRef := range localRefs {
 		if localRef.Name == defaultBranch {
@@ -168,6 +178,7 @@ func (s *server) updateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 			if !isAncestor {
 				// The mirror's reference has diverged from the local ref, or the mirror contains a commit
 				// which is not present in the local repository.
+				kept[localRef.Name] = remoteTarget
 				if referenceMatcher.MatchString(localRef.Name.String()) && len(divergentRefs) < maxDivergentRefs {
 					// diverged branches on the mirror are only included in the response if they match
 					// one of the branches in the selector
@@ -241,6 +252,11 @@ func (s *server) updateRemoteMirror(stream gitalypb.RemoteService_UpdateRemoteMi
 		}
 	}
 
+	// The publication is what the mirror holds now: the record of it is what
+	// the mirror policy of the server decides the next push with
+	// (doc/graft/MIRROR.md).
+	s.recordMirrorSync(ctx, firstRequest.GetRepository(), firstRequest.GetTarget(), publishedBranches(localRefs, referenceMatcher, kept), len(kept) > 0, nil)
+
 	return stream.SendAndClose(&gitalypb.UpdateRemoteMirrorResponse{DivergentRefs: divergentRefs})
 }
 
@@ -290,4 +306,60 @@ func validateUpdateRemoteMirrorRequest(ctx context.Context, locator storage.Loca
 	}
 
 	return nil
+}
+
+// publishedBranches returns the commit the mirror holds for every branch the
+// publication is for: the commit that was pushed, or the commit the mirror
+// keeps when the branch diverged and the request keeps divergent references.
+func publishedBranches(localRefs []git.Reference, matcher *regexp.Regexp, kept map[git.ReferenceName]string) map[string]string {
+	published := make(map[string]string, len(localRefs))
+	for _, localRef := range localRefs {
+		if !matcher.MatchString(localRef.Name.String()) {
+			continue
+		}
+		branch, ok := strings.CutPrefix(localRef.Name.String(), "refs/heads/")
+		if !ok {
+			continue
+		}
+		if remote, diverged := kept[localRef.Name]; diverged {
+			published[branch] = remote
+			continue
+		}
+		published[branch] = localRef.Target
+	}
+	return published
+}
+
+// recordMirrorSync records the state of the mirror target a publication was
+// for. A publication that names no target is a one-off copy, and nothing is
+// recorded. Failing to record never fails a publication that succeeded: the
+// commits reached the mirror, and the state is repaired by the next run.
+func (s *server) recordMirrorSync(ctx context.Context, repo *gitalypb.Repository, target string, published map[string]string, diverged bool, publicationErr error) {
+	if target == "" {
+		return
+	}
+
+	store, key, err := hook.MirrorStore(ctx, s.core, s.localRepoFactory, repo)
+	if err != nil {
+		s.logger.WithError(err).WithField("target", target).WarnContext(ctx, "the publication of the mirror is not recorded")
+		return
+	}
+
+	sync := mirrorstate.Sync{
+		Target:      target,
+		Status:      mirrorstate.SyncOK,
+		Branches:    published,
+		PublishedAt: time.Now().UTC(),
+	}
+	switch {
+	case publicationErr != nil:
+		sync.Status = mirrorstate.SyncFailed
+		sync.Error = publicationErr.Error()
+	case diverged:
+		sync.Status = mirrorstate.SyncDiverged
+	}
+
+	if err := store.RecordSync(ctx, key, sync); err != nil {
+		s.logger.WithError(err).WithField("target", target).WarnContext(ctx, "the publication of the mirror is not recorded")
+	}
 }

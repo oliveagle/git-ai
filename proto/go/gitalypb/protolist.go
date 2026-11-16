@@ -19,6 +19,7 @@ var GitalyProtos = []string{
 	"internal.proto",
 	"lint.proto",
 	"log.proto",
+	"mirror.proto",
 	"object.proto",
 	"objectpool.proto",
 	"operations.proto",

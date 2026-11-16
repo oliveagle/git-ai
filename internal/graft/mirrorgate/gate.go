@@ -80,6 +80,9 @@ type Target struct {
 	PublishedAt time.Time
 	// Error is the reason of the last failure.
 	Error string
+	// Published are the commits the mirror holds, by branch name. A branch
+	// the mirror never published is absent.
+	Published map[string]string
 	// Lag is the number of commits of the branch the mirror does not hold.
 	// It is zero when the branch is on the mirror, and it is meaningless when
 	// the target never published the branch.

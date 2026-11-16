@@ -652,7 +652,11 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	// branch.
 	hookManagerOpts = append(hookManagerOpts,
 		hook.WithBranchPolicy(branchPolicy),
-		hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)))
+		hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)),
+		// The mirror policy refuses a push to a repository that has no mirror,
+		// or whose mirror is too far behind (doc/graft/MIRROR.md). The state
+		// it reads is the one the MirrorService writes.
+		hook.WithMirrorGate(hook.NewMirrorGateSource(storageCore, localrepoFactory)))
 	var (
 		storageSyncer corestore.Freshener
 		storageGate   *gate.Gate

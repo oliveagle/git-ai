@@ -159,6 +159,14 @@ func (m *GitLabHookManager) ReferenceTransactionHook(ctx context.Context, state 
 			return err
 		}
 
+		// The mirror policy decides the same updates with the mirrors of the
+		// repository: a repository is published to a mirror before it takes a
+		// push, and a mirror that falls behind holds the push back
+		// (doc/graft/MIRROR.md).
+		if err := m.enforceMirrorGate(ctx, payload, changes); err != nil {
+			return err
+		}
+
 		// The storage core commits the transaction while git holds the locks, after the
 		// policy allowed it. In authoritative mode this is the commit point: an error
 		// aborts the transaction (see doc/graft/PLAN6.md, "Write path").

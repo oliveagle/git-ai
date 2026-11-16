@@ -89,6 +89,13 @@ message UpdateRemoteMirrorRequest {
   // on-disk remote configuration.
   Remote remote = 7;
 
+  // target is the name of the mirror target the publication is for, as it is
+  // registered with the MirrorService. When it is set, the server records
+  // what the mirror holds, and the mirror policy of the server decides the
+  // next push with it (doc/graft/MIRROR.md). Empty publishes the mirror
+  // without recording it, as a one-off copy.
+  string target = 8;
+
   reserved 2;
   reserved "ref_name";
 }

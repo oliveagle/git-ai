@@ -46,8 +46,13 @@ func (s *server) ReferenceTransactionHook(stream gitalypb.HookService_ReferenceT
 		return req.GetStdin(), err
 	})
 
+	// The hook has no side band: the messages it wants the pusher to read come
+	// back in this response, after a warning that did not refuse anything.
+	messages := &hook.TransactionMessages{}
+	ctx := hook.WithTransactionMessages(stream.Context(), messages)
+
 	if err := s.manager.ReferenceTransactionHook(
-		stream.Context(),
+		ctx,
 		state,
 		request.GetEnvironmentVariables(),
 		stdin,
@@ -77,6 +82,14 @@ func (s *server) ReferenceTransactionHook(stream gitalypb.HookService_ReferenceT
 			return structerr.NewFailedPrecondition("reference-transaction hook: %w", err)
 		default:
 			return structerr.NewInternal("reference-transaction hook: %w", err)
+		}
+	}
+
+	for _, message := range messages.All() {
+		if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+			Stderr: []byte("warning: " + message + "\n"),
+		}); err != nil {
+			return structerr.NewInternal("sending response: %w", err)
 		}
 	}
 

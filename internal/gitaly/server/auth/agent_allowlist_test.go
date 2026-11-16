@@ -480,6 +480,13 @@ var operatorOnlySources = map[string][]string{
 	// history to another host with a credential only the operator holds, so an
 	// agent may not run it (doc/graft/MIRROR.md).
 	"sdk/mirror.go": {"gitaly.RemoteService/UpdateRemoteMirror"},
+	// Declaring, removing and reading the mirror targets of a repository is the
+	// operator's side of the mirror policy: an agent that could remove a target
+	// would open the repository the policy holds (doc/graft/MIRROR.md). The CLI
+	// reaches these RPCs through the SDK methods that carry the name of the
+	// target (graft mirror queue add|remove|register, graft mirror status), so
+	// this file is the one the scan sees.
+	"sdk/mirror_target.go": {"gitaly.MirrorService"},
 }
 
 // operatorScopeCovers reports whether fullMethod is the method, or a method of the

@@ -23,6 +23,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/diff"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/internalgitaly"
+	"github.com/feder-cr/git-ai/internal/gitaly/service/mirror"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/object"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/objectpool"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/operations"
@@ -161,6 +162,7 @@ func RegisterAll(srv *grpc.Server, deps *service.Dependencies) {
 	gitalypb.RegisterReviewServiceServer(srv, review.NewServer(deps))
 	gitalypb.RegisterStorageCoreServiceServer(srv, storagecore.NewServer(deps))
 	gitalypb.RegisterBranchPolicyServiceServer(srv, branchpolicy.NewServer(deps))
+	gitalypb.RegisterMirrorServiceServer(srv, mirror.NewServer(deps))
 
 	healthpb.RegisterHealthServer(srv, auth.UnauthenticatedHealthService{HealthServer: health.NewServer()})
 	reflection.Register(srv)
