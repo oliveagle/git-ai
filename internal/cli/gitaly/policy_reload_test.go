@@ -25,6 +25,8 @@ var (
 // startupConfig returns the configuration with startupRules as the server loads it at startup.
 func startupConfig(t *testing.T) config.Cfg {
 	cfg := testcfg.Build(t)
+	// A Graft server refuses anonymous callers, and some cases below add an agent.
+	cfg.Auth.Token = testcfg.SharedToken
 	cfg.Graft.Policy = startupRules
 	loaded, err := loadConfig(testcfg.WriteTemporaryGitalyConfigFile(t, cfg))
 	require.NoError(t, err)
