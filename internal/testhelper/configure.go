@@ -181,6 +181,10 @@ func configureTestDirectory(logger log.Logger) (_ func(), returnedErr error) {
 	tempDirLocation := os.Getenv("TEST_TMP_DIR")
 	if tempDirLocation == "" {
 		tempDirLocation = "/tmp"
+		// Windows has no /tmp.
+		if runtime.GOOS == "windows" {
+			tempDirLocation = os.TempDir()
+		}
 	}
 
 	var err error
