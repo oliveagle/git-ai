@@ -720,8 +720,12 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 
 	// A Graft server never removes a repository: it archives it, a super admin
 	// starts cleanup after the archive retention, and only after the cleanup
-	// observation may that admin purge it (doc/graft/PLAN13.md).
-	lifecycleGuard = lifecycle.New(logger)
+	// observation may that admin purge it (doc/graft/PLAN13.md). A plain Gitaly
+	// server, one that configured none of the Graft credentials, keeps the
+	// upstream removal RPC.
+	if cfg.Graft.RequiresAuthentication() {
+		lifecycleGuard = lifecycle.New(logger)
+	}
 
 	postReceiveRegistry := hook.NewPostReceiveRegistry()
 	hookManager := hook.NewManager(
