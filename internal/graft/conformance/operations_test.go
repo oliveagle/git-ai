@@ -13,10 +13,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/feder-cr/git-ai/sdk"
 )
 
 // A fixture is a repository for the RPC tables, seeded by a stock client so that it works in every
@@ -103,13 +103,18 @@ func changedRefs(before, after map[string]string) []string {
 	return changed
 }
 
-// agentConnection connects to the backend with the agent's token.
+// agentConnection connects to the backend as the agent, signing every request
+// with its private key.
 func agentConnection(t *testing.T, b *gitaiBackend) *grpc.ClientConn {
 	t.Helper()
 
+	signer, err := sdk.AgentSigner(agentPrivateKeyPath)
+	require.NoError(t, err)
+
 	conn, err := grpc.NewClient(b.cfg.SocketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(agentToken)),
+		grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+		grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })

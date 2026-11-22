@@ -255,7 +255,6 @@ func (b *referenceBackend) newRemote(t *testing.T) remote {
 // difference comes from the server and not from a rule of this harness.
 const (
 	agentName       = "conformance"
-	agentToken      = "conformance-secret-for-tests"
 	sharedToken     = "shared-test-token"
 	receivePackRPC  = "/gitaly.SSHService/SSHReceivePack"
 	uploadPackRPC   = "/gitaly.SSHService/SSHUploadPackWithSidechannel"
@@ -264,7 +263,7 @@ const (
 
 func agentGraft(extraRPCs ...string) config.Graft {
 	return config.Graft{
-		Agents:    []config.GraftAgent{{Name: agentName, Token: agentToken}},
+		Agents:    []config.GraftAgent{{Name: agentName, PublicKey: agentPublicKey}},
 		AgentRPCs: append([]string{receivePackRPC, uploadPackRPC}, extraRPCs...),
 		Policy:    []config.GraftPolicyRule{{Refs: []string{"HEAD", "refs/**"}, Allow: true}},
 	}
@@ -406,7 +405,7 @@ func (b *gitaiBackend) newRemote(t *testing.T) remote {
 			env := []string{
 				"GITALY_PAYLOAD=" + string(payload),
 				"GITALY_ADDRESS=" + b.cfg.SocketPath,
-				"GITALY_TOKEN=" + agentToken,
+				"GRAFT_AGENT_KEY=" + agentPrivateKeyPath,
 				"GITALY_FEATUREFLAGS=" + b.flags,
 				// simple: git would otherwise probe the command with -G to learn what it is.
 				"GIT_SSH_VARIANT=simple",
