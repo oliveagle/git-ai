@@ -30,7 +30,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -81,8 +80,17 @@ func runFetchTransport() int {
 		return 1
 	}
 	registry := sidechannel.NewRegistry()
+	signer, err := sdk.AgentSigner(os.Getenv("GRAFT_AGENT_KEY"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	conn, err := sidechannel.Dial(ctx, registry, logger, os.Getenv("GITALY_ADDRESS"),
-		client.WithGrpcOptions([]grpc.DialOption{grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(os.Getenv("GITALY_TOKEN")))}))
+		client.WithGrpcOptions([]grpc.DialOption{
+			grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
+			client.UnaryInterceptor(), client.StreamInterceptor(),
+		}))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
