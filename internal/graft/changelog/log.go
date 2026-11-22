@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -863,15 +862,15 @@ func lockFile(path string) (func(), error) {
 		return nil, fmt.Errorf("opening changelog lock: %w", err)
 	}
 	unlock := func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = funlockFile(f)
 		_ = f.Close()
 	}
 
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	err = flockFile(f, true)
 	if err == nil {
 		return unlock, nil
 	}
-	if !errors.Is(err, syscall.EWOULDBLOCK) {
+	if !isLockWouldBlock(err) {
 		f.Close()
 		return nil, fmt.Errorf("locking changelog: %w", err)
 	}
@@ -879,7 +878,7 @@ func lockFile(path string) (func(), error) {
 	// Another process holds the lock: wait for it in a goroutine, which owns the file if the
 	// wait gives up first and releases the lock once it is granted.
 	locked := make(chan error, 1)
-	go func() { locked <- syscall.Flock(int(f.Fd()), syscall.LOCK_EX) }()
+	go func() { locked <- flockFile(f, false) }()
 
 	timer := time.NewTimer(lockWaitTimeout)
 	defer timer.Stop()
@@ -893,7 +892,7 @@ func lockFile(path string) (func(), error) {
 	case <-timer.C:
 		go func() {
 			if err := <-locked; err == nil {
-				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				_ = funlockFile(f)
 			}
 			_ = f.Close()
 		}()
@@ -1046,7 +1045,7 @@ func readLogHead(repoPath string) (logHead, error) {
 	if err != nil {
 		return logHead{}, fmt.Errorf("stat changelog: %w", err)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
+	device, inode, ok := fileIdentity(f, info)
 	if !ok {
 		return logHead{}, fmt.Errorf("stat changelog: no file identity in %T", info.Sys())
 	}
@@ -1055,7 +1054,7 @@ func readLogHead(repoPath string) (logHead, error) {
 	if err != nil {
 		return logHead{}, err
 	}
-	head.device, head.inode = stat.Dev, stat.Ino
+	head.device, head.inode = device, inode
 
 	return head, nil
 }

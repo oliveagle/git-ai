@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -79,7 +78,7 @@ func TestAppend_lockWaitIsBounded(t *testing.T) {
 	// Another process holds the lock file.
 	holder, err := os.OpenFile(Path(repoPath)+lockSuffix, os.O_RDWR, 0o644)
 	require.NoError(t, err)
-	require.NoError(t, syscall.Flock(int(holder.Fd()), syscall.LOCK_EX))
+	require.NoError(t, flockFile(holder, false))
 
 	_, err = Append(repoPath, Meta{Operation: "test"}, []Update{{Reference: "refs/heads/b", OldOID: zeroOID, NewOID: oidB}})
 	require.ErrorContains(t, err, "the lock was not granted within 100ms")
@@ -89,7 +88,7 @@ func TestAppend_lockWaitIsBounded(t *testing.T) {
 	_, err = List(repoPath, 0, 10)
 	require.ErrorContains(t, err, "the lock was not granted within 100ms")
 
-	require.NoError(t, syscall.Flock(int(holder.Fd()), syscall.LOCK_UN))
+	require.NoError(t, funlockFile(holder))
 	require.NoError(t, holder.Close())
 
 	_, err = Append(repoPath, Meta{Operation: "test"}, []Update{{Reference: "refs/heads/c", OldOID: zeroOID, NewOID: oidC}})

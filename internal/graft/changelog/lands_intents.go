@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 )
 
 // intentsFileName is the name of the file of the land intents inside dirName.
@@ -97,7 +96,7 @@ func RecordLandIntents(repoPath, reference, invocation string, lands []Land) (co
 	if err != nil {
 		return false, fmt.Errorf("stat land intents: %w", err)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
+	device, inode, ok := fileIdentity(f, info)
 	if !ok {
 		return false, fmt.Errorf("stat land intents: no file identity in %T", info.Sys())
 	}
@@ -135,7 +134,7 @@ func RecordLandIntents(repoPath, reference, invocation string, lands []Land) (co
 	// The intents are durable only once the directory entries of their file are: when this write
 	// created the file, and on the first write of this process to the file, which a writer that
 	// created it may have crashed before syncing.
-	key := intentsFileKey{path: path, device: stat.Dev, inode: stat.Ino}
+	key := intentsFileKey{path: path, device: device, inode: inode}
 	if _, synced := intentDirsSynced.Load(key); created || !synced {
 		if err := syncLogDirs(repoPath, path); err != nil {
 			return false, err
@@ -234,12 +233,12 @@ func readIntents(path string, known intentsFile, add func(landIntent)) (intentsF
 	if err != nil {
 		return known, false, fmt.Errorf("stat land intents: %w", err)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
+	device, inode, ok := fileIdentity(f, info)
 	if !ok {
 		return known, false, fmt.Errorf("stat land intents: no file identity in %T", info.Sys())
 	}
 
-	current := intentsFile{device: stat.Dev, inode: stat.Ino, offset: known.offset}
+	current := intentsFile{device: device, inode: inode, offset: known.offset}
 	if known != (intentsFile{}) && (current.device != known.device || current.inode != known.inode || info.Size() < known.offset) {
 		return intentsFile{}, true, nil
 	}
