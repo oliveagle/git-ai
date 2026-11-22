@@ -271,12 +271,14 @@ Every run needs branches of its own: give each run a fresh `--branch`.
 ```sh
 graft-bench --address unix:/var/lib/graft/run/gitaly.socket \
     --repo bench.git --branch bench-land-1 --agents 50 --changes 10 \
-    --conflict-rate 0.2 --mode land --token "$GRAFT_TOKEN"
+    --conflict-rate 0.2 --mode land --agent-key "$GRAFT_AGENT_KEY"
 
 graft-bench --address unix:/var/lib/graft/run/gitaly.socket \
     --repo bench.git --branch bench-queue-1 --mode queue \
-    --test-duration 200ms --format json --token "$GRAFT_TOKEN"
+    --test-duration 200ms --format json --agent-key "$GRAFT_AGENT_KEY"
 
+# --create-repo needs the shared token, so this run cannot use --agent-key:
+# create the repository in a run of its own, or beforehand.
 graft-bench --address unix:/var/lib/graft/run/gitaly.socket \
     --repo bench-new.git --create-repo --branch bench-land-1 --mode land \
     --token "$GRAFT_TOKEN"
@@ -284,7 +286,7 @@ graft-bench --address unix:/var/lib/graft/run/gitaly.socket \
 graft-bench --address unix:/var/lib/graft/run/gitaly.socket \
     --repo bench.git --branch bench-batch-1 --branches 4 --agents 100 \
     --changes 5 --mode land-batch --label batching-on-100 \
-    --json-out on-100.json --md-out on-100.md --token "$GRAFT_TOKEN"
+    --json-out on-100.json --md-out on-100.md --agent-key "$GRAFT_AGENT_KEY"
 ```
 
 Flags:
@@ -294,9 +296,10 @@ Flags:
 - `--branch` (default `bench`): the branch the changes land on. It is not
   `main` by default, because a policy usually protects `main` (the example
   policy of `examples/graft/config.toml` lets only `planner` update it), and
-  then every land is denied. The actor of the lands is the identity of the
-  token (see [CONFIGURATION](CONFIGURATION.md)), so the policy must let it
-  update this branch. With `--branches` above 1 it is the prefix of the branch
+  then every land is denied. The actor of the lands is the authenticated
+  identity, the agent name for `--agent-key` and the user of the shared token
+  (see [CONFIGURATION](CONFIGURATION.md)), so the policy must let it update
+  this branch. With `--branches` above 1 it is the prefix of the branch
   names, see below.
 - `--branches` (default 1): the number of target branches. With more than one,
   the branches are named `<branch>-00`, `<branch>-01`, and so on, and the
@@ -307,10 +310,12 @@ Flags:
 - `--test-duration`: the simulated test time per change, `queue` mode only.
 - `--storage`, `--seed` (default 1), `--max-attempts` (default 0, the server
   default).
-- `--token` (default `$GRAFT_TOKEN`) or `--agent-token` (default
-  `$GRAFT_AGENT_TOKEN`). Use an agent token to measure what an agent sees. A
-  flag overrides the other variable. With no flag, `$GRAFT_TOKEN` is used when
-  both variables are set. Passing both flags is an error.
+- `--token` (default `$GRAFT_TOKEN`) or `--agent-key` (default
+  `$GRAFT_AGENT_KEY`). Use an agent key to sign every request with the agent's
+  SSH private key and measure what that agent sees; the server must know its
+  public key in `[[graft.agent]]`. A flag overrides the other variable. With no
+  flag, `$GRAFT_TOKEN` is used when both variables are set. Passing both flags
+  is an error.
 - `--create-repo`: creates the repository first, through the server's
   `RepositoryService` (never by writing into the storage directory). It needs
   the shared `--token` and fails if the repository exists.
@@ -437,7 +442,7 @@ that a previous run left in `WORKDIR/results`; it builds and starts nothing. Use
 it to re-check saved results. The script keeps `WORKDIR/results` (the JSON, the
 Markdown, the Prometheus scrapes and `combined.md`). On exit, also when a run is
 interrupted, it stops any Gitaly server of `WORKDIR` that is still running and
-deletes the agent tokens in `WORKDIR/tokens`.
+deletes the agent keys in `WORKDIR/tokens`.
 
 ## Reading the numbers
 

@@ -19,8 +19,10 @@ socket_path = "/var/lib/graft/run/gitaly.sock"
 # Directory for Gitaly's runtime files (sockets, temporary state).
 runtime_dir = "/var/lib/graft/run"
 
-# Shared token for administrative tools and for clients without an agent
-# token. Optional when [[graft.agent]] entries are present, but recommended.
+# Shared token of the operator: the administrative tools and the verifier use
+# it. A Graft server refuses anonymous callers, so it must set a token (or
+# configure graft.admin_token). It is not an agent credential: agents sign
+# their requests with their own SSH key (see [[graft.agent]]).
 [auth]
 token = "change-me-shared-token"
 
@@ -34,18 +36,23 @@ path = "/var/lib/graft/repos"
 # below; the GitLab URL and secret are not required.
 standalone = true
 
-# Agent credentials. Each agent name is the identity of its token, the actor
-# that the changeset log records for its updates, and the acting user ID of its
-# requests in standalone mode, whatever user ID the client sends. The policy
-# decides on the agent of the token (see doc/graft/LIMITATIONS.md, Security
-# limitations). Tokens are read from files at startup.
+# Agent identities. Every agent is an SSH key pair: the server holds the
+# public key, the agent holds the private one and signs every request with it.
+# The agent name is the identity of its key, the actor that the changeset log
+# records for its updates, and the acting user ID of its requests in
+# standalone mode, whatever user ID the client sends. The policy decides on
+# the agent that signed the request (see doc/graft/PLAN14.md and
+# doc/graft/AGENT-SECURITY.md). The public keys are read at startup.
+#
+# public_key_file is the path of an OpenSSH public key ("ssh-ed25519 AAAA...").
+# public_key takes the key inline instead; the two are mutually exclusive.
 [[graft.agent]]
 name = "planner"
-token_file = "/etc/graft/tokens/planner"
+public_key_file = "/etc/graft/tokens/planner.pub"
 
 [[graft.agent]]
 name = "builder"
-token_file = "/etc/graft/tokens/builder"
+public_key_file = "/etc/graft/tokens/builder.pub"
 
 # Policy rules are evaluated in order; the first rule whose actor and refs
 # both match decides.

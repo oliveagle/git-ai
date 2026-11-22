@@ -6,8 +6,8 @@
 # Usage: examples/graft/quickstart.sh [WORKDIR]
 # Requires: the Gitaly build dependencies (Go, make, and what the bundled Git
 # needs to compile, see "Installation" in the Gitaly part of README.md),
-# git (make build uses it), openssl, and curl (optional, for the cache
-# statistics).
+# git (make build uses it), openssh (ssh-keygen), and curl (optional, for the
+# cache statistics).
 # WORKDIR defaults to a fresh temporary directory.
 #
 # The steps mirror doc/graft/QUICKSTART.md. The script assumes a Git checkout
@@ -29,10 +29,11 @@ for binary in gitaly gitaly-hooks gitaly-ssh graft graft-cache; do
   cp "$repo_root/_build/bin/$binary" "$work/bin/"
 done
 
-log "Writing agent tokens"
+log "Writing agent SSH keys"
+# Each agent is an SSH key pair. The private key signs every request; the
+# public key is what the configuration lists in [[graft.agent]].
 for agent in planner builder; do
-  openssl rand -hex 32 > "$work/tokens/$agent"
-  chmod 0600 "$work/tokens/$agent"
+  ssh-keygen -q -t ed25519 -N '' -C "graft-$agent" -f "$work/tokens/$agent"
 done
 
 log "Writing configuration"
@@ -61,6 +62,10 @@ wait_for_socket() {
   return 1
 }
 
+# The shared token of [auth]: the operator credential for repository
+# administration and for the cache tier.
+shared_token="$(sed -n 's/^token = "\(.*\)"$/\1/p' "$work/config.toml")"
+
 log "Starting Gitaly in standalone mode"
 "$work/bin/gitaly" serve "$work/config.toml" &
 gitaly_pid=$!
@@ -70,7 +75,6 @@ log "Creating the demo repository with an initial commit on main and feature/dem
 # Creating a repository is an operator action: it needs the shared token of
 # [auth] in the configuration. The initial commit passes the policy as
 # GRAFT_USER, here planner, who may write main.
-shared_token="$(sed -n 's/^token = "\(.*\)"$/\1/p' "$work/config.toml")"
 GRAFT_ADDRESS="unix:$work/run/gitaly.sock" GRAFT_STORAGE=default \
   GRAFT_TOKEN="$shared_token" GRAFT_USER=planner GRAFT_AUTHOR="planner <planner@example.com>" \
   "$work/bin/graft" repo create demo.git --initial-commit --branch feature/demo
@@ -81,20 +85,21 @@ log "Starting the graft-cache daemon tier"
   --upstream "unix:$work/run/gitaly.sock" \
   --tier daemon \
   --max-bytes 268435456 \
-  --metrics-addr 127.0.0.1:9236 &
+  --metrics-addr 127.0.0.1:9236 \
+  --token "$shared_token" &
 cache_pid=$!
 wait_for_socket "$work/run/cache.sock"
 
 export GRAFT_ADDRESS="unix:$work/run/cache.sock"
 export GRAFT_STORAGE=default
 
-# as_agent runs a command with the token, identity and author of one agent.
-# GRAFT_USER should match the agent name: it names the temporary branches of
-# commits. The server uses the agent of the token as the user ID and the policy
-# decides on it.
+# as_agent runs a command signed with the SSH key of one agent, with its
+# identity and author. GRAFT_USER should match the agent name: it names the
+# temporary branches of commits. The server uses the agent name of the key as
+# the user ID and the policy decides on it.
 as_agent() {
   local agent="$1"; shift
-  GRAFT_TOKEN="$(cat "$work/tokens/$agent")" \
+  GRAFT_AGENT_KEY="$work/tokens/$agent" \
     GRAFT_USER="$agent" \
     GRAFT_AUTHOR="$agent <$agent@example.com>" \
     "$@"

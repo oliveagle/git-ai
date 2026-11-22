@@ -89,9 +89,12 @@ maintenance). Where they differ, PLAN7.md is the later decision.
   (`{"repo_id":N,"seq":M}`) records how far the local copy is.
 - **The gate.** In authoritative mode, gRPC interceptors on every listener
   catch the repository up before every repository-scoped RPC, register
-  repositories that `CreateRepository` creates, delete the database row before
-  `RemoveRepository` runs, and reject the mutators whose reference changes do
-  not go through the hook (see [RPCs in authoritative mode](#rpcs-in-authoritative-mode)).
+  repositories that `CreateRepository` creates, refuse `RemoveRepository`
+  (a repository is archived; cleanup closes its reads; a super admin purges it
+  after the observation;
+  see [PLAN13.md](PLAN13.md)), and reject the mutators whose reference changes
+  do not go through the hook (see
+  [RPCs in authoritative mode](#rpcs-in-authoritative-mode)).
 - **Changelog and reviews.** In authoritative mode the Graft changelog
   (`ChangesetService`, `graft log`, `graft watch`) is written in the same
   database transaction as the reference change, and reviews are stored in the
@@ -181,8 +184,9 @@ reference-transaction hook; the allowlist is
 - `OperationService`: every `User*` writer, including `UserLand`.
 - `ConflictsService/ResolveConflicts`.
 - `RefService/UpdateReferences` and `DeleteRefs`.
-- `RepositoryService/WriteRef` (including `HEAD`), `CreateRepository`,
-  `RemoveRepository`.
+- `RepositoryService/WriteRef` (including `HEAD`), `CreateRepository`.
+  `RemoveRepository` is refused (archive, cleanup and purge instead, see
+  [PLAN13.md](PLAN13.md)).
 - `SSHService/SSHReceivePack` and `SmartHTTPService/PostReceivePack` (pushes).
 - `ReviewService` writers.
 
@@ -414,7 +418,8 @@ graft storage gc --removed -address unix:/var/opt/graft/gitaly.sock [-storage de
   of the repository (the background one, another node) holds it, or `Aborted`
   when the lease is lost during the collection.
 - `gc --removed` deletes every object of the repositories of the storage that
-  were removed at least `gc_grace` ago. It first reconciles the bucket: a
+  were removed at least `object_expiration` ago (never before `gc_grace`). It
+  first reconciles the bucket: a
   repository ID allocated at least `gc_grace − gc_margin` ago that has objects
   in the bucket and neither a row nor a tombstone (a row deleted by hand before
   this release) gets a tombstone, so its objects go `gc_grace` later. A run
@@ -427,8 +432,9 @@ graft storage gc --removed -address unix:/var/opt/graft/gitaly.sock [-storage de
   error on the subcommands that do not read it, like `--connectivity` outside
   `verify` and `--removed` outside `gc`.
 
-These commands are for operators: they need the shared token. A per-agent token
-can never call the storage core service, whatever `agent_rpcs` says.
+These commands are for operators: they need the shared token or the admin token.
+An agent-signed request can never call the storage core service, whatever
+`agent_rpcs` says.
 
 ### Upgrades
 

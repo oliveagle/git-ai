@@ -33,8 +33,8 @@ marked "not yet" and are listed in [LIMITATIONS.md](LIMITATIONS.md).
    +-----------------------------------------------------------------------------+
    |  gitaly  ([graft] standalone = true, no GitLab)                             |
    |                                                                             |
-   |  auth: per-agent tokens and the shared auth.token                           |
-   |  requestdefaults: sets gl_id / gl_username from the token identity          |
+   |  auth: SSH-signed agents, the shared auth.token, the admin token            |
+   |  requestdefaults: sets gl_id / gl_username from the authenticated identity  |
    |                                                                             |
    |  ObjectService      ChangesetService    DerivedDataService   OperationService|
    |  GetObjects         ListChangesets      Blame                UserLand        |
@@ -169,29 +169,42 @@ client                                          gitaly
 
 ## Trust boundaries
 
-- Clients authenticate with the shared `auth.token` or with a per-agent token
-  (`[[graft.agent]]`). The token gives the request an identity, the agent name.
-  In standalone mode, requests made with an agent token always get that name as
-  their acting user ID. Other requests get the identity name (`shared` or
-  `anonymous`) only when they carry no acting user ID.
+- A Graft server refuses anonymous callers: every request must carry a
+  credential. Agents authenticate with an SSH key pair. The agent holds the
+  private key and signs every request; the server holds the public key of each
+  agent in `[[graft.agent]]` and verifies the signature before it dispatches
+  the call. The agent name is the identity of that key and the only name the
+  agent can act under. The shared `auth.token` and `graft.admin_token` are
+  operator credentials for tooling and for the super-admin RPCs, not agent
+  identities. See [PLAN14.md](PLAN14.md) and
+  [AGENT-SECURITY.md](AGENT-SECURITY.md).
+- The signature covers the timestamp, a nonce, the method and the SHA-256 of
+  the request body, and a request whose signature does not verify, is outside
+  the validity window or reuses a nonce is refused. A request that carries a
+  signature never falls back to another credential: a bad signature is an
+  authentication failure, not an anonymous request.
+- In standalone mode, requests signed with an agent key always get the agent
+  name as their acting user ID. Requests made with the shared token get the
+  identity name (`shared`) only when they carry no acting user ID.
 - The acting user ID is a value the client sends in `gitaly.User.gl_id`. For a
-  request made with an agent token, neither the policy nor the changeset actor
-  uses it: both use the agent of the token, carried to the hooks in the hooks
-  payload. For the shared token, the policy decides on the acting user ID. See
+  request signed with an agent key, neither the policy nor the changeset actor
+  uses it: both use the agent name, carried to the hooks in the hooks payload.
+  For the shared token, the policy decides on the acting user ID. See
   LIMITATIONS.md under Security limitations.
 - In standalone mode there is no GitLab. The access policy in `[[graft.policy]]`
   is the only authorization check for reference updates. Treat the policy file
-  as security configuration. For agent tokens, the reference-transaction hook
-  enforces it on every reference update. The pre-receive hook enforces it on
-  pushes and OperationService RPCs for every caller. Agent tokens cannot call
-  the administrative RPCs that bypass reference transactions, such as
-  `RemoveRepository`, `SetCustomHooks` and `HookService`. See LIMITATIONS.md,
-  "Which updates the policy covers".
-- The cache tier forwards the client's authorization metadata upstream when the
-  client sent one. Otherwise it uses its own `--token`. Every cached read is
-  first checked against the upstream with the caller's credentials. Access is
-  therefore never wider than the token the caller presents, but a client that
-  sends no authorization is served with the tier's token, and that widens
-  access. With `--token` set, every client that can reach the tier without
-  credentials gets the tier token's access. Without `--token`, such a client is
-  refused. See the package documentation of `internal/graft/cachetier`.
+  as security configuration. For agent-signed requests, the
+  reference-transaction hook enforces it on every reference update. The
+  pre-receive hook enforces it on pushes and OperationService RPCs for every
+  caller. An agent cannot call the administrative RPCs that bypass reference
+  transactions, such as `RemoveRepository`, `SetCustomHooks` and `HookService`.
+  See LIMITATIONS.md, "Which updates the policy covers".
+- The cache tier forwards the client's credentials upstream when the client
+  sent them. A signature covers the caller's method and body, so the tier
+  cannot reuse it for its own upstream call: a read signed by an agent is
+  served from the cache, and checked against the upstream, only when the tier
+  has its own `--token`. Without `--token`, such a read is forwarded upstream
+  uncached. Other callers use their own `authorization` metadata, or the tier's
+  token when they send none. With `--token` set, every client that can reach
+  the tier without credentials gets the tier token's access; keep the tier
+  socket private. See the package documentation of `internal/graft/cachetier`.

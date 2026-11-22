@@ -39,10 +39,9 @@ for binary in gitaly gitaly-hooks gitaly-ssh graft graft-cache; do
   cp "$repo_root/_build/bin/$binary" "$work/bin/"
 done
 
-log "Writing agent tokens and the configuration"
+log "Writing agent SSH keys and the configuration"
 for agent in planner builder; do
-  openssl rand -hex 32 > "$work/tokens/$agent"
-  chmod 0600 "$work/tokens/$agent"
+  ssh-keygen -q -t ed25519 -N '' -C "graft-$agent" -f "$work/tokens/$agent"
 done
 sed \
   -e "s|/var/lib/graft/bin|$work/bin|g" \
@@ -50,6 +49,7 @@ sed \
   -e "s|/var/lib/graft/repos|$work/repos|g" \
   -e "s|/etc/graft/tokens|$work/tokens|g" \
   "$repo_root/examples/graft/config.toml" > "$work/config.toml"
+shared_token="$(sed -n 's/^token = "\(.*\)"$/\1/p' "$work/config.toml")"
 
 pids=()
 cleanup() {
@@ -82,10 +82,11 @@ wait_for_http() {
   return 1
 }
 
-# as_agent runs a command with the token, identity and author of one agent.
+# as_agent runs a command signed with the SSH key of one agent, with its
+# identity and author.
 as_agent() {
   local agent="$1"; shift
-  GRAFT_TOKEN="$(cat "$work/tokens/$agent")" \
+  GRAFT_AGENT_KEY="$work/tokens/$agent" \
     GRAFT_USER="$agent" \
     GRAFT_AUTHOR="$agent <$agent@example.com>" \
     "$@"
@@ -117,7 +118,7 @@ git init -q "$work/seed"
 log "Writing the seed: every tree and blob of the root tree of main"
 "$work/bin/graft-cache" snapshot \
   --upstream "unix:$work/run/gitaly.sock" \
-  --token "$(cat "$work/tokens/planner")" \
+  --token "$shared_token" \
   --repo "$REPO" \
   --rev main \
   --out "$work/demo.seed"
@@ -139,6 +140,7 @@ run_phase() {
     --tier daemon \
     --max-bytes 268435456 \
     --metrics-addr "127.0.0.1:$port" \
+    --token "$shared_token" \
     ${seed_args[@]+"${seed_args[@]}"} \
     >"$out/cache-$name.log" 2>&1 &
   cache_pid=$!

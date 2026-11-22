@@ -53,7 +53,7 @@ ideas, with normal Git repositories underneath.
 | **Test after landing, revert the culprit** | `graft-verify` tests the tip, bisects a failure and reverts the change that broke it. |
 | **Monitoring agents ("superfans")** | Agents follow the changeset stream and report what matters to each component, also through Slack. |
 | **Agent-friendly review** | Reviews with semantic approval rules: a comment-only change can need fewer approvals than a logic change. |
-| **Agents as first-class users** | Per-agent tokens, an RPC allowlist and branch policies decide what each agent may do. |
+| **Agents as first-class users** | Per-agent SSH keys, an RPC allowlist and branch policies decide what each agent may do. |
 | **Strict cache tiers** | `graft-cache` caches immutable objects in daemon and regional tiers, verifying every object. |
 
 ## Architecture

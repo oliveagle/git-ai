@@ -69,9 +69,9 @@ actors = ["builder", "planner"]
   its own resolution is allowed for every actor that may land, and the
   resolver's `check` runs on it whatever the actor. The actor is the authenticated identity of the caller, which only
   agent authentication sets (see [AGENT-SECURITY](AGENT-SECURITY.md)):
-  - with `[[graft.agent]]` configured, the agent name of a caller with an
-    agent token, or `shared` for a caller with the shared `auth.token` (for
-    example GitLab);
+  - with `[[graft.agent]]` configured, the agent name of a caller that signed
+    with its SSH key, or `shared` for a caller with the shared `auth.token`
+    (for example GitLab);
   - without `[[graft.agent]]`, no caller has an identity, so a non-empty list
     admits nobody. The server warns about this at startup.
 

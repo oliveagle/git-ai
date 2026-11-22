@@ -16,7 +16,7 @@ the example stays a working configuration.
 | `socket_path` | Unix socket to serve on, for example `/var/lib/graft/run/gitaly.sock`. Use `listen_addr` for TCP. Clients address a unix socket as `unix:<path>`. |
 | `bin_dir` | Directory with `gitaly-hooks` and `gitaly-ssh`. Required, as in upstream Gitaly. |
 | `runtime_dir` | Directory for runtime files. |
-| `[auth] token` | Shared token. It is also what the test helpers use for setup calls when agents are configured. |
+| `[auth] token` | Shared token. **Required** when the server runs as a Graft server (`standalone = true`, the storage core enabled, or a `[[graft.agent]]`/`graft.admin_token` configured), even when agents or `graft.admin_token` are configured: a Graft server refuses anonymous callers, and its Git hooks and operator tools call it with this token. Agents authenticate with their own SSH keys; the shared token is the operator credential. |
 | `[[storage]]` | Repository storage. Repositories are found below `path` by their relative path. |
 | `[gitlab]`, `[gitlab-shell]` | Not required when `[graft] standalone = true`. |
 
@@ -26,7 +26,9 @@ the example stays a working configuration.
 |---|---|---|---|
 | `standalone` | bool | `false` | Run without GitLab. No GitLab secret or URL is required, GitLab is never contacted, and access checks and hook callbacks are answered by the standalone client from `[[graft.policy]]`. Request defaults are applied on the external server. |
 | `policy` | array of tables | empty | Ordered access rules, see below. |
-| `agent` | array of tables | empty | Per-agent credentials, see below. With at least one agent, every request must present an agent token or the shared `auth.token`. |
+| `agent` | array of tables | empty | Per-agent SSH public keys, see below. Every request of an agent is signed with its private key and verified by the server (doc/graft/PLAN14.md). |
+| `admin_token` | string | empty | Secret of the super admin: the only credential that may purge an archived repository (doc/graft/PLAN13.md). Set either `admin_token` or `admin_token_file`, never both. |
+| `admin_token_file` | string | empty | File holding the super admin's secret, surrounding whitespace removed. Read at startup. |
 | `agent_rpcs` | array of strings | empty | Extra full gRPC method names (for example `/gitaly.RepositoryService/RepositorySize`) that agents may call on top of the built-in allowlist. Startup fails on an unregistered method or on a method that agents may never call. See [AGENT-SECURITY.md](AGENT-SECURITY.md). |
 | `land` | table | | `[graft.land.batch]`: batching of concurrent lands, and `[graft.land.resolver]`: the conflict resolver of `UserLand`, see below. |
 | `storage` | table | | `[graft.storage]`: the storage core (database plus object storage), see below. |
@@ -48,10 +50,11 @@ is handled).
   `graft:<storage>/<relative path>` when it is empty. This value is never
   overwritten, and no other repository field is touched.
 
-For a request made with an agent token, the identity fields are always set to
-the agent name, even when the client sent another value, so an agent cannot
-claim another actor's user ID. For the shared token and for unauthenticated
-requests, they are filled only when empty and a value the client sent is kept.
+For a request signed by an agent, the identity fields are always set to the
+agent name, even when the client sent another value, so an agent cannot claim
+another actor's user ID. For the shared token, the super admin's token and an
+unauthenticated upstream Gitaly, they are filled only when empty and a value the
+client sent is kept.
 The user's name and email, which become the committer of new commits, are never
 changed. See [LIMITATIONS.md](LIMITATIONS.md), Security limitations.
 
@@ -62,8 +65,8 @@ reference, the first rule that applies decides:
 
 - A rule applies when its `actor` matches the actor of the request and one of
   its `refs` globs matches the reference. The actor is the agent name for a
-  request made with an agent token. Otherwise (shared token, no
-  authentication) it is the acting user ID of the request (`gl_id`), see
+  request signed by an agent. Otherwise (shared token, super admin) it is the
+  acting user ID of the request (`gl_id`), see
   [LIMITATIONS.md](LIMITATIONS.md). An empty `actor` or `"*"` matches every
   caller. Empty `refs` match every reference.
 - A reference that no rule applies to is denied. This includes tags and any other
@@ -72,11 +75,11 @@ reference, the first rule that applies decides:
 - An update is allowed only if every changed reference is allowed. The denial
   message names the rule that decided, or says that no rule matched.
 - When the policy is empty, every update is allowed.
-- For requests made with an agent token, the policy holds for every reference
+- For requests signed by an agent, the policy holds for every reference
   update under `refs/`, whichever RPC performs it (for example `WriteRef` and
   `DeleteRefs`, not only `UserLand` and pushes). See
   [LIMITATIONS.md](LIMITATIONS.md), "Which updates the policy covers", which
-  also lists the administrative RPCs that agent tokens cannot call.
+  also lists the administrative RPCs that agents cannot call.
 - A batched land is decided per request, with the actor of each request, before
   the request joins the batch. The combined update of the batch, made as the
   synthetic user `graft-batch`, is not checked again, so a rule for
@@ -85,7 +88,7 @@ reference, the first rule that applies decides:
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `actor` | string | `""` (everybody) | Glob (`path.Match` syntax) matched against the actor of the request: the agent of the token, or the acting user ID for the shared token. |
+| `actor` | string | `""` (everybody) | Glob (`path.Match` syntax) matched against the actor of the request: the name of the agent whose key signed it, or the acting user ID for the shared token. |
 | `refs` | array of strings | `[]` (every reference) | Globs matched against fully qualified references such as `refs/heads/main`. Syntax is `path.Match`, plus a trailing `/**` that matches any depth, so `refs/heads/**` matches `refs/heads/feature/x`, and any other trailing `**` that matches any remainder, so `refs/heads/release**` matches `refs/heads/release/1.0`. Invalid globs and empty entries are rejected at startup, and by a reload, which keeps the policy in force. |
 | `allow` | bool | `false` | Whether a matching update is allowed. |
 
@@ -146,22 +149,44 @@ fails there.
 
 ### `[[graft.agent]]`
 
+An agent is an SSH key pair. The server holds the public key and verifies the
+signature of every request of the agent (doc/graft/PLAN14.md); the private key
+never leaves the agent.
+
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `name` | string | required | Identity of the agent. It is the identity the token maps to, the actor the policy decides on for the token's requests, the actor that the changeset log records for the token's updates and, in standalone mode, the user ID (`gl_id`, `gl_username`) of every request made with the token, whatever the client sent. The name `shared` is reserved for the shared token, and `proposals` and `green` for the server's references under `refs/graft/`: the workspace's temporary branches of an agent are `graft/<name>/...`, which for those names an agent may not use. |
-| `token` | string | — | The secret. Set either `token` or `token_file`. |
-| `token_file` | string | — | Path to a file that holds the secret, surrounding whitespace removed. Read at startup. |
+| `name` | string | required | Identity of the agent. It is the identity the key maps to, the actor the policy decides on for the agent's requests, the actor the changeset log records for the agent's updates and, in standalone mode, the user ID (`gl_id`, `gl_username`) of every request the agent makes, whatever the client sent. The name `shared` is reserved for the shared token, `admin` for the super admin, and `proposals` and `green` for the server's references under `refs/graft/`: the workspace's temporary branches of an agent are `graft/<name>/...`, which for those names an agent may not use. |
+| `public_key` | string | — | The agent's public key, in the OpenSSH format (`ssh-ed25519 AAAA...`). Set either `public_key` or `public_key_file`. |
+| `public_key_file` | string | — | Path to a file holding the public key. Read at startup. |
 
-Clients send the token as a plain bearer token in the standard `authorization`
-metadata. The v2 HMAC token format, computed with the agent token as the secret,
-is accepted too. Comparison is constant time. The shared `auth.token` is accepted
-only in the v2 HMAC format, never as a plain bearer token. Health checks never
-require a token.
+Every request of an agent carries these metadata keys:
 
-Agent names and tokens must be unique. Startup fails when a name is empty or
-reserved, a name repeats, two agents share a token, an agent token equals the
-shared `auth.token`, both `token` and `token_file` are set, or a token file is
-missing or empty.
+| Metadata | Content |
+|---|---|
+| `graft-key` | SHA-256 fingerprint of the public key, as `ssh.FingerprintSHA256` writes it (`SHA256:...`). The server looks the agent up with it. |
+| `graft-timestamp` | Unix time of the request, in seconds. The server refuses a request more than 60 seconds from its clock. |
+| `graft-nonce` | 16 random bytes, hex. The server remembers the nonces it has seen and refuses a repeated one, so a captured request cannot be replayed. |
+| `graft-signature` | Base64 SSH (RFC 4253) signature of the payload below, made with the agent's private key. |
+
+The signed payload is deterministic and binds the signature to one call:
+
+```
+graft-ssh-v1
+<timestamp>
+<nonce>
+<full method, e.g. /gitaly.OperationService/UserLand>
+<hex SHA-256 of the marshalled request body; empty for a stream>
+```
+
+The SDK's `sdk.WithAgentKey` signs every call; `graft -agent-key` (or
+`GRAFT_AGENT_KEY`) does the same. A request that carries a signature is
+authenticated with it and with nothing else: a broken, unknown or replayed
+signature is refused and never downgraded to the shared token.
+
+Agent names and keys must be unique. Startup fails when a name is empty or
+reserved, a name repeats, two agents share a key, an agent's key equals another
+key, both `public_key` and `public_key_file` are set, or a public key file is
+missing or malformed. Health checks never require a credential.
 
 ### `[graft.object_service]`
 
@@ -287,6 +312,9 @@ are in [STORAGE.md](STORAGE.md).
 | `checkpoint_changesets` | integer | `1000` | Checkpoint a repository once this many changesets follow its newest checkpoint. `0` never checkpoints by count. |
 | `checkpoint_pack_bytes` | integer | `268435456` (256 MiB) | Checkpoint a repository once the packs of the changesets after its newest checkpoint hold this many bytes. `0` never checkpoints by size. |
 | `lease_ttl` | string (Go duration) | `"10m"` | How long a node holds a repository's maintenance lease; renewed every third of it while the work runs. Must be positive. |
+| `archive_retention` | string (days or Go duration) | `"180d"` (six months) | How long an archived repository remains readable before a super admin may start cleanup (doc/graft/PLAN13.md). Accepts a positive number of days with a `d` suffix or a positive Go duration. Cleanup cannot start earlier. |
+| `cleanup_observation` | string (days or Go duration) | `"7d"` | The minimum time between closing a repository's reads and purging it. Values below seven days are refused. |
+| `object_expiration` | string (days or Go duration) | `"30d"` | How long a purged repository's objects remain before the storage-core garbage collector deletes them. Use the same period for an OSS lifecycle rule that first moves objects to a low-frequency storage class. The effective value is never below `gc_grace`. |
 
 ```toml
 [graft.storage]
@@ -300,7 +328,8 @@ gc = "auto"             # checkpoints are on by default in authoritative mode
 Startup fails when the mode is unknown, authoritative mode is set without
 `standalone = true`, the database URL is missing or has another scheme, the
 bucket is missing or not a URL, `node_id` contains spaces or slashes, a
-duration is not a positive Go duration, `gc_grace` is not greater than
+duration is invalid or (for `cleanup_observation`) below seven days, `gc_grace`
+is not greater than
 `sync_timeout + gc_margin`, `checkpoints` or `gc` is neither `off` nor `auto`,
 either is `"auto"` outside authoritative mode, or `checkpoint_pack_bytes` is
 negative.
@@ -321,7 +350,7 @@ The cache is configured on its command line, not in `config.toml`.
 | `--disk-dir` | empty | On-disk object store. Only valid with `--tier cache`; the daemon tier refuses it. |
 | `--disk-max-bytes` | `10737418240` (10 GiB) | Byte budget of the on-disk store. The oldest objects are evicted first. |
 | `--metrics-addr` | empty | HTTP address that serves Prometheus metrics at `/metrics` and the statistics as JSON at `/stats`. Disabled when empty. |
-| `--token` | empty | Sent upstream on requests that carry no `authorization` header of their own. Requests that carry one always use their own. Every client that can reach the tier without credentials gets this token's access, so set it only when all of them may use it. |
+| `--token` | empty | Sent upstream on requests that carry no `authorization` header of their own. Requests that carry one always use their own. Every client that can reach the tier without credentials gets this token's access, so set it only when all of them may use it. An agent's signed request reaches the tier with its signature, which the tier cannot reuse for its own upstream calls (the signature covers the caller's method and body): set `--token` as well if the tier should authorize and fill cache entries for signed agents. Without it, a signed agent's reads are forwarded to the upstream uncached. |
 | `--seed` | empty | Comma-separated seed files (`FILE[,FILE]`), written by `graft-cache snapshot`, loaded in order into the cache before the tier serves. Every object is verified against its object ID; a damaged record is skipped and counted, and a file that cannot be opened or is not a seed file stops the start. Objects go into memory and, with `--disk-dir`, onto disk; an object larger than `--max-bytes` is skipped. Seeded objects are served without upstream object reads, but every read is still authorized by the upstream first. |
 
 Chaining: point the `--upstream` of a daemon tier at a cache tier, and the cache
@@ -365,14 +394,15 @@ It prints `snapshot: <objects> objects, <bytes> bytes, <missing> missing -> <out
 ## `graft` CLI
 
 The CLI reads these environment variables. Each one can also be passed as a flag
-(`--address`, `--token`, `--storage`, `--user`, `--author`).
+(`--address`, `--token`, `--agent-key`, `--storage`, `--user`, `--author`).
 
 | Variable | Default | Description |
 |---|---|---|
 | `GRAFT_ADDRESS` | from the workspace | Gitaly or `graft-cache` address. |
-| `GRAFT_TOKEN` | none | The agent token, or the shared token. |
+| `GRAFT_TOKEN` | none | The shared token of the operator. A Graft server refuses anonymous callers, so one of `GRAFT_TOKEN` and `GRAFT_AGENT_KEY` is needed. |
+| `GRAFT_AGENT_KEY` | none | Path to the private key of the agent. Every request is signed with it, and the server authenticates the agent. It takes precedence over `GRAFT_TOKEN`. |
 | `GRAFT_STORAGE` | `default` | Storage name. |
-| `GRAFT_USER` | empty | The acting user ID of writes. It names the temporary branches of `graft commit` (`graft/<user>/...`), verbatim when it is a valid reference name component and as a lowercase slug otherwise. Set it to the agent name of `GRAFT_TOKEN`. With an agent token the server replaces it with the token's agent (standalone mode) and the policy decides on that agent; with the shared token it decides on this ID. Without it, the CLI sends the user ID `anonymous` and commits on a temporary branch named after the author, which a policy that scopes temporary branches per agent may deny. |
+| `GRAFT_USER` | empty | The acting user ID of writes. It names the temporary branches of `graft commit` (`graft/<user>/...`), verbatim when it is a valid reference name component and as a lowercase slug otherwise. Set it to the agent name. With an agent key the server replaces it with the agent's name (standalone mode) and the policy decides on that agent; with the shared token it decides on this ID. Without it, the CLI sends the user ID `anonymous` and commits on a temporary branch named after the author, which a policy that scopes temporary branches per agent may deny. |
 | `GRAFT_AUTHOR` | `graft <graft@localhost>` | Author of `graft commit`, as `Name <email>`. |
 
 The workspace flag `-C DIR` selects a workspace. Without it, the CLI looks for
@@ -384,9 +414,12 @@ the workspace above the current directory.
 [graft]
 standalone = true
 
+[auth]
+token = "the shared token of the operator"
+
 [[graft.agent]]
 name = "planner"
-token_file = "/etc/graft/tokens/planner"
+public_key_file = "/etc/graft/keys/planner.pub"
 
 [[graft.policy]]
 actor = "planner"

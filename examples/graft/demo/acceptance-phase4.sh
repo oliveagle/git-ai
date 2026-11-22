@@ -23,7 +23,7 @@
 #
 # The results (JSON, Markdown, Prometheus scrapes and the combined table) stay in
 # WORKDIR/results. On exit the script stops any Gitaly server of WORKDIR that is
-# still running, and deletes the agent tokens in WORKDIR/tokens.
+# still running, and deletes the agent keys in WORKDIR/tokens.
 
 set -euo pipefail
 
@@ -46,7 +46,7 @@ RATE=${RATE:-0.2}
 SEED=${SEED:-1}
 
 # cleanup runs on every exit. It stops the Gitaly servers that a killed
-# bench-batch.sh may have left behind, and removes the agent tokens, which are
+# bench-batch.sh may have left behind, and removes the agent keys, which are
 # secrets. The results are kept.
 cleanup() {
   local status=$?

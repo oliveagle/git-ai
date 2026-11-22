@@ -4,9 +4,11 @@ This walks through a single-machine setup: one standalone Gitaly, two agents
 with different policy rules, a `graft-cache` daemon in front of it, and the
 `graft` CLI as an agent workspace. It takes about ten minutes by hand.
 
-For requests made with an agent token, the policy decides on the agent of the
-token, so one agent cannot act as the other. Read
-[LIMITATIONS.md](LIMITATIONS.md), Security limitations, before you give tokens
+Every request must be authenticated: the server refuses anonymous callers.
+Each agent is an SSH key pair and signs every request with its private key, so
+the policy decides on the agent that signed and one agent cannot act as the
+other. The shared token of `[auth]` is for operators only. Read
+[LIMITATIONS.md](LIMITATIONS.md), Security limitations, before you give a key
 to anything you do not control.
 
 [`examples/graft/quickstart.sh`](../../examples/graft/quickstart.sh) runs the
@@ -42,14 +44,18 @@ The example defines two agents, `planner` and `builder`, a storage at
 else may not, and every branch is open to all callers. See
 [CONFIGURATION.md](CONFIGURATION.md) for every key.
 
-Create the agent token files that the configuration references:
+Create the SSH key pair of each agent. The private key stays with the agent
+(here under `/etc/graft/tokens` for the walkthrough), and the public key is
+what the configuration references through `public_key_file`:
 
 ```shell
 for agent in planner builder; do
-  openssl rand -hex 32 > "/etc/graft/tokens/$agent"
-  chmod 0600 "/etc/graft/tokens/$agent"
+  ssh-keygen -q -t ed25519 -N '' -C "graft-$agent" -f "/etc/graft/tokens/$agent"
 done
 ```
+
+The server reads the public keys at startup, so restart it after a key change.
+An agent authenticates by signing every request; there is no agent token.
 
 ## 3. Start Gitaly in standalone mode
 
@@ -63,7 +69,7 @@ access check is answered from the policy.
 ## 4. Create a repository
 
 Creating a repository is an operator action: it needs the shared token of the
-`[auth]` section, and an agent token is refused. `--initial-commit` gives the
+`[auth]` section, and an agent-signed request is refused. `--initial-commit` gives the
 repository a first commit (a `README.md`) on its default branch, `main`,
 because a clone needs an existing branch:
 
@@ -92,10 +98,16 @@ graft-cache \
   --upstream unix:/var/lib/graft/run/gitaly.sock \
   --tier daemon \
   --max-bytes 1073741824 \
-  --metrics-addr 127.0.0.1:9236
+  --metrics-addr 127.0.0.1:9236 \
+  --token change-me-shared-token
 ```
 
-The daemon keeps objects in memory only. For a regional tier that also stores
+The daemon keeps objects in memory only. It needs a token of its own to cache
+reads made by a signed agent: a signature covers the caller's request, so the
+tier cannot reuse it for the upstream requests it makes itself. Without
+`--token`, such reads are forwarded uncached. With `--token` set, every client
+that can reach the socket without credentials acts with that token, so keep the
+socket private (see [ARCHITECTURE.md](ARCHITECTURE.md), Trust boundaries). For a regional tier that also stores
 objects on disk, run another `graft-cache --tier cache --disk-dir /var/lib/graft/cache`
 whose `--upstream` is the Gitaly socket, and point the daemon's `--upstream` at
 it. Tiers chain: a daemon may point at a cache tier, which points at Gitaly.
@@ -105,19 +117,20 @@ tier and administrative tools.
 
 ## 6. Clone and commit as the planner
 
-The CLI reads its settings from the environment. Set `GRAFT_USER` to the agent
-name of the token: it names the temporary branches of commits
-(`graft/<user>/...`). With an agent token, the server uses the agent name as the
-user ID of every request whatever `GRAFT_USER` says, and the policy decides on
-the agent of the token. The user ID is used verbatim in the branch name when it
-is a valid reference name component, so a policy can grant `refs/heads/graft/<agent>/**`
-to each agent. Other names, such as names with spaces, become a lowercase slug
-of letters, digits and dashes.
+The CLI reads its settings from the environment. `GRAFT_AGENT_KEY` is the path
+of the agent's private key; every request is signed with it. Set `GRAFT_USER` to
+the same agent name: it names the temporary branches of commits
+(`graft/<user>/...`). The server uses the agent name of the key as the user ID of
+every request whatever `GRAFT_USER` says, and the policy decides on the agent
+that signed. The user ID is used verbatim in the branch name when it is a valid
+reference name component, so a policy can grant
+`refs/heads/graft/<agent>/**` to each agent. Other names, such as names with
+spaces, become a lowercase slug of letters, digits and dashes.
 
 ```shell
 export GRAFT_ADDRESS=unix:/var/lib/graft/run/cache.sock
 export GRAFT_STORAGE=default
-export GRAFT_TOKEN="$(cat /etc/graft/tokens/planner)"
+export GRAFT_AGENT_KEY=/etc/graft/tokens/planner
 export GRAFT_USER=planner
 export GRAFT_AUTHOR="planner <planner@example.com>"
 
@@ -137,7 +150,7 @@ graft commit -m "Add README" --land main
 The builder may not write to `main`, but it may write to any other branch:
 
 ```shell
-export GRAFT_TOKEN="$(cat /etc/graft/tokens/builder)"
+export GRAFT_AGENT_KEY=/etc/graft/tokens/builder
 export GRAFT_USER=builder
 export GRAFT_AUTHOR="builder <builder@example.com>"
 

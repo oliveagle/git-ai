@@ -54,11 +54,10 @@ for binary in gitaly gitaly-hooks gitaly-ssh; do
 done
 go build -C "$repo_root" -o "$work/bin/graft-bench" ./cmd/graft-bench
 
-log "Writing tokens"
+log "Writing the shared token and the agent SSH keys"
 token="$(openssl rand -hex 32)"
 for agent in planner builder; do
-  openssl rand -hex 32 > "$work/tokens/$agent"
-  chmod 0600 "$work/tokens/$agent"
+  ssh-keygen -q -t ed25519 -N '' -C "graft-$agent" -f "$work/tokens/$agent"
 done
 
 # metrics_port returns the metrics port of server NAME.

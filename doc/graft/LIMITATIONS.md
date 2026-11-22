@@ -18,36 +18,37 @@ machine.
   public and are not reproduced.
 - **Not a security boundary by itself.** The access policy is local
   configuration. Whoever can edit the server configuration can change who may
-  write where. Protect the configuration and the token files accordingly.
+  write where. Protect the configuration, the agents' private keys and the
+  token files accordingly.
 
 ## Security limitations
 
 ### Who the policy decides on
 
-For a request authenticated with an agent token, the standalone access policy
-decides on the agent name of that token. The acting user ID that the client
+For a request signed with an agent's SSH key, the standalone access policy
+decides on the agent name of that key. The acting user ID that the client
 sends (`gitaly.User.gl_id`) does not change the decision: in standalone mode the
 request defaults replace it with the agent name before the request is handled.
 The user's name and email, which become the committer of new commits, are kept
-as sent. The `builder` token with `User.ID` set to `planner` is denied on
+as sent. The `builder` key with `User.ID` set to `planner` is denied on
 `main`. `TestPolicyUsesTokenIdentity` in `internal/graft/e2e` pins this.
 
-For a request authenticated with the shared `auth.token`, or with no
-authentication, the policy decides on the acting user ID that the request
-carries. The request defaults fill it with `shared` (or `anonymous`) only when
-the client left it empty; the `shared` identity exists only when agents are
-configured, so without agents a caller with the shared token is `anonymous`.
-The shared token is an administrative credential: a holder of it can act as any
-user, as with upstream Gitaly and GitLab.
+A Graft server refuses an anonymous caller. For a request authenticated with
+the shared `auth.token`, the policy decides on the acting user ID that the
+request carries; the request defaults fill it with `shared` when the client
+left it empty. The shared token is an administrative credential: a holder of it
+can act as any user, as with upstream Gitaly and GitLab. Per-agent identity is
+what the SSH keys are for; do not hand the shared token to agents
+(doc/graft/PLAN14.md).
 
-The changeset log records the identity of the token as the actor: the agent
-name, or `shared` for the shared token when agents are configured. Without
-agents, it falls back to the client's user ID.
+The changeset log records the authenticated identity as the actor: the agent
+name, `shared` for the shared token, or `admin` for the super admin. The
+client's user ID is the fallback only for an upstream Gitaly without a token.
 `TestChangesetActorUsesTokenIdentity` in `internal/graft/e2e` pins this.
 
 ### Which updates the policy covers
 
-In standalone mode, for a request made with an agent token, the policy is
+In standalone mode, for a request signed with an agent's SSH key, the policy is
 enforced on every reference update that Gitaly performs, not only on pushes and
 OperationService RPCs. The pre-receive hook checks pushes and OperationService
 RPCs such as `UserLand`. The reference-transaction hook checks the policy again
