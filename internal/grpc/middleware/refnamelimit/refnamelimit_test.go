@@ -195,6 +195,7 @@ var otherFields = map[protoreflect.FullName]string{
 	"gitaly.FetchSourceBranchRequest.expected_target_old_oid":         "an object ID",
 	"gitaly.FetchSourceBranchRequest.source_branch":                   "read",
 	"gitaly.GitCommit.referenced_by":                                  "read",
+	"gitaly.RegisterMirrorTargetRequest.branches":                     "a mirror's branch allowlist; registering a target writes no reference",
 	"gitaly.Remote.http_authorization_header":                         "not a reference",
 	"gitaly.Remote.mirror_refmaps":                                    "refspecs: the names they produce reach the updater",
 	"gitaly.ResolveConflictsRequestHeader.target_branch":              "read",

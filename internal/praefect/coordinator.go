@@ -125,6 +125,12 @@ var transactionRPCs = map[string]transactionsCondition{
 	// DeleteConflictingReference writes a changeset to the database (authoritative mode only,
 	// which is refused behind Praefect).
 	"/gitaly.StorageCoreService/DeleteConflictingReference": transactionsDisabled,
+	// StartRepositoryCleanup moves the row of an archived repository into its observation
+	// window; it writes the storage core's database, never the references of a replica.
+	"/gitaly.StorageCoreService/StartRepositoryCleanup": transactionsDisabled,
+	// The mirror target of a repository is a row of the mirror queue, not a reference.
+	"/gitaly.MirrorService/RegisterTarget":   transactionsDisabled,
+	"/gitaly.MirrorService/UnregisterTarget": transactionsDisabled,
 }
 
 // forcePrimaryRoutingRPCs tracks RPCs which need to always get routed to the primary. This should
