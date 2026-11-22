@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
 
@@ -384,7 +383,7 @@ func WriteExecutable(tb testing.TB, path string, content []byte) string {
 	//
 	// No matter what, after this step any file descriptors referring to this writeable file
 	// descriptor will be exclusively locked.
-	require.NoError(tb, syscall.Flock(int(executable.Fd()), syscall.LOCK_EX))
+	require.NoError(tb, lockFileExclusive(executable))
 
 	// We now close this file. The file will be automatically unlocked as soon as all
 	// references to this file descriptor are closed.
@@ -398,17 +397,13 @@ func WriteExecutable(tb testing.TB, path string, content []byte) string {
 	// the exclusive file lock on the above writeable file descriptor has been dropped. So as
 	// soon as we're able to acquire the lock we know that there cannot be any open writeable
 	// file descriptors for this file anymore, and thus we won't get ETXTBSY anymore.
-	require.NoError(tb, syscall.Flock(int(executable.Fd()), syscall.LOCK_SH))
+	require.NoError(tb, lockFileShared(executable))
 	MustClose(tb, executable)
 
 	return path
 }
 
-var umask perm.Umask = func() perm.Umask {
-	oldMask := syscall.Umask(0)
-	syscall.Umask(oldMask)
-	return perm.Umask(oldMask)
-}()
+var umask perm.Umask = processUmask()
 
 // Umask return the umask of the current procses. Note that this value is computed once at initialization time because
 // it is shared global state that is unsafe to access when there are multiple threads running at the same time. It

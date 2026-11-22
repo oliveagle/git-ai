@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"go.uber.org/goleak"
@@ -60,21 +60,12 @@ func mustHaveNoChildProcess() {
 	}
 }
 
-func mustFindNoFinishedChildProcess() error {
-	// Wait4(pid int, wstatus *WaitStatus, options int, rusage *Rusage) (wpid int, err error)
-	//
-	// We use pid -1 to wait for any child. We don't care about wstatus or
-	// rusage. Use WNOHANG to return immediately if there is no child waiting
-	// to be reaped.
-	wpid, err := syscall.Wait4(-1, nil, syscall.WNOHANG, nil)
-	if err == nil && wpid > 0 {
-		return fmt.Errorf("wait4 found child process %d", wpid)
+func mustFindNoRunningChildProcess() error {
+	// pgrep and ps are not available on Windows, where the server does not run.
+	if runtime.GOOS == "windows" {
+		return nil
 	}
 
-	return nil
-}
-
-func mustFindNoRunningChildProcess() error {
 	pgrep := exec.CommandContext(context.Background(), "pgrep", "-P", fmt.Sprintf("%d", os.Getpid()))
 	desc := fmt.Sprintf("%q", strings.Join(pgrep.Args, " "))
 

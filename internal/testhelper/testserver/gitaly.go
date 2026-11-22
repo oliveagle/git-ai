@@ -203,13 +203,17 @@ func runGitaly(tb testing.TB, cfg config.Cfg, registrar func(srv *grpc.Server, d
 		}
 	}
 
-	// Test servers use the same lifecycle rule as production: RemoveRepository
-	// is disabled, so tests exercise archive and admin purge instead.
-	lifecycleGuard := lifecycle.New(gsd.logger.WithField("test", tb.Name()))
-	serverOpts = append(serverOpts,
-		server.WithUnaryInterceptor(lifecycleGuard.UnaryInterceptor()),
-		server.WithStreamInterceptor(lifecycleGuard.StreamInterceptor()),
-	)
+	// Test servers use the same lifecycle rule as production: a Graft server
+	// disables RemoveRepository, so its tests exercise archive and admin purge
+	// instead. A plain Gitaly server, one that configured none of the Graft
+	// credentials, keeps the upstream removal RPC.
+	if cfg.Graft.RequiresAuthentication() {
+		lifecycleGuard := lifecycle.New(gsd.logger.WithField("test", tb.Name()))
+		serverOpts = append(serverOpts,
+			server.WithUnaryInterceptor(lifecycleGuard.UnaryInterceptor()),
+			server.WithStreamInterceptor(lifecycleGuard.StreamInterceptor()),
+		)
+	}
 
 	if gsd.graftStorageGate != nil {
 		serverOpts = append(serverOpts,
