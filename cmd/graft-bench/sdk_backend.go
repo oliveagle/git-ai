@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -14,16 +16,30 @@ import (
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/client"
-	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
+// benchObjectFormat is the object format the benchmark creates repositories
+// with. It keeps the GITALY_TEST_WITH_SHA256 behaviour the gittest default
+// had, without pulling the test-only gittest package (and its Unix-only
+// internal/command dependency) into the released binary.
+func benchObjectFormat() gitalypb.ObjectFormat {
+	if _, enabled := os.LookupEnv("GITALY_TEST_WITH_SHA256"); enabled {
+		return gitalypb.ObjectFormat_OBJECT_FORMAT_SHA256
+	}
+	return gitalypb.ObjectFormat_OBJECT_FORMAT_SHA1
+}
+
 // zeroOID is the object ID that means "no object", used to require that a
-// branch does not exist yet.
-// It follows the object hash the test run uses, so that the bench works on
-// SHA-256 repositories too.
-var zeroOID = gittest.DefaultObjectHash.ZeroOID
+// branch does not exist yet. It follows benchObjectFormat, so that the bench
+// works on SHA-256 repositories too.
+func zeroOID() string {
+	if benchObjectFormat() == gitalypb.ObjectFormat_OBJECT_FORMAT_SHA256 {
+		return strings.Repeat("0", 64)
+	}
+	return strings.Repeat("0", 40)
+}
 
 // createRepository creates the repository relPath on storage through the
 // RepositoryService of the server, so that the server creates it inside its
@@ -42,7 +58,7 @@ func createRepository(ctx context.Context, address, token, storage, relPath stri
 
 	_, err = gitalypb.NewRepositoryServiceClient(conn).CreateRepository(ctx, &gitalypb.CreateRepositoryRequest{
 		Repository:   &gitalypb.Repository{StorageName: storage, RelativePath: relPath},
-		ObjectFormat: gittest.DefaultObjectHash.ProtoFormat,
+		ObjectFormat: benchObjectFormat(),
 	})
 	return err
 }
@@ -93,7 +109,7 @@ func (b *SDKBackend) Prepare(ctx context.Context, cfg Config) (string, error) {
 
 	res, err := b.repo.CommitFiles(ctx, sdk.CommitOptions{
 		Branch:         cfg.Branch,
-		ExpectedOldOID: zeroOID.String(),
+		ExpectedOldOID: zeroOID(),
 		Message:        "graft-bench: initial commit",
 		Author:         sdk.Signature{Name: "graft-bench", Email: "bench@graft-bench.invalid"},
 		User:           sdk.User{ID: "graft-bench", Name: "graft-bench", Email: "bench@graft-bench.invalid", Username: "graft-bench"},
