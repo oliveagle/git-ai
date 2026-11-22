@@ -4,9 +4,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/git/stats"
 	gitalycfgprom "github.com/feder-cr/git-ai/internal/gitaly/config/prometheus"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Metrics stores prometheus metrics of housekeeping tasks.

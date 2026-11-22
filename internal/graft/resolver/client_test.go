@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 // sampleRequest is a request with a content conflict and a modify-delete
@@ -78,7 +79,7 @@ func cannedCommand(t *testing.T, stdout []byte) []string {
 
 	respFile := filepath.Join(t.TempDir(), "response.json")
 	require.NoError(t, os.WriteFile(respFile, stdout, 0o644))
-	return []string{writeScript(t, fmt.Sprintf("cat > /dev/null\ncat '%s'\n", respFile))}
+	return []string{writeScript(t, fmt.Sprintf("cat > /dev/null\ncat %q\n", respFile))}
 }
 
 // capturingCommand returns a command that stores its stdin in the returned
@@ -91,7 +92,7 @@ func capturingCommand(t *testing.T, stdout []byte) ([]string, string) {
 	respFile := filepath.Join(dir, "response.json")
 	require.NoError(t, os.WriteFile(respFile, stdout, 0o644))
 
-	return []string{writeScript(t, fmt.Sprintf("cat > '%s'\ncat '%s'\n", reqFile, respFile))}, reqFile
+	return []string{writeScript(t, fmt.Sprintf("cat > %q\ncat %q\n", reqFile, respFile))}, reqFile
 }
 
 func commandConfig(command []string) config.GraftResolver {
@@ -277,7 +278,7 @@ func TestResolve_CommandRefusalWithOutputIsStillRefusal(t *testing.T) {
 
 	// A non-zero exit means refusal whatever the stdout says.
 	stdout := mustJSON(t, validResponse("merged"))
-	client := newClient(t, commandConfig([]string{writeScript(t, fmt.Sprintf("cat > /dev/null\nprintf '%%s' '%s'\necho nope >&2\nexit 1\n", stdout))}))
+	client := newClient(t, commandConfig([]string{writeScript(t, fmt.Sprintf("cat > /dev/null\nprintf '%%s' %q\necho nope >&2\nexit 1\n", stdout))}))
 
 	_, err := client.resolve(testhelper.Context(t), sampleRequest())
 	require.ErrorIs(t, err, ErrUnresolvable)
@@ -394,7 +395,7 @@ func TestResolve_CommandGetsMinimalEnvironment(t *testing.T) {
 	t.Setenv("GRAFT_RESOLVE_TEST_SECRET", "hunter2")
 
 	envFile := filepath.Join(t.TempDir(), "env.txt")
-	command := []string{writeScript(t, fmt.Sprintf("cat > /dev/null\nenv > '%s'\n", envFile))}
+	command := []string{writeScript(t, fmt.Sprintf("cat > /dev/null\nenv > %q\n", envFile))}
 	client := newClient(t, commandConfig(command))
 
 	// The output is invalid on purpose: only the environment matters here.
@@ -444,7 +445,7 @@ func TestCheck_refusesARequestOverItsBound(t *testing.T) {
 	requireUnix(t)
 
 	marker := filepath.Join(t.TempDir(), "ran")
-	cfg := commandConfig([]string{writeScript(t, fmt.Sprintf("touch '%s'\ncat > /dev/null\n", marker))})
+	cfg := commandConfig([]string{writeScript(t, fmt.Sprintf("touch %q\ncat > /dev/null\n", marker))})
 	cfg.MaxFileBytes = MaxCheckFileBytes
 	client := newClient(t, cfg)
 
@@ -498,7 +499,7 @@ func TestResolve_RequestChecksDoNotRunTheResolver(t *testing.T) {
 	requireUnix(t)
 
 	marker := filepath.Join(t.TempDir(), "ran")
-	command := []string{writeScript(t, fmt.Sprintf("touch '%s'\ncat > /dev/null\n", marker))}
+	command := []string{writeScript(t, fmt.Sprintf("touch %q\ncat > /dev/null\n", marker))}
 
 	for _, tc := range []struct {
 		name    string

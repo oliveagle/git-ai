@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -17,7 +19,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMigrator(t *testing.T) {

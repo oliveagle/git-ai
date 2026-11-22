@@ -5,9 +5,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/proxy/grant"
 	"github.com/feder-cr/git-ai/proxy/policy"
-	"github.com/stretchr/testify/require"
 )
 
 func TestJSONContract(t *testing.T) {

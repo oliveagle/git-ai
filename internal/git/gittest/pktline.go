@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git/pktline"
 )
 
 // Pktlinef formats the given formatting string into a pktline.

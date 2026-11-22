@@ -5,25 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
-	"github.com/feder-cr/git-ai/internal/graft/requestdefaults"
-	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/grpc/grpcstats"
-	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/cache"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/costhandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/customfieldshandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/featureflag"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/loghandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/panichandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/requestinfohandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryhandler"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/statushandler"
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	gitalylog "github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/tracing"
 	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
 	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -36,6 +17,27 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	expcredentials "google.golang.org/grpc/experimental/credentials"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
+	"github.com/feder-cr/git-ai/internal/graft/requestdefaults"
+	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
+	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/grpc/grpcstats"
+	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/cache"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/costhandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/customfieldshandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/featureflag"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/loghandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/panichandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/refnamelimit"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/requestinfohandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryhandler"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/statushandler"
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	gitalylog "github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/tracing"
 )
 
 type serverConfig struct {
@@ -185,6 +187,9 @@ func (s *GitalyServerFactory) New(external, secure bool, opts ...Option) (*grpc.
 	if external && s.cfg.Graft.Standalone {
 		unaryServerInterceptors = append(unaryServerInterceptors, requestdefaults.UnaryServerInterceptor)
 	}
+	// For every caller, once authenticated, and before a request takes a place in a limiter.
+	streamServerInterceptors = append(streamServerInterceptors, refnamelimit.StreamInterceptor)
+	unaryServerInterceptors = append(unaryServerInterceptors, refnamelimit.UnaryInterceptor)
 	// Should be below auth handler to prevent v2 hmac tokens from timing out while queued
 	for _, limitHandler := range s.limitHandlers {
 		streamServerInterceptors = append(streamServerInterceptors, limitHandler.StreamInterceptor())

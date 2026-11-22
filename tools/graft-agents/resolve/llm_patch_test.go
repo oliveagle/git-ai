@@ -250,7 +250,7 @@ func TestLLMPatchAllOrNothing(t *testing.T) {
 func TestLLMPatchBounds(t *testing.T) {
 	// 21 conflicting regions: over the default of 20, declined without a call.
 	base := numbered("line", 200)
-	var ours, theirs = base, base
+	ours, theirs := base, base
 	for i := 1; i <= 21; i++ {
 		l := "line " + strconv.Itoa(i*9) + "\n"
 		ours = strings.Replace(ours, l, "o"+l, 1)

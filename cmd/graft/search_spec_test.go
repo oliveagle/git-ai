@@ -16,7 +16,7 @@ func specBuildGraft(t *testing.T) string {
 	t.Helper()
 
 	bin := filepath.Join(t.TempDir(), "graft")
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/feder-cr/git-ai/cmd/graft")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", bin, "github.com/feder-cr/git-ai/cmd/graft")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("building graft: %v\n%s", err, out)
 	}
@@ -28,7 +28,7 @@ func specBuildGraft(t *testing.T) string {
 func TestSpecSearchCLIRequiresQuery(t *testing.T) {
 	bin := specBuildGraft(t)
 
-	cmd := exec.Command(bin, "search")
+	cmd := exec.CommandContext(t.Context(), bin, "search")
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("graft search without QUERY: expected non-zero exit, output:\n%s", out)
 	}

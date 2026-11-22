@@ -7,9 +7,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/service"
-	"github.com/urfave/cli/v3"
 )
 
 func newCheckCommand(checkFuncs []service.CheckFunc) *cli.Command {

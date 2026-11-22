@@ -352,8 +352,10 @@ func TestAgreeWithHoldsADropPastTheCutOfTheReport(t *testing.T) {
 		ours = strings.Replace(ours, fmt.Sprintf("line %d\n", 4*k+1), fmt.Sprintf("O%d\n", k), 1)
 		theirs = strings.Replace(theirs, fmt.Sprintf("line %d\n", 4*k+2), fmt.Sprintf("T%d\n", k), 1)
 	}
-	file := protocol.FileConflict{Path: "x.txt", Kind: protocol.KindContent,
-		Base: wp19Side(protocol.ModeFile, base), Ours: wp19Side(protocol.ModeFile, ours), Theirs: wp19Side(protocol.ModeFile, theirs)}
+	file := protocol.FileConflict{
+		Path: "x.txt", Kind: protocol.KindContent,
+		Base: wp19Side(protocol.ModeFile, base), Ours: wp19Side(protocol.ModeFile, ours), Theirs: wp19Side(protocol.ModeFile, theirs),
+	}
 
 	// The answer of a model for the k-th region it is asked: the changes of both sides and a line that
 	// is in neither (one line of the report each, and no finding), except in the last region, where it

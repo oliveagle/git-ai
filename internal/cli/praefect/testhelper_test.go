@@ -3,8 +3,9 @@ package praefect
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/urfave/cli/v3"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestMain(m *testing.M) {

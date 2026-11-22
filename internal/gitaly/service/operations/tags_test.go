@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -20,9 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/internal/transaction/txinfo"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // gitDescribeShapedTagName builds a tag name shaped like `git describe`

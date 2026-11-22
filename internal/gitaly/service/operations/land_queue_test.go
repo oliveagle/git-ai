@@ -47,10 +47,10 @@ func unionResolverMode(t *testing.T, mode string) (string, []string) {
 
 	dir := t.TempDir()
 	script := fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 echo x >> "$DIR/calls.log"
 cat > "$DIR/req-$$.json"
-exec python3 - "$DIR/req-$$.json" "$DIR" '%s' <<'PY'
+exec python3 - "$DIR/req-$$.json" "$DIR" %q <<'PY'
 import base64, json, os, sys, time
 req = json.load(open(sys.argv[1]))
 dir, mode = sys.argv[2], sys.argv[3]

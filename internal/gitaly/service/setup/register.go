@@ -1,11 +1,20 @@
 package setup
 
 import (
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/analysis"
 	gitalybackup "github.com/feder-cr/git-ai/internal/gitaly/service/backup"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/blob"
+	"github.com/feder-cr/git-ai/internal/gitaly/service/branchpolicy"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/changeset"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/cleanup"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/commit"
@@ -14,6 +23,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/diff"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/internalgitaly"
+	"github.com/feder-cr/git-ai/internal/gitaly/service/mirror"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/object"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/objectpool"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/operations"
@@ -28,13 +38,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/ssh"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/storagecore"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/reflection"
 )
 
 var (
@@ -158,6 +161,8 @@ func RegisterAll(srv *grpc.Server, deps *service.Dependencies) {
 	gitalypb.RegisterSearchServiceServer(srv, search.NewServer(deps))
 	gitalypb.RegisterReviewServiceServer(srv, review.NewServer(deps))
 	gitalypb.RegisterStorageCoreServiceServer(srv, storagecore.NewServer(deps))
+	gitalypb.RegisterBranchPolicyServiceServer(srv, branchpolicy.NewServer(deps))
+	gitalypb.RegisterMirrorServiceServer(srv, mirror.NewServer(deps))
 
 	healthpb.RegisterHealthServer(srv, auth.UnauthenticatedHealthService{HealthServer: health.NewServer()})
 	reflection.Register(srv)

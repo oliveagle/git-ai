@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/stats"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -17,8 +20,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/keyvalue"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type partitionAssignments map[string]storage.PartitionID

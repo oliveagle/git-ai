@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // recordingVisitor records every artifact it is handed and optionally fails on a chosen path.

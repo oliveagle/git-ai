@@ -8,13 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	gitalyregistry "github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/feder-cr/git-ai/proxy"
-	"github.com/feder-cr/git-ai/proxy/director"
-	"github.com/feder-cr/git-ai/proxy/grant"
-	"github.com/feder-cr/git-ai/proxy/policy"
-	policytestdata "github.com/feder-cr/git-ai/proxy/policy/testdata"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +18,14 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
+
+	gitalyregistry "github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/feder-cr/git-ai/proxy"
+	"github.com/feder-cr/git-ai/proxy/director"
+	"github.com/feder-cr/git-ai/proxy/grant"
+	"github.com/feder-cr/git-ai/proxy/policy"
+	policytestdata "github.com/feder-cr/git-ai/proxy/policy/testdata"
 )
 
 type blobServer struct {

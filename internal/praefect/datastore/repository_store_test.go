@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/stretchr/testify/require"
 )
 
 // repositoryRecord represents Praefect's records related to a repository.

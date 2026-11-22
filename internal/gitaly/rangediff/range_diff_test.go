@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRangeDiffParserOneLineEqual(t *testing.T) {

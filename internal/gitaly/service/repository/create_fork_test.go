@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -17,7 +19,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	gitalyx509 "github.com/feder-cr/git-ai/internal/x509"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCreateFork_successful(t *testing.T) {

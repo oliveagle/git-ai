@@ -6,6 +6,7 @@ import (
 	"syscall"
 
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/log"
 )
@@ -27,17 +28,17 @@ func notifyPolicyReload() chan os.Signal {
 	return signals
 }
 
-// reloadPolicyOnSignal reloads the policy of store from the configuration file at configPath every
-// time signals, which notifyPolicyReload returned, receives the signal, one reload at a time; a
-// signal that came before is handled at once. running is the configuration the server started
-// with, as the file gave it. The returned function stops it.
-func reloadPolicyOnSignal(logger log.Logger, configPath string, running config.Cfg, store *policystore.Store, signals chan os.Signal) func() {
+// reloadPolicyOnSignal reloads the policies of store and branches from the configuration file at
+// configPath every time signals, which notifyPolicyReload returned, receives the signal, one
+// reload at a time; a signal that came before is handled at once. running is the configuration
+// the server started with, as the file gave it. The returned function stops it.
+func reloadPolicyOnSignal(logger log.Logger, configPath string, running config.Cfg, store *policystore.Store, branches *branchgate.Store, signals chan os.Signal) func() {
 	done := make(chan struct{})
 
 	go func() {
 		defer close(done)
 		for range signals {
-			reloaded(reloadPolicy(logger, configPath, running, store))
+			reloaded(reloadPolicy(logger, configPath, running, store, branches))
 		}
 	}()
 
@@ -48,12 +49,13 @@ func reloadPolicyOnSignal(logger log.Logger, configPath string, running config.C
 	}
 }
 
-// reloadPolicy reads the configuration file at configPath again and puts its policy in force when it
-// is valid; otherwise the policy in force stays. running is the configuration the server started
-// with: the settings of the file that differ from it, other than the policy, need a restart. The
-// outcome is logged: an invalid configuration at ERROR, a new policy at INFO, and the settings that
-// need a restart and the actors that name no configured agent at WARN.
-func reloadPolicy(logger log.Logger, configPath string, running config.Cfg, store *policystore.Store) policystore.Outcome {
+// reloadPolicy reads the configuration file at configPath again and puts its policies in force when
+// it is valid; otherwise the policies in force stay. The access policy and the branch rules are
+// what a reload applies. running is the configuration the server started with: the settings of the
+// file that differ from it, other than the two policies, need a restart. The outcome is logged: an
+// invalid configuration at ERROR, a new policy at INFO, and the settings that need a restart and
+// the actors that name no configured agent at WARN.
+func reloadPolicy(logger log.Logger, configPath string, running config.Cfg, store *policystore.Store, branches *branchgate.Store) policystore.Outcome {
 	logger = logger.WithField("config_path", configPath)
 
 	next, err := loadConfig(configPath)
@@ -72,6 +74,18 @@ func reloadPolicy(logger log.Logger, configPath string, running config.Cfg, stor
 			"sha256":     outcome.Current.SHA256,
 		}).Error("policy reload rejected: the policy in force stays")
 		return outcome
+	}
+
+	// The branch rules are reloaded with the access policy, and only when the
+	// file as a whole is valid: a rule the server refuses leaves the rules in
+	// force, so that a typo never opens a managed branch.
+	if branchOutcome, branchErr := branches.Reload(next.Graft); branchErr != nil {
+		logger.WithError(branchErr).WithField("branch_rules", len(branches.Current().Rules)).Error("branch policy reload rejected: the rules in force stay")
+	} else if branchOutcome.Applied {
+		logger.WithFields(log.Fields{
+			"generation":   branchOutcome.Generation,
+			"branch_rules": len(branches.Current().Rules),
+		}).Info("branch policy reloaded")
 	}
 
 	fields := log.Fields{

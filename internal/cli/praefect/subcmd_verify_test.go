@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/praefect/service/info"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/stretchr/testify/require"
-	"github.com/urfave/cli/v3"
 )
 
 func TestVerifySubcommand(t *testing.T) {

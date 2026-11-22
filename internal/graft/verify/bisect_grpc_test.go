@@ -145,7 +145,7 @@ func TestCommitLister_FirstParentRange(t *testing.T) {
 		tip.Committer = &gitalypb.CommitAuthor{Email: []byte("dev@example.com"), Date: timestamppb.New(since.Add(-3 * time.Hour))}
 		revert := gitCommit("revert", "Revert \"x\"", "")
 		revert.Body = []byte("This reverts commit x.\n\nGraft-Auto-Revert: x\n")
-		revert.BodySize = int64(len(revert.Body))
+		revert.BodySize = int64(len(revert.GetBody()))
 		revert.Committer = &gitalypb.CommitAuthor{Email: []byte("v@example.com"), Date: timestamppb.New(since.Add(time.Minute))}
 		svc := &fakeCommitService{stream: &fakeCommitStream{pages: []*gitalypb.ListCommitsResponse{
 			{Commits: []*gitalypb.GitCommit{tip}},
@@ -161,7 +161,7 @@ func TestCommitLister_FirstParentRange(t *testing.T) {
 
 	t.Run("a truncated message is marked", func(t *testing.T) {
 		full := gitCommit("aaa", "first", "details\n\nGraft-Auto-Revert: bbb\n")
-		full.BodySize = int64(len(full.Body))
+		full.BodySize = int64(len(full.GetBody()))
 		cut := gitCommit("bbb", "second", "details\n")
 		cut.BodySize = 20000
 		svc := &fakeCommitService{stream: &fakeCommitStream{pages: []*gitalypb.ListCommitsResponse{
@@ -243,7 +243,7 @@ func TestCommitLister_FirstParentRange(t *testing.T) {
 // the date unknown.
 func datedCommit(id, email string, at time.Time, body string) *gitalypb.GitCommit {
 	c := gitCommit(id, id, body)
-	c.BodySize = int64(len(c.Body))
+	c.BodySize = int64(len(c.GetBody()))
 	c.Committer = &gitalypb.CommitAuthor{Email: []byte(email)}
 	if !at.IsZero() {
 		c.Committer.Date = timestamppb.New(at)

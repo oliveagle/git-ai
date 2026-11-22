@@ -5,8 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/helper/perm"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/helper/perm"
 )
 
 func TestUmaskMask(t *testing.T) {

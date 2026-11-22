@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestParser_Parse(t *testing.T) {

@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -29,8 +32,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/offloading"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
-	"gocloud.dev/blob"
 )
 
 func TestOffloadRepository_HappyPath(t *testing.T) {

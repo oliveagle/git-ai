@@ -244,8 +244,8 @@ func (l landListing) conflictPackage(ctx context.Context, reason string) (*gital
 				continue
 			}
 			side := &gitalypb.LandConflictSide{Mode: s.blob.mode}
-			switch {
-			case s.blob.mode == landModeGitlink:
+			switch s.blob.mode {
+			case landModeGitlink:
 				side.Unavailable = landSideGitlink
 			default:
 				kept, err := l.sideKept(ctx, listings, s.blob.oid, f.conflict.path, s.rev)
@@ -258,7 +258,7 @@ func (l landListing) conflictPackage(ctx context.Context, reason string) (*gital
 					side.Unavailable = landSideUnavailable
 				}
 			}
-			if side.Unavailable != "" {
+			if side.GetUnavailable() != "" {
 				f.unavailable = true
 			}
 			*s.dst = side

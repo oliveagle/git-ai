@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/dgraph-io/badger/v4"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/keyvalue"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"

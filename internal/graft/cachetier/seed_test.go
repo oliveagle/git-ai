@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // snapshotUpstream answers GetTree for a revision with a fixed root tree, the way

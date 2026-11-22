@@ -136,14 +136,14 @@ func landValidateWithSides(ctx context.Context, repo *localrepo.Repo, c landFile
 		}
 		info, err := repo.ReadObjectInfo(ctx, b.oid.Revision())
 		if err != nil {
-			return fmt.Errorf("%w (reading its sides for a pointer line of their own: %v)", rejection, err)
+			return fmt.Errorf("%w (reading its sides for a pointer line of their own: %w)", rejection, err)
 		}
 		if info.Size > maxBytes {
 			continue
 		}
 		content, err := repo.ReadObject(ctx, b.oid)
 		if err != nil {
-			return fmt.Errorf("%w (reading its sides for a pointer line of their own: %v)", rejection, err)
+			return fmt.Errorf("%w (reading its sides for a pointer line of their own: %w)", rejection, err)
 		}
 		sides = append(sides, content)
 	}

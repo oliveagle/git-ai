@@ -212,7 +212,7 @@ func TestSyncerRoundBoundedBySyncTimeout(t *testing.T) {
 	b.sy.SetTestHook(once("synced", func() { close(synced) }))
 
 	err := b.sy.EnsureFresh(b.ctx, b.pbRepo(localRelPath))
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 
 	// A deadlock detector, not a timing assumption: the round ends at its
 	// 200 ms deadline.

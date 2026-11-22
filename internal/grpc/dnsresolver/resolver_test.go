@@ -8,9 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/backoff"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 	grpccorrelation "gitlab.com/gitlab-org/labkit/correlation/grpc"
@@ -18,6 +15,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/resolver"
+
+	"github.com/feder-cr/git-ai/internal/backoff"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestDnsResolver(t *testing.T) {

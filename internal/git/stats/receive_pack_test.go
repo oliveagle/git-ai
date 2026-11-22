@@ -8,11 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func pktLine(tb testing.TB, s string) []byte {

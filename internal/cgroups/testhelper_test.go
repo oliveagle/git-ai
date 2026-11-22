@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 // cmdArgs are Command arguments used processes to be added to a cgroup.

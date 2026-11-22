@@ -135,7 +135,7 @@ func RecordLandIntents(repoPath, reference, invocation string, lands []Land) (co
 	// The intents are durable only once the directory entries of their file are: when this write
 	// created the file, and on the first write of this process to the file, which a writer that
 	// created it may have crashed before syncing.
-	key := intentsFileKey{path: path, device: uint64(stat.Dev), inode: stat.Ino}
+	key := intentsFileKey{path: path, device: stat.Dev, inode: stat.Ino}
 	if _, synced := intentDirsSynced.Load(key); created || !synced {
 		if err := syncLogDirs(repoPath, path); err != nil {
 			return false, err
@@ -239,7 +239,7 @@ func readIntents(path string, known intentsFile, add func(landIntent)) (intentsF
 		return known, false, fmt.Errorf("stat land intents: no file identity in %T", info.Sys())
 	}
 
-	current := intentsFile{device: uint64(stat.Dev), inode: stat.Ino, offset: known.offset}
+	current := intentsFile{device: stat.Dev, inode: stat.Ino, offset: known.offset}
 	if known != (intentsFile{}) && (current.device != known.device || current.inode != known.inode || info.Size() < known.offset) {
 		return intentsFile{}, true, nil
 	}

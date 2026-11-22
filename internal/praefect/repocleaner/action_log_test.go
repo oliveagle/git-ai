@@ -3,9 +3,10 @@ package repocleaner
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLogWarnAction_Perform(t *testing.T) {

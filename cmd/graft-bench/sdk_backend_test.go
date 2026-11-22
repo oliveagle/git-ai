@@ -190,7 +190,7 @@ func buildGraftResolve(t *testing.T) string {
 	// e2e tests for the reason.
 	// -buildvcs=false: the test environment sets GIT_DIR, which makes the VCS
 	// stamping of the build fail.
-	cmd := exec.Command("go", "-C", "../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, "./cmd/graft-resolve")
+	cmd := exec.CommandContext(t.Context(), "go", "-C", "../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, "./cmd/graft-resolve")
 	cmd.Env = append(os.Environ(), "GOPROXY=off")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build graft-resolve (run go -C tools/graft-agents mod download first if the module cache is cold): %s", out)

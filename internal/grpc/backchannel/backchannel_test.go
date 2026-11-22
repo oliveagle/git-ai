@@ -10,16 +10,17 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 type mockTransactionServer struct {

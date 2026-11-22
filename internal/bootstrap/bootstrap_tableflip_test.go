@@ -10,13 +10,14 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockUpgrader mocks the tableflip upgrader so we

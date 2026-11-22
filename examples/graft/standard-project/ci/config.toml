@@ -1,0 +1,78 @@
+# The server of the example: one storage, four identities, an access policy that
+# makes main the CI's ref, and a branch rule that decides how the CI updates it.
+#
+# @WORK@ is replaced by run.sh with the work directory.
+
+bin_dir = "@WORK@/bin"
+socket_path = "@WORK@/run/gitaly.sock"
+runtime_dir = "@WORK@/run"
+
+[auth]
+token = "the-shared-token-of-this-example"
+
+[[storage]]
+name = "default"
+path = "@WORK@/repos"
+
+[graft]
+standalone = true
+
+# The identities. Each token file holds one secret; the server takes the agent
+# name as the actor of the token, whatever user ID the client sends.
+[[graft.agent]]
+name = "builder"
+token_file = "@WORK@/tokens/builder"
+
+[[graft.agent]]
+name = "reviewer"
+token_file = "@WORK@/tokens/reviewer"
+
+# The identity of the CI. It is the only one that may write main, so a change
+# lands only through the merge queue (ci/merge-queue.sh) and never around it.
+[[graft.agent]]
+name = "ci"
+token_file = "@WORK@/tokens/ci"
+
+# The access policy: who may write a ref at all. Rules are evaluated in order,
+# the first match decides.
+[[graft.policy]]
+actor = "ci"
+refs = ["refs/heads/main"]
+allow = true
+
+# No one else may touch main, neither with a push nor with a land.
+[[graft.policy]]
+refs = ["refs/heads/main"]
+allow = false
+
+# Feature branches, and the temporary branches a commit makes, are open.
+[[graft.policy]]
+refs = ["refs/heads/**"]
+allow = true
+
+# The references a review keeps its commits alive with.
+[[graft.policy]]
+refs = ["refs/keep-around/**"]
+allow = true
+
+# The branch policy: what the CI's land of main must carry. A review approved by
+# the approval rules of the project, and a verification checkpoint that covers
+# the commit the land produces — not only the tip it builds on — so a change
+# lands only after the tree it writes was tested. The review is published by
+# the reviewer, the checkpoint by the queue.
+[[graft.branch]]
+name = "main"
+require_review = true
+allow_stale_base = false
+allow_direct_update = false
+require_verified = true
+require_verified_result = true
+# The checkpoint has to certify the whole tree of the commit it names: a
+# suite that ran on part of the tree says nothing about the rest, so the
+# server refuses the land of a change whose tree was not tested whole.
+require_full_tree = true
+# And it has to certify both suites of the project: the unit suite alone is
+# a pre-check of the agent, not the evidence the branch takes. The queue
+# names the suites that ran (graft green set --suite), and the server refuses
+# a land whose checkpoint certifies only some of them.
+require_suites = ["unit", "integration"]

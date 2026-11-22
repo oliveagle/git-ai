@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
-	"github.com/stretchr/testify/require"
 )
 
 // detailBackend is a memory backend that also describes commits.

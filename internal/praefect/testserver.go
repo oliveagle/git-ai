@@ -8,6 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	correlation "gitlab.com/gitlab-org/labkit/correlation/grpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
@@ -24,11 +30,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proxy"
-	"github.com/stretchr/testify/require"
-	correlation "gitlab.com/gitlab-org/labkit/correlation/grpc"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // BuildOptions is a set of configurations options that can be set to configure praefect service.

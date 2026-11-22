@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	grpc_metadata "google.golang.org/grpc/metadata"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/grpc/metadata"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
-	grpc_metadata "google.golang.org/grpc/metadata"
 )
 
 func runTestsWithRuntimeDir(t *testing.T, testFunc func(*testing.T, string)) {

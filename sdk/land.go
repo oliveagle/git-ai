@@ -69,6 +69,31 @@ type LandOptions struct {
 	// RetryUnavailable is how Land retries a call that the server answers
 	// with Unavailable (see UnavailableRetry). It is on by default.
 	RetryUnavailable UnavailableRetry
+	// DryRun asks for the commit the land would produce without landing it:
+	// the server computes the change on the current tip exactly as a land
+	// does, makes the objects it wrote readable, and returns the commit in
+	// LandResult.LandedCommitID. The branch is not updated.
+	//
+	// It is what a merge queue needs: ask for the result, verify that commit,
+	// publish it as the verification checkpoint of the branch
+	// (graft green set, or Repo.UpdateReference on refs/graft/green/<branch>),
+	// then land the same request with the same Timestamp and User. The land
+	// produces that very commit, so the branch is green when it is written
+	// (doc/graft/BRANCHES.md).
+	DryRun bool
+	// ExpectedResult asks the server to write exactly that commit: the land
+	// fails when the commit it would produce is another one. It is the way a
+	// merge queue lands the commit it verified: the queue verifies the commit
+	// a dry run named, publishes it as the checkpoint of the branch, and lands
+	// it. When the branch moved in between, the land refuses instead of
+	// writing a commit nobody tested, and the failure carries the commit it
+	// would have written (ExpectedResultMismatch).
+	//
+	// The server holds every caller to it, the operator credential included:
+	// the branch policy binds the agents, and a CI that lands with the
+	// operator credential has this to keep the branch on the commit that was
+	// tested.
+	ExpectedResult string
 }
 
 // UnavailableRetry is the client side of the server's contract for
@@ -223,6 +248,10 @@ type LandResult struct {
 	// LastUnavailable is the message of the last of those answers, empty
 	// without retries.
 	LastUnavailable string
+	// DryRun is true when the result describes the commit the land would
+	// produce rather than a land that happened: LandedCommitID is that
+	// commit, and the branch was not updated.
+	DryRun bool
 }
 
 // oldTip maps the zero object ID that the server reports for a created branch
@@ -268,6 +297,8 @@ func (r *Repo) Land(ctx context.Context, opts LandOptions) (*LandResult, error) 
 		CreateBranch:     opts.CreateBranch,
 		MergeMessage:     []byte(opts.MergeMessage),
 		ResolveConflicts: opts.ResolveConflicts,
+		DryRun:           opts.DryRun,
+		ExpectedResult:   opts.ExpectedResult,
 	}
 	if !opts.Timestamp.IsZero() {
 		req.Timestamp = timestamppb.New(opts.Timestamp)
@@ -330,5 +361,6 @@ func (r *Repo) Land(ctx context.Context, opts LandOptions) (*LandResult, error) 
 
 		UnavailableRetries: retries,
 		LastUnavailable:    lastUnavailable,
+		DryRun:             resp.GetDryRun(),
 	}, nil
 }

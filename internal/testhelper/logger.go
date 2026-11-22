@@ -5,9 +5,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 var (

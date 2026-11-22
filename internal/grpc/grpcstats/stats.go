@@ -3,8 +3,9 @@ package grpcstats
 import (
 	"context"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"google.golang.org/grpc/stats"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // PayloadBytes implements stats.Handler and tracks amount of bytes received and sent by gRPC service

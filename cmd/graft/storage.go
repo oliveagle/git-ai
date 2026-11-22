@@ -16,10 +16,10 @@ import (
 )
 
 // storageSynopsis is the command line of graft storage.
-const storageSynopsis = "usage: graft storage import|state|verify|checkpoint|archive|unarchive|archived|cleanup-start|purge|gc [-repo R] [--connectivity] [--dry-run] [--removed] [--json]"
+const storageSynopsis = "usage: graft storage import|state|verify|checkpoint|archive|unarchive|archived|cleanup-start|purge|gc|delete-conflicting-ref [-repo R] [--connectivity] [--dry-run] [--removed] [--json]"
 
 // storageUsage lists the subcommands of graft storage.
-const storageUsage = "storage requires a subcommand: import, state, verify, checkpoint, archive, unarchive, archived, cleanup-start, purge or gc (" + storageSynopsis + ")"
+const storageUsage = "storage requires a subcommand: import, state, verify, checkpoint, archive, unarchive, archived, cleanup-start, purge, gc or delete-conflicting-ref (" + storageSynopsis + ")"
 
 // storageFlags holds the flags of graft storage. Each subcommand reads only
 // some of them, as its help text says, and rejects the others (checkUsed).
@@ -88,6 +88,8 @@ func cmdStorage(ctx context.Context, out io.Writer, o *options, f *storageFlags,
 		return storagePurge(ctx, out, o, f, rest)
 	case "gc":
 		return storageGC(ctx, out, o, f, rest)
+	case "delete-conflicting-ref":
+		return storageDeleteConflictingRef(ctx, out, o, f, rest)
 	}
 	return usagef("unknown storage subcommand %q: %s", sub, storageUsage)
 }
@@ -95,16 +97,17 @@ func cmdStorage(ctx context.Context, out io.Writer, o *options, f *storageFlags,
 // storageSubcommandFlags are the subcommand-specific flags each subcommand
 // reads.
 var storageSubcommandFlags = map[string][]string{
-	"import":        nil,
-	"state":         nil,
-	"verify":        {"connectivity"},
-	"checkpoint":    nil,
-	"archive":       nil,
-	"unarchive":     nil,
-	"archived":      nil,
-	"cleanup-start": nil,
-	"purge":         nil,
-	"gc":            {"dry-run", "removed"},
+	"import":                 nil,
+	"state":                  nil,
+	"verify":                 {"connectivity"},
+	"checkpoint":             nil,
+	"archive":                nil,
+	"unarchive":              nil,
+	"archived":               nil,
+	"cleanup-start":          nil,
+	"purge":                  nil,
+	"gc":                     {"dry-run", "removed"},
+	"delete-conflicting-ref": nil,
 }
 
 // checkUsed rejects a subcommand-specific flag that the subcommand sub does not
@@ -123,6 +126,36 @@ func (f *storageFlags) checkUsed(sub string, used []string) error {
 			return usagef("storage %s does not take --%s: %s", sub, flag.name, storageSynopsis)
 		}
 	}
+	return nil
+}
+
+// storageConflictingRefJSON is the JSON output of delete-conflicting-ref.
+type storageConflictingRefJSON struct {
+	Sequence      uint64 `json:"sequence"`
+	Reference     string `json:"reference"`
+	DeletedTarget string `json:"deleted_target"`
+}
+
+// storageDeleteConflictingRef deletes one side of a pair of references that git
+// cannot hold together. It prints the value of the deleted reference, which is
+// what the operator needs to create it again under another name.
+func storageDeleteConflictingRef(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 2 {
+		return usagef("storage delete-conflicting-ref takes a reference and its target: delete-conflicting-ref [-repo R] [--json] REFERENCE EXPECTED_TARGET")
+	}
+	reference, target := args[0], args[1]
+	repo, err := openStorage(ctx, o, f)
+	if err != nil {
+		return err
+	}
+	seq, err := repo.StorageDeleteConflictingRef(ctx, reference, target)
+	if err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, storageConflictingRefJSON{Sequence: seq, Reference: reference, DeletedTarget: target})
+	}
+	fmt.Fprintf(out, "deleted %s at changeset %d; it pointed to %s\n", displayText(reference), seq, displayText(target))
 	return nil
 }
 

@@ -6,11 +6,12 @@ import (
 	"strings"
 	"sync"
 
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	diskcache "github.com/feder-cr/git-ai/internal/cache"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/log"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 func methodErrLogger(logger log.Logger, method string) func(error) {

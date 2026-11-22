@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 // GetObjectPoolHandler intercepts GetObjectPool RPC calls and rewrites replica path and storage

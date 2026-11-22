@@ -6,6 +6,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/backup"
 	"github.com/feder-cr/git-ai/internal/bundleuri"
@@ -31,6 +37,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr/partition/migration"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gate"
 	corestoresyncer "github.com/feder-cr/git-ai/internal/graft/corestore/syncer"
@@ -50,11 +57,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/streamcache"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // RunGitalyServer starts gitaly server based on the provided cfg and returns a connection address.
@@ -335,6 +337,7 @@ type gitalyServerDeps struct {
 	graftStorageGate       *gate.Gate
 	graftPolicy            *policystore.Store
 	hookMgrWrapper         func(hook.Manager) hook.Manager
+	storageVoterObserver   func(*voter.Voter)
 }
 
 func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Context, cfg config.Cfg) *service.Dependencies {
@@ -404,6 +407,21 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 		gsd.graftPolicy = policystore.New(cfg.Graft.Policy)
 	}
 	hookManagerOpts := []hook.ManagerOption{hook.WithPolicyStore(gsd.graftPolicy)}
+	// One store of the branch management policy serves the hook manager and the
+	// BranchPolicyService, as in serve.go: the refusal an agent meets and the
+	// answer a CI reads are made with one policy. A test server never reloads it.
+	branchPolicy := branchgate.NewStore(cfg.Graft)
+	// The branch management policy reads the reviews of a repository and the
+	// verification checkpoint of a branch (internal/gitaly/hook). The factory
+	// reads references only, so it needs no catfile cache.
+	hookManagerOpts = append(hookManagerOpts,
+		hook.WithBranchPolicy(branchPolicy),
+		hook.WithBranchGate(hook.NewBranchGateSource(gsd.graftStorage,
+			localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))),
+		// The mirror policy decides every push against the mirrors of the
+		// repository, as in serve.go (doc/graft/MIRROR.md).
+		hook.WithMirrorGate(hook.NewMirrorGateSource(gsd.graftStorage,
+			localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, nil))))
 	if gsd.graftStorage.Enabled() {
 		if gsd.catfileCache == nil {
 			cache := catfile.NewCache(cfg)
@@ -412,8 +430,11 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 		}
 		repoFactory := localrepo.NewFactory(gsd.logger, gsd.locator, gsd.gitCmdFactory, gsd.catfileCache)
 		gsd.graftStorageSyncer = corestoresyncer.New(gsd.graftStorage, gsd.logger, gsd.locator, repoFactory, gsd.gitCmdFactory)
-		hookManagerOpts = append(hookManagerOpts, hook.WithStorageVoter(
-			voter.New(gsd.graftStorage, gsd.logger, repoFactory, gsd.locator, gsd.graftStorageSyncer)))
+		storageVoter := voter.New(gsd.graftStorage, gsd.logger, repoFactory, gsd.locator, gsd.graftStorageSyncer)
+		if gsd.storageVoterObserver != nil {
+			gsd.storageVoterObserver(storageVoter)
+		}
+		hookManagerOpts = append(hookManagerOpts, hook.WithStorageVoter(storageVoter))
 		if gsd.graftStorage.Authoritative() {
 			gsd.graftStorageGate = gate.New(gsd.graftStorage, gsd.graftStorageSyncer, gsd.logger, gsd.locator, repoFactory, protoregistry.GitalyProtoPreregistered)
 		}
@@ -504,6 +525,7 @@ func (gsd *gitalyServerDeps) createDependencies(tb testing.TB, ctx context.Conte
 
 	return &service.Dependencies{
 		GraftStorage:           gsd.graftStorage,
+		GraftBranchPolicy:      branchPolicy,
 		GraftStorageSyncer:     storageSyncer,
 		Logger:                 gsd.logger,
 		Cfg:                    cfg,
@@ -598,6 +620,15 @@ func WithGraftPolicy(store *policystore.Store) GitalyServerOpt {
 func WithHookManagerWrapper(wrap func(hook.Manager) hook.Manager) GitalyServerOpt {
 	return func(deps gitalyServerDeps) gitalyServerDeps {
 		deps.hookMgrWrapper = wrap
+		return deps
+	}
+}
+
+// WithStorageVoterObserver gives fn the storage voter of the server (WithGraftStorage), so that a
+// test can read what the voter keeps between the phases of a transaction.
+func WithStorageVoterObserver(fn func(*voter.Voter)) GitalyServerOpt {
+	return func(deps gitalyServerDeps) gitalyServerDeps {
+		deps.storageVoterObserver = fn
 		return deps
 	}
 }

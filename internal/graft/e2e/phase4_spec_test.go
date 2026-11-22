@@ -108,7 +108,7 @@ func specBatchedRun(t *testing.T, graphAncestry bool, workers int, window string
 
 	var largest int32
 	tip := s.git(t, "rev-parse", "refs/heads/main")
-	members := landBatchMembers(ctx, t, repos[0])
+	members := landBatchMembers(t, ctx, repos[0])
 	for i, res := range results {
 		if res == nil {
 			continue
@@ -169,7 +169,7 @@ func TestSpecPhase4BatchOfOneKeepsMember(t *testing.T) {
 	require.Equal(t, res.LandedCommitID, s.git(t, "rev-parse", "refs/heads/main"), "main is at the landed commit")
 
 	var lands []*sdk.Changeset
-	for _, cs := range allChangesets(ctx, t, repo) {
+	for _, cs := range allChangesets(t, ctx, repo) {
 		if string(cs.GetReference()) != "refs/heads/main" {
 			continue
 		}
@@ -187,5 +187,5 @@ func TestSpecPhase4BatchOfOneKeepsMember(t *testing.T) {
 	require.Equal(t, commit, member.GetOriginalCommitId(), "the member is the submitted commit")
 	require.Equal(t, res.LandedCommitID, member.GetCommitId(), "the member is the landed commit")
 	require.Equal(t, agent, member.GetActor(), "the member is attributed to its agent")
-	require.Equal(t, map[string]string{commit: agent}, landBatchMembers(ctx, t, repo), "the batch of one is the only batch member, attributed to its agent")
+	require.Equal(t, map[string]string{commit: agent}, landBatchMembers(t, ctx, repo), "the batch of one is the only batch member, attributed to its agent")
 }

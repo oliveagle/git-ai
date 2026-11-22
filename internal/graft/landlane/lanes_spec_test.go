@@ -20,8 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
 const specTimeout = 5 * time.Second

@@ -7,6 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -22,10 +27,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 )
 
 // testAgentHeader is the metadata that names the agent a test request is made as.
@@ -467,7 +468,7 @@ func testLandBatchChangesetRecordsMembersWithRealActors(t *testing.T, ctx contex
 func TestLandBatchSubmitError(t *testing.T) {
 	t.Parallel()
 
-	testhelper.RequireGrpcCode(t, batchSubmitError(landlane.ErrClosed), codes.Unavailable)
+	testhelper.RequireGrpcCode(t, batchSubmitError(landlane.ErrClosed), codes.Internal)
 	testhelper.RequireGrpcCode(t, batchSubmitError(context.DeadlineExceeded), codes.DeadlineExceeded)
 	testhelper.RequireGrpcCode(t, batchSubmitError(context.Canceled), codes.Canceled)
 }

@@ -10,8 +10,6 @@ import (
 	"net"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -19,6 +17,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 type handshakeFunc func(net.Conn, credentials.AuthInfo) (net.Conn, credentials.AuthInfo, error)

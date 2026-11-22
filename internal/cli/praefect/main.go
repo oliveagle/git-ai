@@ -19,9 +19,10 @@ import (
 	"os/signal"
 	"slices"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/praefect/service"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/urfave/cli/v3"
 )
 
 func init() {

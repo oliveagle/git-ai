@@ -8,11 +8,12 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/gitlab-org/labkit/monitoring"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/stats"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
-	"gitlab.com/gitlab-org/labkit/monitoring"
 )
 
 type httpReferenceDiscoveryMetrics struct {

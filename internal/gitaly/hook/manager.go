@@ -5,18 +5,20 @@ import (
 	"io"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/eager"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ReferenceTransactionState is the state of the Git reference transaction. It reflects the first
@@ -91,6 +93,19 @@ type GitLabHookManager struct {
 	policy *policystore.Store
 	// storageVoter commits reference transactions to the Graft storage core, nil when it is off.
 	storageVoter StorageVoter
+	// branchGate gives the branch management policy the state of a branch: its
+	// reviews and its verification checkpoint. It is nil when the server has
+	// none, and the gate then refuses every land that asks for one.
+	branchGate BranchGateSource
+	// branchPolicy is the branch management policy the gate enforces. The
+	// server passes the store it also gives the BranchPolicyService, so that
+	// the answer a CI reads and the refusal it meets are made with one policy,
+	// also across a reload of the rules.
+	branchPolicy *branchgate.Store
+	// mirrorGate gives the mirror policy the state of the mirrors of a
+	// repository: the targets and how far they are behind. It is nil when the
+	// server has none, and a policy in force then refuses every push.
+	mirrorGate MirrorGateSource
 	// startLandIntentsCompaction starts a compaction of land intents that a prepared
 	// transaction asked for, without the hook waiting for it. Nil runs it in a goroutine;
 	// tests set it.
@@ -115,6 +130,33 @@ func WithEagerObserver(observer *eager.Observer) ManagerOption {
 func WithPolicyStore(store *policystore.Store) ManagerOption {
 	return func(m *GitLabHookManager) {
 		m.policy = store
+	}
+}
+
+// WithBranchGate sets the source of the state the branch management policy
+// decides with, see enforceBranchGate.
+func WithBranchGate(source BranchGateSource) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.branchGate = source
+	}
+}
+
+// WithBranchPolicy sets the store of the branch management policy the gate
+// enforces. The server passes the store it also gives the BranchPolicyService,
+// so that the answer a CI reads and the refusal it meets cannot be made with
+// two policies, also when the rules are reloaded. Without it the gate decides
+// with the policy of the configuration, in a store of its own.
+func WithBranchPolicy(store *branchgate.Store) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.branchPolicy = store
+	}
+}
+
+// WithMirrorGate sets the source of the state the mirror policy decides with,
+// see enforceMirrorGate.
+func WithMirrorGate(source MirrorGateSource) ManagerOption {
+	return func(m *GitLabHookManager) {
+		m.mirrorGate = source
 	}
 }
 
@@ -200,6 +242,9 @@ func NewManager(
 	}
 	if m.policy == nil {
 		m.policy = policystore.New(cfg.Graft.Policy)
+	}
+	if m.branchPolicy == nil {
+		m.branchPolicy = branchgate.NewStore(cfg.Graft)
 	}
 
 	return m

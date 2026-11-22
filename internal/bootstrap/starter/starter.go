@@ -7,9 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/bootstrap"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (

@@ -8,18 +8,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/repository"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 // setup starts a Gitaly server with the SearchService and returns its config and a client. The
@@ -133,4 +135,8 @@ func writeNestedTree(tb testing.TB, cfg config.Cfg, repoPath string, files map[s
 	}
 
 	return gittest.WriteTree(tb, cfg, repoPath, entries)
+}
+
+func TestMain(m *testing.M) {
+	testhelper.Run(m)
 }

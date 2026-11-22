@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/graft/workspace"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/graft/workspace"
 )
 
 func TestEmitChangesetJSONLine(t *testing.T) {

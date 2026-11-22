@@ -8,10 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (

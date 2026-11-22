@@ -10,6 +10,10 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -23,9 +27,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/offloading"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-	"gocloud.dev/blob"
 )
 
 func generateOffloadingTests(t *testing.T, ctx context.Context, testPartitionID storage.PartitionID, relativePath string) []transactionTestCase {

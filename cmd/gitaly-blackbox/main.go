@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/blackbox"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var flagVersion = flag.Bool("version", false, "Print version and exit")

@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/graft/changelog"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewHooksPayload_changelogMembers(t *testing.T) {

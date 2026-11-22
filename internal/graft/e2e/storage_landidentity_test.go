@@ -54,7 +54,7 @@ func TestStorageLandIdentity(t *testing.T) {
 
 				// The record names the changelog entry of the first land.
 				var landedAt uint64
-				for _, c := range allChangesets(a.ctx, t, onA) {
+				for _, c := range allChangesets(t, a.ctx, onA) {
 					if c.GetNewOid() == first.LandedCommitID {
 						landedAt = c.GetSequence()
 					}

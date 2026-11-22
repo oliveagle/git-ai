@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/google/uuid"
+
+	"github.com/feder-cr/git-ai/internal/safe"
 )
 
 const (

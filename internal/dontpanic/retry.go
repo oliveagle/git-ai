@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	sentry "github.com/getsentry/sentry-go"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // Try will wrap the provided function with a panic recovery. If a panic occurs,

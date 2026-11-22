@@ -30,63 +30,97 @@ func TestRegressionRound2(t *testing.T) {
 		want gitalypb.ReviewFile_ChangeClass
 	}{
 		// C: a line splice continues a line comment onto the next line.
-		{"C line comment ending in backslash", "a.c",
+		{
+			"C line comment ending in backslash", "a.c",
 			"int x = 7;\nint main(void) {\n  // note \\\n  x = 1;\n  return x;\n}\n",
 			"int x = 7;\nint main(void) {\n  // note\n  x = 1;\n  return x;\n}\n",
-			code},
-		{"C splice with trailing blank", "a.c",
-			"int a; // x\\ \t\r\nint b;\n", "int a; // y\nint b;\n", code},
+			code,
+		},
+		{
+			"C splice with trailing blank", "a.c",
+			"int a; // x\\ \t\r\nint b;\n", "int a; // y\nint b;\n", code,
+		},
 		{"C trigraph splice", "a.c", "int a; // x ??/\nint b;\n", "int a; // y ??/\nint b;\n", code},
 		// C: blanks inside a preprocessor line decide function-like macros.
-		{"C blank between macro name and paren", "a.c",
+		{
+			"C blank between macro name and paren", "a.c",
 			"typedef int x;\n#define P(x) 1*\nint a = P(2)+5;\n",
 			"typedef int x;\n#define P (x) 1*\nint a = P(2)+5;\n",
-			code},
-		{"C comment between macro name and paren", "a.c",
-			"#define P(x) 1\nint a = P(2);\n", "#define P/**/(x) 1\nint a = P(2);\n", code},
-		{"C stringification spacing", "a.c",
-			"#define S(x) #x\nchar *s = S(a+b);\n", "#define S(x) #x\nchar *s = S(a + b);\n", code},
+			code,
+		},
+		{
+			"C comment between macro name and paren", "a.c",
+			"#define P(x) 1\nint a = P(2);\n", "#define P/**/(x) 1\nint a = P(2);\n", code,
+		},
+		{
+			"C stringification spacing", "a.c",
+			"#define S(x) #x\nchar *s = S(a+b);\n", "#define S(x) #x\nchar *s = S(a + b);\n", code,
+		},
 		{"C digraph directive", "a.c", "%:define P(x) 1\n", "%:define P (x) 1\n", code},
 		{"C trigraph directive", "a.c", "??=define P(x) 1\n", "??=define P (x) 1\n", code},
 		// PLAN5 "WP44 RULE" 1: C is never COMMENT_ONLY.
-		{"C comment in preprocessor line is code", "a.c",
-			"#define A 1 // a\nint x;\n", "#define A 1 // b\nint x;\n", code},
+		{
+			"C comment in preprocessor line is code", "a.c",
+			"#define A 1 // a\nint x;\n", "#define A 1 // b\nint x;\n", code,
+		},
 		// JavaScript: regular expressions after keywords and non-ASCII blanks.
-		{"JS regex after export default", "a.js",
+		{
+			"JS regex after export default", "a.js",
 			"export default /[//]/.source + \"a\";\n",
 			"export default /[//]/.source + \"b\";\n",
-			code},
-		{"JS regex after return and NBSP", "a.js",
+			code,
+		},
+		{
+			"JS regex after return and NBSP", "a.js",
 			"function f(){return" + nbsp + "/[//]/.source+\"a\"}\n",
 			"function f(){return" + nbsp + "/[//]/.source+\"b\"}\n",
-			code},
-		{"JS regex after typeof and BOM", "a.js",
+			code,
+		},
+		{
+			"JS regex after typeof and BOM", "a.js",
 			"function f(){return typeof" + bom + "/[//]/.source+\"a\"}\n",
 			"function f(){return typeof" + bom + "/[//]/.source+\"b\"}\n",
-			code},
+			code,
+		},
 		// PLAN5 "WP44 RULE" 1: JavaScript is never COMMENT_ONLY.
-		{"JS NBSP between tokens is code", "a.js",
-			"x" + nbsp + "=" + nbsp + "1;\n", "x = 1;\n", code},
+		{
+			"JS NBSP between tokens is code", "a.js",
+			"x" + nbsp + "=" + nbsp + "1;\n", "x = 1;\n", code,
+		},
 		// Go: an import of "C" may be a raw string literal.
-		{"cgo raw string import", "p/a.go",
+		{
+			"cgo raw string import", "p/a.go",
 			"package p\n\n/*\nint f(void) { return 1; }\n*/\nimport `C`\n",
 			"package p\n\n/*\nint f(void) { return 2; }\n*/\nimport `C`\n",
-			code},
+			code,
+		},
 		// Ruby: percent literals with '#' or blank delimiters.
-		{"Ruby percent literal with hash delimiter", "a.rb",
-			"puts %#hello#\n", "puts %#world#\n", code},
-		{"Ruby percent with blank delimiter", "a.rb",
-			"x = % #a \nputs x\n", "x = % #b \nputs x\n", code},
+		{
+			"Ruby percent literal with hash delimiter", "a.rb",
+			"puts %#hello#\n", "puts %#world#\n", code,
+		},
+		{
+			"Ruby percent with blank delimiter", "a.rb",
+			"x = % #a \nputs x\n", "x = % #b \nputs x\n", code,
+		},
 		// Ruby: blanks around unary operators and brackets.
-		{"Ruby unary minus after method name", "a.rb",
-			"def f(x = 10) x end\ny = f -1\n", "def f(x = 10) x end\ny = f - 1\n", code},
-		{"Ruby bracket after name", "a.rb",
-			"a = [1]\nb = a [0]\n", "a = [1]\nb = a[0]\n", code},
+		{
+			"Ruby unary minus after method name", "a.rb",
+			"def f(x = 10) x end\ny = f -1\n", "def f(x = 10) x end\ny = f - 1\n", code,
+		},
+		{
+			"Ruby bracket after name", "a.rb",
+			"a = [1]\nb = a [0]\n", "a = [1]\nb = a[0]\n", code,
+		},
 		// PLAN5 "WP44 RULE" 1: Ruby is never COMMENT_ONLY.
-		{"Ruby comment changed after operators", "a.rb",
-			"a = b + c # x\n", "a = b + c # y\n", code},
-		{"Ruby names only, blank changed", "a.rb",
-			"puts x\n", "puts  x\n", code},
+		{
+			"Ruby comment changed after operators", "a.rb",
+			"a = b + c # x\n", "a = b + c # y\n", code,
+		},
+		{
+			"Ruby names only, blank changed", "a.rb",
+			"puts x\n", "puts  x\n", code,
+		},
 		// Rust: doc comments are attributes.
 		{"Rust line doc comment", "a.rs", "/// old help\nfn f() {}\n", "/// new help\nfn f() {}\n", code},
 		{"Rust block doc comment", "a.rs", "/** old */\nfn f() {}\n", "/** new */\nfn f() {}\n", code},
@@ -135,12 +169,16 @@ func TestRegressionRound3(t *testing.T) {
 		{"Go invalid UTF-8 in a string", "pkg/a.go", "package a\n// a\nvar s = \"\xff\"\n", "package a\n// b\nvar s = \"\xff\"\n", code},
 		{"Python invalid UTF-8 in a comment", "a.py", "x = 1  # \xff\n", "x = 1  # a\n", code},
 		// Rule 3: a generated marker added to an existing file does not count.
-		{"Code generated marker added", "pkg/a.go",
+		{
+			"Code generated marker added", "pkg/a.go",
 			"package a\nfunc f() int { return 1 }\n",
-			"// Code generated by x. DO NOT EDIT.\npackage a\nfunc f() int { return 2 }\n", code},
-		{"@generated marker added", "pkg/a.go",
+			"// Code generated by x. DO NOT EDIT.\npackage a\nfunc f() int { return 2 }\n", code,
+		},
+		{
+			"@generated marker added", "pkg/a.go",
 			"package a\nfunc f() int { return 1 }\n",
-			"// @generated\npackage a\nfunc f() int { return 2 }\n", code},
+			"// @generated\npackage a\nfunc f() int { return 2 }\n", code,
+		},
 		// Positive cases for the supported languages.
 		{"Go comment", "pkg/a.go", "package a\n// a\nvar x = 1\n", "package a\n// b\nvar x = 1\n", comment},
 		{"Python comment", "pkg/a.py", "# a\nx = 1\n", "# b\nx = 1\n", comment},

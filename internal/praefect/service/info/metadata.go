@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // GetRepositoryMetadata returns the cluster metadata for a repository.

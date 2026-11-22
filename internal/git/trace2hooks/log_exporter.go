@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"golang.org/x/time/rate"
+
 	"github.com/feder-cr/git-ai/internal/git/trace2"
 	"github.com/feder-cr/git-ai/internal/log"
-	"golang.org/x/time/rate"
 )
 
 // NewLogExporter initializes LogExporter, which is a hook that uses the parsed

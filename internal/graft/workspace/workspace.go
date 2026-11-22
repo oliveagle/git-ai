@@ -61,8 +61,14 @@ type CloneOptions struct {
 	Address string
 	Storage string
 	Repo    string
-	Branch  string
-	Sparse  []string
+	// Branch is the branch to check out. Empty means main, unless At is set.
+	Branch string
+	// At materializes the tree of a commit instead of the tip of a branch: the
+	// commit a dry run named, which no branch points at yet. The workspace is
+	// then at that commit and not on a branch (doc/graft/BRANCHES.md, "Verifying
+	// the result of a land").
+	At     string
+	Sparse []string
 }
 
 // CommitRequest describes a commit of the local changes.
@@ -183,8 +189,11 @@ func Clone(ctx context.Context, root string, backend Backend, opts CloneOptions)
 		return nil, err
 	}
 	branch := opts.Branch
-	if branch == "" {
+	if branch == "" && opts.At == "" {
 		branch = "main"
+	}
+	if branch != "" && opts.At != "" {
+		return nil, errors.New("workspace: clone takes either a branch or a commit, not both")
 	}
 	sparse, err := normalizeSparse(opts.Sparse)
 	if err != nil {
@@ -198,9 +207,17 @@ func Clone(ctx context.Context, root string, backend Backend, opts CloneOptions)
 		return nil, err
 	}
 	existed := err == nil
-	base, err := backend.ResolveRevision(ctx, branch)
-	if err != nil {
-		return nil, fmt.Errorf("resolve branch %q: %w", branch, err)
+	var base string
+	if opts.At != "" {
+		base, err = backend.ResolveRevision(ctx, opts.At)
+		if err != nil {
+			return nil, fmt.Errorf("resolve commit %q: %w", opts.At, err)
+		}
+	} else {
+		base, err = backend.ResolveRevision(ctx, branch)
+		if err != nil {
+			return nil, fmt.Errorf("resolve branch %q: %w", branch, err)
+		}
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -482,7 +499,7 @@ func (w *Workspace) Commit(ctx context.Context, req CommitRequest) (CommitResult
 	if req.LandBranch == "" {
 		return res, nil
 	}
-	lres, err := w.land(ctx, req.LandBranch, req.Strategy, req.Author, req.Resolve, nil)
+	lres, err := w.land(ctx, req.LandBranch, req.Strategy, req.Author, req.Resolve, nil, time.Time{}, "")
 	if err != nil {
 		if w.state.Pending != nil && w.state.Pending.Landed != "" {
 			// The land succeeded; only the refresh failed, and err explains it.
@@ -514,7 +531,7 @@ func (w *Workspace) LandResolving(ctx context.Context, branch, strategy string, 
 		return LandResult{}, err
 	}
 	defer unlock()
-	return w.land(ctx, branch, strategy, committer, resolve, nil)
+	return w.land(ctx, branch, strategy, committer, resolve, nil, time.Time{}, "")
 }
 
 // GetObjects returns the contents of the requested blobs from the workspace's
@@ -537,16 +554,79 @@ func (w *Workspace) LandResolution(ctx context.Context, branch string, committer
 	if w.state.Pending != nil && resolution.Commit != w.state.Pending.Commit {
 		return LandResult{}, fmt.Errorf("the resolution is for commit %s, not the pending commit %s", resolution.Commit, w.state.Pending.Commit)
 	}
-	return w.land(ctx, branch, StrategyMerge, committer, false, resolution)
+	return w.land(ctx, branch, StrategyMerge, committer, false, resolution, time.Time{}, "")
 }
 
-// land is Land without taking the workspace lock.
-func (w *Workspace) land(ctx context.Context, branch, strategy string, committer Signature, resolve bool, resolution *Resolution) (LandResult, error) {
+// LandTimed is Land with the committer date of the rewritten commits pinned to
+// timestamp, so that the land produces exactly the commit that DryRunLand named
+// for the same request (doc/graft/BRANCHES.md, "Verifying the result of a
+// land").
+func (w *Workspace) LandTimed(ctx context.Context, branch, strategy string, committer Signature, timestamp time.Time) (LandResult, error) {
+	return w.LandVerified(ctx, branch, strategy, committer, timestamp, "")
+}
+
+// LandVerified is LandTimed with the commit the caller verified: the server
+// writes exactly that commit, or the land fails and names the commit it would
+// have written. It is what a merge queue lands: the commit it tested, and not
+// another one (doc/graft/BRANCHES.md, "Verifying the result of a land").
+func (w *Workspace) LandVerified(ctx context.Context, branch, strategy string, committer Signature, timestamp time.Time, verified string) (LandResult, error) {
+	unlock, err := w.lockAndLoad()
+	if err != nil {
+		return LandResult{}, err
+	}
+	defer unlock()
+	return w.land(ctx, branch, strategy, committer, false, nil, timestamp, verified)
+}
+
+// DryRunLand returns the commit a land of the pending commit would produce on
+// branch, without landing it: neither the branch nor the workspace changes. The
+// timestamp of the request is part of the identity of that commit, so a caller
+// that verifies it and publishes it as the verification checkpoint of the
+// branch lands it with LandTimed and the same timestamp.
+func (w *Workspace) DryRunLand(ctx context.Context, branch, strategy string, committer Signature, timestamp time.Time) (LandResult, error) {
+	unlock, err := w.lockAndLoad()
+	if err != nil {
+		return LandResult{}, err
+	}
+	defer unlock()
+
 	if w.state.Pending == nil {
 		return LandResult{}, errors.New("nothing to land: no pending commit")
 	}
 	if branch == "" {
 		branch = w.state.Branch
+	}
+	if branch == "" {
+		return LandResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: name the branch to land on", w.state.Base)
+	}
+	if strategy == "" {
+		strategy = StrategyRebase
+	}
+	if err := checkStrategy(strategy); err != nil {
+		return LandResult{}, err
+	}
+
+	return w.backend.Land(ctx, LandOptions{
+		Branch:       branch,
+		Commit:       w.state.Pending.Commit,
+		Strategy:     strategy,
+		CreateBranch: branch == w.state.Branch,
+		Committer:    committer,
+		Timestamp:    timestamp,
+		DryRun:       true,
+	})
+}
+
+// land is Land without taking the workspace lock.
+func (w *Workspace) land(ctx context.Context, branch, strategy string, committer Signature, resolve bool, resolution *Resolution, timestamp time.Time, expected string) (LandResult, error) {
+	if w.state.Pending == nil {
+		return LandResult{}, errors.New("nothing to land: no pending commit")
+	}
+	if branch == "" {
+		branch = w.state.Branch
+	}
+	if branch == "" {
+		return LandResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: name the branch to land on", w.state.Base)
 	}
 	if strategy == "" {
 		strategy = StrategyRebase
@@ -575,6 +655,8 @@ func (w *Workspace) land(ctx context.Context, branch, strategy string, committer
 			Committer:        committer,
 			ResolveConflicts: resolve,
 			Resolution:       resolution,
+			Timestamp:        timestamp,
+			ExpectedResult:   expected,
 		})
 		if err != nil {
 			return LandResult{}, err
@@ -686,6 +768,9 @@ func (w *Workspace) Update(ctx context.Context) (UpdateResult, error) {
 
 	if w.state.Pending != nil {
 		return UpdateResult{}, w.pendingError("updating")
+	}
+	if w.state.Branch == "" {
+		return UpdateResult{}, fmt.Errorf("the workspace is at commit %s, not on a branch: nothing to update", w.state.Base)
 	}
 	tip, err := w.backend.ResolveRevision(ctx, w.state.Branch)
 	if err != nil {
@@ -1217,8 +1302,8 @@ func (w *Workspace) desiredTree(ctx context.Context, base string, sparse []strin
 }
 
 func normalizeMode(mode uint32) uint32 {
-	switch {
-	case mode == modeExec:
+	switch mode {
+	case modeExec:
 		return modeExec
 	default:
 		return modeRegular

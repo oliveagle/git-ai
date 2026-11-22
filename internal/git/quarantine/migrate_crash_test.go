@@ -11,10 +11,11 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // TestMigrateCrashChild is the child process of TestMigrateCrashLeavesAPrefixOfTheLinks. It migrates
@@ -101,7 +102,7 @@ func TestMigrateCrashLeavesAPrefixOfTheLinks(t *testing.T) {
 		require.NoError(t, err)
 		relOrder = append(relOrder, rel)
 	}
-	var idx, pack int = -1, -1
+	idx, pack := -1, -1
 	for i, rel := range relOrder {
 		switch {
 		case strings.HasSuffix(rel, ".pack"):
@@ -118,7 +119,7 @@ func TestMigrateCrashLeavesAPrefixOfTheLinks(t *testing.T) {
 		source := filepath.Join(t.TempDir(), "source")
 		copyTree(t, quarantine, source)
 
-		cmd := exec.Command(os.Args[0], "-test.run", "^TestMigrateCrashChild$")
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run", "^TestMigrateCrashChild$")
 		cmd.Env = append(os.Environ(),
 			"QUARANTINE_CRASH_SOURCE="+source,
 			"QUARANTINE_CRASH_TARGET="+target,

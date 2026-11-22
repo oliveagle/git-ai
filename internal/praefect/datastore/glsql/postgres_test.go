@@ -7,15 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	migrate "github.com/rubenv/sql-migrate"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/jackc/pgx/v5/pgconn"
-	migrate "github.com/rubenv/sql-migrate"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestOpenDB(t *testing.T) {

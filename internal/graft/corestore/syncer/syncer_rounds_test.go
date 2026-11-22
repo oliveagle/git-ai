@@ -46,7 +46,7 @@ func TestSyncerSeedsInTheBackground(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		err := b.sy.EnsureFresh(b.ctx, b.pbRepo(localRelPath))
-		require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+		require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 		require.ErrorContains(t, err, fmt.Sprintf("being seeded from its checkpoint at changeset %d", cp.Seq))
 	}
 	<-seeding
@@ -96,7 +96,7 @@ func TestSyncerResumesAHydrationAcrossRounds(t *testing.T) {
 	e.sy.SetRoundLimit(4)
 	for _, reached := range []uint64{4, 8} {
 		err := e.sy.EnsureFresh(e.ctx, e.pbRepo(localRelPath))
-		require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+		require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 		require.ErrorContains(t, err, "at changeset")
 
 		wm, ok, err := e.sy.Applied(e.ctx, e.pbRepo(localRelPath))

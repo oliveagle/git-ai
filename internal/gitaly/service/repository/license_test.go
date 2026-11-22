@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-enry/go-license-detector/v4/licensedb"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
@@ -12,8 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/go-enry/go-license-detector/v4/licensedb"
-	"github.com/stretchr/testify/require"
 )
 
 const (

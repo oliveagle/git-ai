@@ -73,15 +73,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/azureblob" // register Azure driver
 	"gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/gcsblob" // register Google Cloud driver
+	_ "gocloud.dev/blob/memblob" // register in-memory driver
 	"gocloud.dev/blob/s3blob"
 	"gocloud.dev/gcerrors"
 
-	_ "gocloud.dev/blob/azureblob" // register Azure driver
-	_ "gocloud.dev/blob/gcsblob"   // register Google Cloud driver
-	_ "gocloud.dev/blob/memblob"   // register in-memory driver
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
 )
 
 // Store is a bucket of the storage core.
@@ -183,7 +183,7 @@ func (s *Store) Put(ctx context.Context, key string, r io.Reader) error {
 	writeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	opts := &blob.WriterOptions{IfNotExist: true}
+	opts := &blob.WriterOptions{IfNotExist: true, BufferSize: 512 * 1024, MaxConcurrency: 1}
 	var file *os.File
 	if s.root != "" {
 		opts.ContentType = fileContentType

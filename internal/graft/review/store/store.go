@@ -19,10 +19,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 var (

@@ -469,7 +469,7 @@ func landJoinResolverNames(names []string) string {
 // (PLAN10 15.8). It lists the conflicts at the lane's tip and classifies every file again (the
 // classification reads the tip), and writes the merge commit only when every conflicting file is
 // sent and has a verdict with its key; the resolver is never called. A file without one makes it
-// return *landNeedsResolution, which UserLand resolves out of the lane. A clean merge of the tip
+// return *landNeedsResolutionError, which UserLand resolves out of the lane. A clean merge of the tip
 // and the change is errLandNoConflicts, as before.
 func (s *Server) landApplyVerdicts(
 	ctx context.Context,
@@ -518,7 +518,7 @@ func (s *Server) landApplyVerdicts(
 		// A land that lost a round out of the lane holds the files with priority: resolving them here would
 		// change them under its verdict once more, so the lands that would give way and wait their turn.
 		if s.landInlineEnabled() && landTickets.priorityBlocked(s.landListingKeys(in, l), pre.ticket) {
-			return landResolution{}, &landNeedsResolution{tip: tip, commit: commitID, paths: landListingPaths(l), queued: true}
+			return landResolution{}, &landNeedsResolutionError{tip: tip, commit: commitID, paths: landListingPaths(l), queued: true}
 		}
 		// The holder itself does not resolve inline: it comes back with the verdict of its slow rule, and asking
 		// the rule again would only stall the batch.
@@ -548,11 +548,11 @@ func (s *Server) landApplyVerdicts(
 		}
 		scope := landTicketScope(in.GetRepository().GetStorageName(), in.GetRepository().GetRelativePath(), in.GetBranch())
 		if landTickets.blocked(landTicketKeys(scope, paths, s.resolveCfg.Verify.Enabled), pre.ticket) {
-			return landResolution{}, &landNeedsResolution{tip: tip, commit: commitID, paths: paths, queued: true}
+			return landResolution{}, &landNeedsResolutionError{tip: tip, commit: commitID, paths: paths, queued: true}
 		}
 	}
 	if len(missing) > 0 {
-		return landResolution{}, &landNeedsResolution{tip: tip, commit: commitID, paths: missing, rulesCannot: rulesCannot}
+		return landResolution{}, &landNeedsResolutionError{tip: tip, commit: commitID, paths: missing, rulesCannot: rulesCannot}
 	}
 
 	reused := map[string]resolver.ResponseFile{}
@@ -581,7 +581,7 @@ func (s *Server) landApplyVerdicts(
 		}
 	}
 	if !decideLand(answer, l.files, tree, verified, verifyRequired) {
-		need := &landNeedsResolution{tip: tip, commit: commitID, unverified: tree}
+		need := &landNeedsResolutionError{tip: tip, commit: commitID, unverified: tree}
 		if tree == "" {
 			// Nothing to verify, yet not landable: a file the answer rejects. Resolving again says why.
 			for _, f := range l.files {
@@ -709,16 +709,6 @@ func landModeOfSides(c landFileConflict, rf resolver.ResponseFile) error {
 		}
 	}
 	return fmt.Errorf("the resolution writes mode %s, which is none of the modes of the sides (%s)", rf.Mode, strings.Join(modes, ", "))
-}
-
-// landAllResolved reports whether every file of the land is resolved.
-func landAllResolved(files []*landFileState) bool {
-	for _, f := range files {
-		if f.outcome != gitalypb.LandConflictFile_OUTCOME_RESOLVED {
-			return false
-		}
-	}
-	return true
 }
 
 // landRequestFile is the file of the resolve request for a classified file that is sent.

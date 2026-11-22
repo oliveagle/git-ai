@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/archive"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -21,8 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 func TestSetHooksSubcommand(t *testing.T) {

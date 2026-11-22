@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/stats"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr/partition/snapshot"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (s *server) RepositoryInfo(

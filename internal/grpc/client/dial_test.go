@@ -8,11 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
-	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
-	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -22,6 +17,12 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
+	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
+	"github.com/feder-cr/git-ai/internal/grpc/listenmux"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 func TestDial(t *testing.T) {

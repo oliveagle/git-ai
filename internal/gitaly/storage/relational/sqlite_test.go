@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestSQLitePoolStore(t *testing.T) {

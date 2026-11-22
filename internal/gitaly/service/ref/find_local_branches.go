@@ -4,13 +4,14 @@ import (
 	"errors"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/helper/chunk"
 	"github.com/feder-cr/git-ai/internal/helper/lines"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/proto"
 )
 
 // FindLocalBranches creates a stream of branches for all local branches in the given repository

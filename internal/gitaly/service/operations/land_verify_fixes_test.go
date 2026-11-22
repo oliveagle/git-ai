@@ -26,7 +26,7 @@ import (
 func TestLandMaterialize_anEmptyLinkTargetIsRefused(t *testing.T) {
 	t.Parallel()
 
-	var refusal *landCheckoutRefusal
+	var refusal *landCheckoutRefusalError
 	require.ErrorAs(t, materializeFake(t, t.TempDir(), fakeTreeEntry{0o120000, "l", ""}), &refusal)
 	require.Contains(t, refusal.reason, "empty target")
 
@@ -62,13 +62,13 @@ func TestLandMaterializer_sortsTheErrnos(t *testing.T) {
 	m := newLandMaterializer(testhelper.Context(t), "/srv/checkout", landCheckoutLimits{})
 	for _, errno := range []syscall.Errno{syscall.EEXIST, syscall.ENAMETOOLONG, syscall.EILSEQ, syscall.ELOOP, syscall.ENOTDIR, syscall.EISDIR, syscall.ENOTEMPTY, syscall.EINVAL, syscall.EMLINK} {
 		err := m.osError(&fs.PathError{Op: "mkdir", Path: "/srv/checkout/a/b", Err: errno})
-		var refusal *landCheckoutRefusal
+		var refusal *landCheckoutRefusalError
 		require.ErrorAs(t, err, &refusal, errno.Error())
 		require.NotContains(t, refusal.reason, "/srv/checkout", "relative paths only")
 		require.Contains(t, refusal.reason, "mkdir a/b")
 	}
 	for _, errno := range []syscall.Errno{syscall.ENOSPC, syscall.EMFILE, syscall.ENFILE, syscall.EIO, syscall.EACCES, syscall.EPERM, syscall.EROFS, syscall.EDQUOT, syscall.ENOMEM, syscall.ENOENT} {
-		var fault *landCheckoutFault
+		var fault *landCheckoutFaultError
 		require.ErrorAs(t, m.osError(&fs.PathError{Op: "mkdir", Path: "/srv/checkout/a", Err: errno}), &fault, errno.Error())
 	}
 }

@@ -3,8 +3,9 @@ package storage
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestNeedsSync(t *testing.T) {

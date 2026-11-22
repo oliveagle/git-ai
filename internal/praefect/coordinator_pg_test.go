@@ -8,6 +8,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
@@ -18,10 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/transaction/txinfo"
 	"github.com/feder-cr/git-ai/internal/transaction/voting"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/peer"
-	"google.golang.org/protobuf/proto"
 )
 
 // TestCoordinatorCrashRecoveryRecordLifecycle verifies that the coordinator writes a

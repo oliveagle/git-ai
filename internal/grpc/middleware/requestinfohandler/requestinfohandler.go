@@ -4,11 +4,6 @@ import (
 	"context"
 	"strings"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	grpcmwtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -19,6 +14,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 var requests = promauto.NewCounterVec(

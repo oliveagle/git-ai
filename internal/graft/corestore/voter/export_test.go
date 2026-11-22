@@ -6,6 +6,10 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
+// SetBeforeAcquire sets the function called right before a transaction with an invocation takes its
+// admission.
+func SetBeforeAcquire(v *Voter, f func()) { v.beforeAcquire = f }
+
 // The pending set is exported to the external tests of the package.
 
 // PendingTTL and MaxPendingEntries bound the pending set.
@@ -45,6 +49,10 @@ func (p PendingSet) Len() int { return p.set.len() }
 // PreparedPacks returns the number of packs prepared in Preparing whose
 // Prepared or Aborted phase has not run yet.
 func (v *Voter) PreparedPacks() int { return v.packs.len() }
+
+// PendingEntries returns the number of transactions committed in Prepared whose
+// Committed or Aborted phase has not run yet.
+func (v *Voter) PendingEntries() int { return v.pending.len() }
 
 func testRepo(storageName, relativePath string) *gitalypb.Repository {
 	return &gitalypb.Repository{StorageName: storageName, RelativePath: relativePath}

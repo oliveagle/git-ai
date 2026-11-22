@@ -4,10 +4,11 @@ import (
 	"context"
 	"runtime/debug"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // PanicHandler is a handler that will be called on a grpc panic

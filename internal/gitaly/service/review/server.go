@@ -72,7 +72,7 @@ func (s *server) openRepo(ctx context.Context, repoProto *gitalypb.Repository) (
 	case errors.Is(err, corestore.ErrRepositoryNotFound):
 		return nil, nil, structerr.NewFailedPrecondition("repository is not imported into the storage core")
 	case err != nil:
-		return nil, nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	return repo, dbreview.New(ctx, core.Meta, tracked.ID).(*dbreview.Store).WithMaxOpen(maxOpen), nil

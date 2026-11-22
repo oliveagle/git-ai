@@ -6,15 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb/testproto"
 	grpcmw "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb/testproto"
 )
 
 func TestAbortedErrorHandler(t *testing.T) {

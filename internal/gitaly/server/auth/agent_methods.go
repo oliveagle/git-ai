@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/graft/identity"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+
+	"github.com/feder-cr/git-ai/internal/graft/identity"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // agentNeverAllowedServices are the gRPC services that no caller authenticated
@@ -29,6 +30,9 @@ import (
 //   - StorageCoreService is the storage core's administration: imports,
 //     checkpoints and garbage collection, which deletes packs of the bucket.
 //     It is reserved for operators (doc/graft/STORAGE.md).
+//   - MirrorService declares and removes the mirrors of a repository, which
+//     the mirror policy then holds a push to: an agent that could remove a
+//     target would open the repository it guards (doc/graft/MIRROR.md).
 var agentNeverAllowedServices = []string{
 	gitalypb.HookService_ServiceDesc.ServiceName,
 	gitalypb.ObjectPoolService_ServiceDesc.ServiceName,
@@ -36,6 +40,7 @@ var agentNeverAllowedServices = []string{
 	gitalypb.PartitionService_ServiceDesc.ServiceName,
 	gitalypb.InternalGitaly_ServiceDesc.ServiceName,
 	gitalypb.StorageCoreService_ServiceDesc.ServiceName,
+	gitalypb.MirrorService_ServiceDesc.ServiceName,
 }
 
 // agentNeverAllowedMethods are RPCs that no caller authenticated with
@@ -124,6 +129,9 @@ var agentNeverAllowedMethods = map[string]struct{}{
 //     RPC is left out.
 //   - ServerService.ServerInfo and RepositoryService.RepositoryExists, which
 //     graft-cache uses to authorize a caller for a repository.
+//   - BranchPolicyService (`graft gate check`): every RPC. It reads the branch
+//     rules the server enforces and the decision the hook would make on an
+//     update of a branch. It writes nothing.
 //
 // Health checks are not in the list: they are answered without authentication.
 //
@@ -156,6 +164,7 @@ func buildBuiltinAgentRPCs() map[string]struct{} {
 	addService(&gitalypb.DerivedDataService_ServiceDesc, false)
 	addService(&gitalypb.SearchService_ServiceDesc, false)
 	addService(&gitalypb.ReviewService_ServiceDesc, false)
+	addService(&gitalypb.BranchPolicyService_ServiceDesc, true)
 
 	addService(&gitalypb.CommitService_ServiceDesc, true)
 	addService(&gitalypb.RefService_ServiceDesc, true)

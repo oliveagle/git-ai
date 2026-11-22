@@ -7,13 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 )
 
 // treeEntry builds an expected entry of a GetTree listing.
@@ -28,28 +29,28 @@ func treeEntry(path string, oid git.ObjectID, typ gitalypb.ObjectType, mode int3
 }
 
 // getTree sends a GetTree request and receives all responses.
-func getTree(t testing.TB, ctx context.Context, client gitalypb.ObjectServiceClient, req *gitalypb.GetTreeRequest) ([]*gitalypb.GetTreeResponse, error) {
-	t.Helper()
+func getTree(tb testing.TB, ctx context.Context, client gitalypb.ObjectServiceClient, req *gitalypb.GetTreeRequest) ([]*gitalypb.GetTreeResponse, error) {
+	tb.Helper()
 
 	stream, err := client.GetTree(ctx, req)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return testhelper.Receive(stream.Recv)
 }
 
 // flattenTree concatenates the entries of all responses. The tree OID must only be set on the
 // first response.
-func flattenTree(t testing.TB, responses []*gitalypb.GetTreeResponse) (string, []*gitalypb.GetTreeResponse_Entry) {
-	t.Helper()
+func flattenTree(tb testing.TB, responses []*gitalypb.GetTreeResponse) (string, []*gitalypb.GetTreeResponse_Entry) {
+	tb.Helper()
 
-	require.NotEmpty(t, responses, "at least one response is expected")
+	require.NotEmpty(tb, responses, "at least one response is expected")
 
 	var entries []*gitalypb.GetTreeResponse_Entry
 	for i, response := range responses {
 		if i == 0 {
-			require.NotEmpty(t, response.GetTreeOid(), "first response must carry the tree OID")
+			require.NotEmpty(tb, response.GetTreeOid(), "first response must carry the tree OID")
 		} else {
-			require.Empty(t, response.GetTreeOid(), "tree OID is only set on the first response")
+			require.Empty(tb, response.GetTreeOid(), "tree OID is only set on the first response")
 		}
 
 		entries = append(entries, response.GetEntries()...)
@@ -80,15 +81,15 @@ type treeFixture struct {
 //	    leaf     blob   100644
 //	  nested.txt blob   100644
 //	sub-mod      commit 160000
-func setupTreeFixture(t testing.TB, ctx context.Context, cfg config.Cfg, objectFormat string) treeFixture {
-	t.Helper()
+func setupTreeFixture(tb testing.TB, ctx context.Context, cfg config.Cfg, objectFormat string) treeFixture {
+	tb.Helper()
 
 	var repo *gitalypb.Repository
 	var repoPath string
 	if objectFormat == "" {
-		repo, repoPath = gittest.CreateRepository(t, ctx, cfg)
+		repo, repoPath = gittest.CreateRepository(tb, ctx, cfg)
 	} else {
-		repo, repoPath = gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{ObjectFormat: objectFormat})
+		repo, repoPath = gittest.CreateRepository(tb, ctx, cfg, gittest.CreateRepositoryConfig{ObjectFormat: objectFormat})
 	}
 
 	objectHash := gittest.DefaultObjectHash
@@ -96,14 +97,14 @@ func setupTreeFixture(t testing.TB, ctx context.Context, cfg config.Cfg, objectF
 		objectHash = git.ObjectHashSHA256
 	}
 
-	blobA := gittest.WriteBlob(t, cfg, repoPath, []byte("a content"))
-	blobB := gittest.WriteBlob(t, cfg, repoPath, []byte("bb"))
+	blobA := gittest.WriteBlob(tb, cfg, repoPath, []byte("a content"))
+	blobB := gittest.WriteBlob(tb, cfg, repoPath, []byte("bb"))
 	submodule := objectHash.HashData([]byte("submodule commit"))
 
-	deepTree := writeTree(t, cfg, repoPath, []gittest.TreeEntry{
+	deepTree := writeTree(tb, cfg, repoPath, []gittest.TreeEntry{
 		{OID: blobA, Mode: "100644", Path: "leaf"},
 	})
-	dirTree := writeTree(t, cfg, repoPath, []gittest.TreeEntry{
+	dirTree := writeTree(tb, cfg, repoPath, []gittest.TreeEntry{
 		{OID: deepTree, Mode: "040000", Path: "deeper"},
 		{OID: blobA, Mode: "100644", Path: "nested.txt"},
 	})
@@ -115,8 +116,8 @@ func setupTreeFixture(t testing.TB, ctx context.Context, cfg config.Cfg, objectF
 		{OID: submodule, Mode: "160000", Path: "sub-mod"},
 	}
 
-	rootTree := writeTree(t, cfg, repoPath, entries)
-	commit := commitTree(t, cfg, repoPath, rootTree)
+	rootTree := writeTree(tb, cfg, repoPath, entries)
+	commit := commitTree(tb, cfg, repoPath, rootTree)
 
 	return treeFixture{
 		repo:      repo,
@@ -133,8 +134,8 @@ func setupTreeFixture(t testing.TB, ctx context.Context, cfg config.Cfg, objectF
 
 // writeTree writes a tree with git-mktree(1). Unlike gittest.WriteTree it works for every object
 // format, because it does not hash object IDs with the default object hash.
-func writeTree(t testing.TB, cfg config.Cfg, repoPath string, entries []gittest.TreeEntry) git.ObjectID {
-	t.Helper()
+func writeTree(tb testing.TB, cfg config.Cfg, repoPath string, entries []gittest.TreeEntry) git.ObjectID {
+	tb.Helper()
 
 	var stdin bytes.Buffer
 	for _, entry := range entries {
@@ -148,15 +149,15 @@ func writeTree(t testing.TB, cfg config.Cfg, repoPath string, entries []gittest.
 		fmt.Fprintf(&stdin, "%s %s %s\t%s\n", entry.Mode, objectType, entry.OID, entry.Path)
 	}
 
-	output := gittest.ExecOpts(t, cfg, gittest.ExecConfig{Stdin: &stdin}, "-C", repoPath, "mktree")
+	output := gittest.ExecOpts(tb, cfg, gittest.ExecConfig{Stdin: &stdin}, "-C", repoPath, "mktree")
 	return git.ObjectID(strings.TrimSpace(string(output)))
 }
 
 // commitTree writes a commit for the given tree without any parents, with git-commit-tree(1).
-func commitTree(t testing.TB, cfg config.Cfg, repoPath string, tree git.ObjectID) git.ObjectID {
-	t.Helper()
+func commitTree(tb testing.TB, cfg config.Cfg, repoPath string, tree git.ObjectID) git.ObjectID {
+	tb.Helper()
 
-	output := gittest.Exec(t, cfg, "-C", repoPath, "commit-tree", tree.String(), "-m", "fixture")
+	output := gittest.Exec(tb, cfg, "-C", repoPath, "commit-tree", tree.String(), "-m", "fixture")
 	return git.ObjectID(strings.TrimSpace(string(output)))
 }
 

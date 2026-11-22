@@ -65,11 +65,11 @@ const outsiderName = "outsider"
 // normal land changeset with the request's own actor and that one member
 // (doc/graft/PLAN4.md, "BATCH OF ONE KEEPS ITS MEMBER"). A commit that is a
 // member twice fails the test.
-func landBatchMembers(ctx context.Context, t *testing.T, repo *sdk.Repo) map[string]string {
+func landBatchMembers(t *testing.T, ctx context.Context, repo *sdk.Repo) map[string]string {
 	t.Helper()
 
 	members := map[string]string{}
-	for _, cs := range allChangesets(ctx, t, repo) {
+	for _, cs := range allChangesets(t, ctx, repo) {
 		switch {
 		case cs.GetOperation() == landBatchOperation:
 			require.Equal(t, graftBatchActor, cs.GetActor(), "the combined update of a land_batch changeset runs as %s", graftBatchActor)
@@ -153,7 +153,7 @@ func TestPhase3BatchedLandingAllPrivateChanges(t *testing.T) {
 	require.Positive(t, shared, "concurrent lands share batches")
 	require.LessOrEqual(t, attempts, int32(2*phase3Agents), "on average at most two attempts per change")
 
-	members := landBatchMembers(ctx, t, repos[0])
+	members := landBatchMembers(t, ctx, repos[0])
 	require.Len(t, members, phase3Agents, "the land_batch members cover every landed change")
 	for i, commit := range commits {
 		actor, ok := members[commit]
@@ -211,7 +211,7 @@ func TestPhase3Load100AgentsMixed(t *testing.T) {
 	files := s.git(t, "ls-tree", "-r", "--name-only", branch, "agents")
 	require.Len(t, strings.Split(files, "\n"), private+1)
 
-	members := landBatchMembers(ctx, t, repos[0])
+	members := landBatchMembers(t, ctx, repos[0])
 	require.Len(t, members, private+1, "the land_batch members are exactly the landed changes")
 	for agent := range commits {
 		actor, ok := members[commits[agent]]
@@ -607,7 +607,7 @@ func TestPhase3CancelledRequestsAreDropped(t *testing.T) {
 	require.Contains(t, files, "cancel/live.txt", "the live change lands")
 	require.NotContains(t, files, "cancel/dropped.txt", "the cancelled change must not land")
 
-	members := landBatchMembers(ctx, t, repo)
+	members := landBatchMembers(t, ctx, repo)
 	require.Contains(t, members, live, "the live change is a member")
 	require.NotContains(t, members, dropped, "the cancelled change is in no batch")
 }
@@ -713,7 +713,7 @@ func TestPhase3ProtectedBranchBatches(t *testing.T) {
 	}
 	require.Positive(t, shared, "concurrent lands on a protected branch share batches")
 
-	members := landBatchMembers(ctx, t, repos[0])
+	members := landBatchMembers(t, ctx, repos[0])
 	require.Len(t, members, workers, "the land_batch members cover every landed change")
 	for i, commit := range commits {
 		require.Equal(t, workerName(i), members[commit], "change %d is attributed to the worker that submitted it", i)
@@ -1028,12 +1028,12 @@ func TestPhase3SingleLandIsABatch(t *testing.T) {
 	require.Equal(t, int32(1), res.Batch.Size)
 	require.Equal(t, int32(1), res.Batch.Position)
 
-	members := landBatchMembers(ctx, t, repo)
+	members := landBatchMembers(t, ctx, repo)
 	require.Equal(t, "planner", members[commit])
 	require.Len(t, members, 1)
 
 	var single *sdk.Changeset
-	for _, cs := range allChangesets(ctx, t, repo) {
+	for _, cs := range allChangesets(t, ctx, repo) {
 		if string(cs.GetReference()) == "refs/heads/"+branch && len(cs.GetMembers()) == 1 {
 			single = cs
 		}

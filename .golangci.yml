@@ -225,7 +225,7 @@ formatters:
       sections:
         - standard
         - default
-        - blank
+        - prefix(github.com/feder-cr/git-ai)
   exclusions:
     generated: lax
     paths:

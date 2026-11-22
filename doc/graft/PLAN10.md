@@ -1132,7 +1132,7 @@ whole file (`agree_with`, 15.13): the one filter that chose better proposals tha
 | per-file verdicts, decide | `landResolveAt`, `landSetOutcomes`, `decideLand`, `landAnswerProposes`, `landKeyOf` | operations/land_resolve.go, land_proposals.go, land_preresolve.go |
 | the tree that would land | `landResolvedTree` | operations/land_resolve.go |
 | VERIFY, the one box, out of the lane, for every resolution | `landVerifyOutOfLane`, `landVerify`, `landPrecheckVerify` (an agent's), `VerifyPool.Acquire` | operations/land_verify.go, land_reland.go; graft/resolver/check.go |
-| verdicts applied in the lane | `landApplyVerdicts`, `landNeedsResolution` | operations/land_resolve.go, land_preresolve.go |
+| verdicts applied in the lane | `landApplyVerdicts`, `landNeedsResolutionError` | operations/land_resolve.go, land_preresolve.go |
 | the rules resolved in the lane (rules_only, inline_timeout) | `landResolveInline`, `landInlineEnabled`, `Server.landInlineOff`, `Request.RulesOnly`, `Response.RulesOnly`, `unsupportedBy` and the skip of models in `resolveFile` | operations/land_inline.go, land_resolve.go; graft/resolver/protocol.go; tools/.../resolve/resolve.go |
 | the queue of the lands that lose a round | `landTickets`, `landTicketRegistry.acquire/blocked`, `landTakeTicket`, `landTicketsBlock`, the block in `landApplyVerdicts` | operations/land_tickets.go, land_preresolve.go, land_resolve.go |
 | unverified in time: proposals | `landAnnotateUnverified`, `landStoppedReason`, `landFinalPass` | operations/land_resolve.go, land_preresolve.go |

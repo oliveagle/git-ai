@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/git/trace2"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/feder-cr/git-ai/internal/git/trace2"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/internal/tracing"
 )
 
 func TestTracingExporter_Handle(t *testing.T) {

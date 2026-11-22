@@ -141,8 +141,10 @@ const LowN = 30
 
 // NewReport aggregates results.
 func NewReport(label string, results []Result) Report {
-	rep := Report{Label: label, Families: map[string]Counts{}, Languages: map[string]Counts{}, Kinds: map[string]Counts{},
-		NotSent: map[string]int{}, Rejected: map[string]int{}, Results: results}
+	rep := Report{
+		Label: label, Families: map[string]Counts{}, Languages: map[string]Counts{}, Kinds: map[string]Counts{},
+		NotSent: map[string]int{}, Rejected: map[string]int{}, Results: results,
+	}
 	for _, r := range results {
 		rep.Total.add(r)
 		for _, g := range []struct {

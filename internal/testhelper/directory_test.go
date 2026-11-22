@@ -13,9 +13,10 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/archive"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
-	"github.com/stretchr/testify/require"
 )
 
 type tbRecorder struct {

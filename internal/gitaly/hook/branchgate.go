@@ -1,0 +1,217 @@
+package hook
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/feder-cr/git-ai/internal/git/gitcmd"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
+	"github.com/feder-cr/git-ai/internal/graft/changelog"
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+)
+
+// BranchGateState is the state the branch gate decides with, for one branch.
+type BranchGateState struct {
+	// Reviews are the reviews of the branch.
+	Reviews []*gitalypb.Review
+	// Checkpoint is the commit the verification checkpoint of the branch points
+	// at, the green reference of graft-verify. It is empty when the branch has
+	// no checkpoint.
+	Checkpoint string
+	// CertifiedTree is the tree the checkpoint certifies: the tree the suite
+	// ran on. It is empty when the checkpoint certifies no tree, and it
+	// differs from CheckpointTree when the suite ran on part of the tree.
+	CertifiedTree string
+	// CheckpointTree is the tree of the commit the checkpoint names.
+	CheckpointTree string
+	// Suites are the suites the checkpoint certifies, by name: each one is
+	// the commit the suite ran on. It holds the suites the rule of the branch
+	// requires, the ones the gate has to judge.
+	Suites map[string]string
+}
+
+// BranchGateSource gives the branch gate the state of a branch. The server
+// wires one that reads the reviews of the repository and the verification
+// checkpoint of the branch (internal/cli/gitaly). A nil source leaves the
+// gate without reviews and without a checkpoint, so that a rule that asks for
+// one refuses every land.
+type BranchGateSource interface {
+	// BranchState returns the state of the branch of the repository. The
+	// suites are the ones the rule of the branch requires: the state says
+	// which of them the checkpoint of the branch certifies, and on which
+	// commit.
+	BranchState(ctx context.Context, repo *gitalypb.Repository, branch string, suites []string) (BranchGateState, error)
+}
+
+// BranchGateDenialError is the refusal of an update by the branch management policy.
+// It carries the decision, so that the caller can tell a policy decision from a
+// failure, and tell which rule refused the update: the land lanes land the
+// members of a batch alone when the combined update is refused, so that the
+// policy judges each of them on its own.
+type BranchGateDenialError struct {
+	// Branch is the branch whose rule refused the update.
+	Branch string
+	// Code is the code of the decision (branchgate.CodeNotVerified, say).
+	Code string
+	// Reason explains the refusal for a human.
+	Reason string
+}
+
+func (e BranchGateDenialError) Error() string {
+	return e.Reason
+}
+
+// enforceBranchGate decides the updates of the transaction with the branch
+// management policy of the server ([[graft.branch]]). It runs in the prepared
+// phase, while the references are locked and before git writes them, so that
+// a refusal aborts the transaction whatever asked for the update.
+//
+// The gate binds the callers that authenticated with a per-agent token, like
+// the access policy does: the operator credential (the shared token) and the
+// server's own operations are trusted, so that the verifier may revert a
+// commit that broke the branch. A CI that lands with the operator credential
+// asks the same question with graft gate check, which the BranchPolicyService
+// answers with this very policy (internal/gitaly/service/branchpolicy).
+//
+// A branch without a rule is not managed: its updates are not touched.
+func (m *GitLabHookManager) enforceBranchGate(ctx context.Context, payload gitcmd.HooksPayload, env []string, changes []byte) error {
+	policy := m.branchPolicy.Current()
+	if policy.Empty() {
+		return nil
+	}
+
+	meta, err := gitcmd.ChangelogMetaFromEnv(env)
+	if err != nil {
+		if !errors.Is(err, gitcmd.ErrPayloadNotFound) {
+			return fmt.Errorf("reading graft metadata: %w", err)
+		}
+		// The update carries no identity: it is not a land, and a managed
+		// branch only a land may update.
+		meta = gitcmd.ChangelogMeta{}
+	}
+
+	if !meta.Agent || meta.Actor == "" {
+		// The operator credential (the shared token) and the server's own
+		// operations are trusted, so the gate binds the updates an agent asked
+		// for. A batched land is one of them: the land lanes publish the
+		// combined update in the name of the batch, not of the agents whose
+		// changes it carries, so the identities of the lands it folds in are
+		// what tells the gate that agents' changes are being written.
+		if len(meta.Lands) < 2 {
+			return nil
+		}
+	}
+
+	for _, update := range changelog.ParseUpdates(changes) {
+		branch, ok := strings.CutPrefix(update.Reference, "refs/heads/")
+		if !ok {
+			continue
+		}
+		if policy.Rule(branch) == nil {
+			continue
+		}
+
+		decision, err := m.decideBranchUpdate(ctx, policy, payload, meta, branch, update)
+		if err != nil {
+			return err
+		}
+
+		fields := log.Fields{
+			"actor":     meta.Actor,
+			"branch":    branch,
+			"reference": update.Reference,
+			"code":      decision.Code,
+			// The generation says which reload of the rules decided, as the
+			// access policy's denials do.
+			"policy_generation": m.branchPolicy.Generation(),
+		}
+		if !decision.Allowed {
+			fields["reason"] = decision.Reason
+			m.logger.WithFields(fields).InfoContext(ctx, "agent branch update denied")
+			// The refusal carries the code of the decision, so that a CI
+			// that lands reads what to do next (a stale result is computed
+			// again, a missing verification is published before the land)
+			// instead of parsing the reason.
+			return structerr.NewPermissionDenied("%w", BranchGateDenialError{
+				Branch: branch,
+				Code:   decision.Code,
+				Reason: decision.Reason,
+			}).WithDetail(&gitalypb.BranchGateError{
+				Branch: branch,
+				Code:   decision.Code,
+				Reason: decision.Reason,
+			})
+		}
+		m.logger.WithFields(fields).DebugContext(ctx, "agent branch update allowed")
+	}
+
+	return nil
+}
+
+// decideBranchUpdate decides one update of a managed branch with the rules of
+// the server.
+func (m *GitLabHookManager) decideBranchUpdate(ctx context.Context, policy *branchgate.Policy, payload gitcmd.HooksPayload, meta gitcmd.ChangelogMeta, branch string, update changelog.Update) (branchgate.Decision, error) {
+	deletion := changelog.IsZeroOID(update.NewOID)
+	creation := changelog.IsZeroOID(update.OldOID)
+
+	// A land carries the identities of the changes it lands and the branch it
+	// lands them on. An update without them is a direct update, such as a
+	// push.
+	land := !deletion && string(meta.LandReference) == update.Reference && len(meta.Lands) > 0
+
+	var changes []string
+	switch {
+	case land:
+		for _, l := range meta.Lands {
+			changes = append(changes, l.Original)
+		}
+	case !creation:
+		changes = []string{update.NewOID}
+	}
+
+	var reviews []*gitalypb.Review
+	var checkpoint string
+	var certifiedTree string
+	var checkpointTree string
+	var suites map[string]string
+	if m.branchGate != nil {
+		// The rule says which suites the branch requires: the state says
+		// which of them the checkpoint certifies.
+		var required []string
+		if rule := policy.Rule(branch); rule != nil {
+			required = rule.RequireSuites
+		}
+		state, err := m.branchGate.BranchState(ctx, payload.Repo, branch, required)
+		if err != nil {
+			return branchgate.Decision{}, fmt.Errorf("reading the state of the branch %q: %w", branch, err)
+		}
+		reviews = state.Reviews
+		checkpoint = state.Checkpoint
+		certifiedTree = state.CertifiedTree
+		checkpointTree = state.CheckpointTree
+		suites = state.Suites
+	}
+
+	return branchgate.Decide(branchgate.Input{
+		Rules:       policy.Rules,
+		ReviewRules: policy.ReviewRules,
+		Branch:      branch,
+		Changes:     changes,
+		Tip:         update.OldOID,
+		// The update produces the commit git is about to write, so the gate
+		// knows it: a checkpoint on that commit is a verified result.
+		Result:           update.NewOID,
+		Reviews:          reviews,
+		Checkpoint:       checkpoint,
+		CertifiedTree:    certifiedTree,
+		CheckpointTree:   checkpointTree,
+		CheckpointSuites: suites,
+		Direct:           !land,
+		Creation:         creation,
+		Deletion:         deletion,
+	}), nil
+}

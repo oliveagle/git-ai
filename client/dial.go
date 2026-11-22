@@ -6,15 +6,16 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+
 	"github.com/feder-cr/git-ai/internal/backoff"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // DialOption is an option that can be passed to Dial and DialContext.

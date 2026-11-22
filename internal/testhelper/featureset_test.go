@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
-	ff "github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	ff "github.com/feder-cr/git-ai/internal/featureflag"
 )
 
 func TestFeatureSets_Run(t *testing.T) {

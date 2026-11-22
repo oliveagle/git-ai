@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
@@ -26,7 +28,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/helper/duration"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/pelletier/go-toml/v2"
 )
 
 const (
@@ -1619,7 +1620,7 @@ func SetupRuntimeDirectory(cfg Cfg, processID int) (Cfg, error) {
 
 		if _, err := os.Stat(runtimeDir); err != nil && !os.IsNotExist(err) {
 			return Cfg{}, fmt.Errorf("statting runtime directory: %w", err)
-		} else if err != nil {
+		} else if err == nil {
 			// If the directory exists already then it must be from an old invocation of
 			// Gitaly. Because we use the PID as path component we know that the old
 			// instance cannot exist anymore though, so it's safe to remove this

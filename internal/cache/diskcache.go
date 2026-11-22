@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/dontpanic"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
@@ -15,8 +18,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/safe"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"
 )
 
 // maps a cache path to the number of active writers

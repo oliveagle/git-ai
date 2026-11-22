@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/graft/changelog"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 // holdRepositoryLock opens a transaction on other that holds the lock a
@@ -295,7 +296,7 @@ func TestTargetsThatAreNotTextAreRefused(t *testing.T) {
 		} {
 			_, err := commit(ctx, s, repo.ID, create("HEAD", target))
 			require.Error(t, err, "target %q", target)
-			var conflict *corestore.ErrRefConflict
+			var conflict *corestore.RefConflictError
 			require.False(t, errors.As(err, &conflict))
 		}
 

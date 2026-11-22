@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
-	"github.com/stretchr/testify/require"
 )
 
 // landWith commits path with the message on main, dated when unless it is zero,

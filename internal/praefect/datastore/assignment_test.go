@@ -5,10 +5,11 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAssignmentStore_GetHostAssignments(t *testing.T) {

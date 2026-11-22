@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
@@ -12,9 +16,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	grpcmwlogrus "github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 type mockObjectPoolService struct {

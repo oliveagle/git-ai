@@ -86,6 +86,8 @@ func TestLocalReferenceWritesOfACommittedTransaction(t *testing.T) {
 
 	require.NoError(t, f.prepared(input))
 	require.Len(t, f.markers(t), 1)
+	require.Equal(t, float64(1), metricValue(t, f.voter, "graft_storage_prepared_step_seconds", map[string]string{"kind": "create", "step": "durability"}),
+		"the dirty marker is a step of the Prepared phase")
 
 	gittest.WriteRef(t, f.cfg, f.repoPath, git.ReferenceName(ref), f.a)
 	f.voter.Committed(f.ctx, f.payload, input)
@@ -193,7 +195,7 @@ func TestLocalReferenceWritesWhenTheMarkerCannotBeWritten(t *testing.T) {
 
 	input := line(f.zero, f.a.String(), "refs/heads/main")
 	err := f.prepared(input)
-	require.Equal(t, codes.Unavailable, status.Code(err), "error %v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "error %v", err)
 	require.ErrorContains(t, err, "write the dirty marker")
 	require.Equal(t, uint64(1), f.headSeq(t), "the database committed the changeset before the marker")
 }

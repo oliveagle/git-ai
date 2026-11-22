@@ -11,10 +11,12 @@ import (
 )
 
 func syntaxFile() LLMFile {
-	return LLMFile{Path: "a.go",
+	return LLMFile{
+		Path:   "a.go",
 		Base:   []byte("package a\n\nfunc f() int {\n\treturn 1\n}\n"),
 		Ours:   []byte("package a\n\nfunc f() int {\n\treturn 2\n}\n"),
-		Theirs: []byte("package a\n\nfunc f() int {\n\treturn 3\n}\n")}
+		Theirs: []byte("package a\n\nfunc f() int {\n\treturn 3\n}\n"),
+	}
 }
 
 // TestLLMDesignRepairOnTheSyntaxOfTheFile: the first syntax error of the assembled file is mapped to the
@@ -68,10 +70,12 @@ func TestLLMDesignRepairOnTheSyntaxOfTheFile(t *testing.T) {
 // as it is of the first one: a region whose lines cannot be fixed may be deleted, and the file that parses
 // without them is the result.
 func TestLLMDesignSyntaxRepairMayDeleteTheRegion(t *testing.T) {
-	f := LLMFile{Path: "a.go",
+	f := LLMFile{
+		Path:   "a.go",
 		Base:   []byte("package a\n\nfunc f() {\n\tprintln(1)\n}\n"),
 		Ours:   []byte("package a\n\nfunc f() {\n\tprintln(2)\n}\n"),
-		Theirs: []byte("package a\n\nfunc f() {\n\tprintln(3)\n}\n")}
+		Theirs: []byte("package a\n\nfunc f() {\n\tprintln(3)\n}\n"),
+	}
 	p := &llmFake{answer: func(i int, _ llm.Request) (*llm.Response, error) {
 		if i == 0 {
 			return llmFakeAnswer("\tprintln(\n"), nil

@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // universe holds the paths that random commits change. No path is a prefix of
@@ -24,10 +25,10 @@ const zeroOID = "0000000000000000000000000000000000000000"
 
 // runGit runs git in dir and returns its standard output. The command goes through
 // gittest, which runs the bundled Git binary that the tests are configured for.
-func runGit(t testing.TB, cfg config.Cfg, dir string, env []string, stdin string, args ...string) string {
-	t.Helper()
+func runGit(tb testing.TB, cfg config.Cfg, dir string, env []string, stdin string, args ...string) string {
+	tb.Helper()
 
-	return string(gittest.ExecOpts(t, cfg, gittest.ExecConfig{
+	return string(gittest.ExecOpts(tb, cfg, gittest.ExecConfig{
 		Stdin: strings.NewReader(stdin),
 		Env:   env,
 	}, append([]string{"-C", dir}, args...)...))

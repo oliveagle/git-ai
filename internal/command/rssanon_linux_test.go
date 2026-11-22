@@ -6,10 +6,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestGetRssAnon(t *testing.T) {

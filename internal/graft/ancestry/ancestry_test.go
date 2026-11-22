@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -19,7 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/derived"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // crissCrossHistory returns the parents of n commits as indexes, lower than the index of the
@@ -49,37 +50,6 @@ func crissCrossHistory(rnd *rand.Rand, n int) [][]int {
 	}
 
 	return parents
-}
-
-// writeHistory creates the commits with git fast-import. Commit i has the parents parents[i], which
-// must be lower indexes, and is also reachable as refs/heads/c<i>.
-func writeHistory(t *testing.T, cfg config.Cfg, repoPath string, parents [][]int) []git.ObjectID {
-	t.Helper()
-
-	var stream bytes.Buffer
-	for i, list := range parents {
-		name := fmt.Sprintf("c%d", i)
-		fmt.Fprintf(&stream, "commit refs/heads/%s\n", name)
-		fmt.Fprintf(&stream, "mark :%d\n", i+1)
-		fmt.Fprintf(&stream, "committer Tester <tester@example.com> %d +0000\n", 1600000000+i)
-		fmt.Fprintf(&stream, "data %d\n%s\n", len(name), name)
-		for j, parent := range list {
-			if j == 0 {
-				fmt.Fprintf(&stream, "from :%d\n", parent+1)
-			} else {
-				fmt.Fprintf(&stream, "merge :%d\n", parent+1)
-			}
-		}
-		stream.WriteString("\n")
-	}
-
-	gittest.ExecOpts(t, cfg, gittest.ExecConfig{Stdin: &stream}, "-C", repoPath, "fast-import", "--quiet")
-
-	ids := make([]git.ObjectID, 0, len(parents))
-	for i := range parents {
-		ids = append(ids, gittest.ResolveRevision(t, cfg, repoPath, fmt.Sprintf("refs/heads/c%d", i)))
-	}
-	return ids
 }
 
 // gitMergeBases returns the sorted output of git merge-base --all for a and b.
@@ -121,7 +91,8 @@ func newAncestryEnv(t *testing.T) (config.Cfg, string, *localrepo.Repo, catfile.
 	return cfg, repoPath, repo, reader
 }
 
-// writeDatedHistory is writeHistory with the committer date dates[i] for commit i.
+// writeDatedHistory creates the commits with git fast-import. Commit i has the parents parents[i], which
+// must be lower indexes, and its committer date is dates[i].
 func writeDatedHistory(t *testing.T, cfg config.Cfg, repoPath string, parents [][]int, dates []int64) []git.ObjectID {
 	t.Helper()
 

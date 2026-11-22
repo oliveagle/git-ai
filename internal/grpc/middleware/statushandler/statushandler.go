@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/feder-cr/git-ai/internal/gitlab/client"
-	"github.com/feder-cr/git-ai/internal/structerr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/feder-cr/git-ai/internal/gitlab/client"
+	"github.com/feder-cr/git-ai/internal/structerr"
 )
 
 // Unary is a unary server interceptor that converts error happened during the call into a

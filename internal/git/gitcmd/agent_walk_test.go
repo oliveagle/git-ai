@@ -53,10 +53,13 @@ func TestExcludeHiddenRefs(t *testing.T) {
 		PostSepArgs: []string{"--all"},
 	})
 	require.Equal(t, []Option{
-		Flag{Name: excludeHiddenFlag}, Flag{Name: "--all"},
+		Flag{Name: excludeHiddenFlag},
+		Flag{Name: "--all"},
 		ValueFlag{Name: "--grep", Value: "--all"},
-		Flag{Name: excludeHiddenFlag}, ValueFlag{Name: "--glob", Value: "refs/*"},
-		Flag{Name: excludeHiddenFlag}, Flag{Name: "--glob=refs/*"},
+		Flag{Name: excludeHiddenFlag},
+		ValueFlag{Name: "--glob", Value: "refs/*"},
+		Flag{Name: excludeHiddenFlag},
+		Flag{Name: "--glob=refs/*"},
 		Flag{Name: "--branches"},
 	}, got.Flags)
 	require.Equal(t, []string{"main", "--not", excludeHiddenFlag, "--all", excludeHiddenFlag, "--glob=refs/heads/*", "--tags"}, got.Args)

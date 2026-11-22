@@ -39,7 +39,7 @@ func TestCLIAgainstServer(t *testing.T) {
 	require.Equal(t, exitOK, code)
 	require.Equal(t, "changed\n", stdout)
 
-	code, stdout, stderr = runCLI(t, "cat", "-C", dir, "main:missing.txt")
+	code, _, stderr = runCLI(t, "cat", "-C", dir, "main:missing.txt")
 	require.Equal(t, exitError, code)
 	require.Contains(t, stderr, "not found")
 

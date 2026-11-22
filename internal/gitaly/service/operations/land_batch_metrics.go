@@ -4,11 +4,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // The phases of a land batch that graft_land_batch_phase_seconds observes.
@@ -116,7 +117,7 @@ func landBatchOutcomeLabel(outcome landBatchOutcome) string {
 
 // landBatchErrorLabel returns the outcome label of a request that failed with err.
 func landBatchErrorLabel(err error) string {
-	var needs *landNeedsResolution
+	var needs *landNeedsResolutionError
 	if errors.As(err, &needs) {
 		return landBatchOutcomeNeedsResolution
 	}

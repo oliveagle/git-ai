@@ -6,14 +6,14 @@ import (
 	"io"
 	"os"
 
+	_ "github.com/jackc/pgx/v5/stdlib" // SQL driver registration
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/cli/common"
 	gitalycfg "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/urfave/cli/v3"
-
-	_ "github.com/jackc/pgx/v5/stdlib" // SQL driver registration
 )
 
 func newPoolCommand() *cli.Command {

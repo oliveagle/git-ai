@@ -21,8 +21,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
 )
 
 // Snapshot is one version of the policy. It is never changed once published.
@@ -188,9 +189,10 @@ func Hash(rules []config.GraftPolicyRule) string {
 }
 
 // needsRestart names the settings of the [graft] section that differ between next and running,
-// other than the policy: a reload applies the policy only.
+// other than the access policy and the branch rules: a reload applies those two.
 func needsRestart(next, running config.Graft) []string {
-	return changedSettings("graft.", next, running, "policy")
+	// The access policy and the branch rules are what a reload applies.
+	return changedSettings("graft.", next, running, "policy", "branch")
 }
 
 // NeedsRestartOutsideGraft names the settings outside the [graft] section that differ between the

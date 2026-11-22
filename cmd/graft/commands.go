@@ -26,6 +26,13 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 	}
 	address, repo, dir := args[0], args[1], args[2]
 	storage := pick(o.storage, defaultStorage)
+	branch := o.branch
+	if branch == "" && o.at == "" {
+		branch = "main"
+	}
+	if branch != "" && o.at != "" {
+		return usagef("clone takes either --branch or --at, not both")
+	}
 	backend, err := backendFactory(ctx, target{Address: address, Token: o.token, AgentKey: o.agentKey, Storage: storage, Repo: repo, User: o.user})
 	if err != nil {
 		return err
@@ -34,7 +41,8 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 		Address: address,
 		Storage: storage,
 		Repo:    repo,
-		Branch:  o.branch,
+		Branch:  branch,
+		At:      o.at,
 		Sparse:  splitList(o.sparse),
 	})
 	if err != nil {
@@ -42,6 +50,12 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 	}
 	warnSkipped(o, ws)
 	s := ws.Summary()
+	if s.Branch == "" {
+		// The workspace is at a commit and not on a branch: it is the tree of a
+		// commit the caller named, such as the result of a dry-run land.
+		fmt.Fprintf(out, "cloned %s (commit %s) into %s: %d files\n", repo, shortOID(s.Base), dir, s.Files)
+		return nil
+	}
 	fmt.Fprintf(out, "cloned %s (%s) into %s: %d files at %s\n", repo, s.Branch, dir, s.Files, shortOID(s.Base))
 	return nil
 }
@@ -145,6 +159,17 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if len(args) == 1 {
 		branch = args[0]
 	}
+	if o.commit != "" {
+		// A land of a named commit needs no workspace, and the workspace
+		// operations below have nothing to act on: refuse the combinations
+		// instead of looking for a workspace the caller does not have.
+		if branch == "" {
+			return usagef("land --commit requires BRANCH: without a workspace there is no branch to take it from")
+		}
+		if o.abort || o.resolve || o.conflictsDir != "" || o.resolved != "" {
+			return usagef("land --commit takes neither --abort, --resolve, --conflicts-dir nor --resolved: it lands a commit the server already holds")
+		}
+	}
 	if o.abort {
 		if branch != "" {
 			return usagef("land --abort takes no BRANCH")
@@ -172,18 +197,55 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	if o.resolved != "" && (o.resolve || o.conflictsDir != "") {
 		return usagef("land --resolved takes neither --resolve nor --conflicts-dir")
 	}
+	if o.dryRun && (o.abort || o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --dry-run takes neither --abort, --resolve, --conflicts-dir nor --resolved")
+	}
+	if o.expect != "" && o.dryRun {
+		return usagef("land --expect takes no --dry-run: a dry run computes the commit the land would write")
+	}
+	if o.expect != "" && (o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --expect is for a plain land: a resolved land is not reproducible")
+	}
+	if o.expect != "" && o.timestamp == "" {
+		// The committer date is part of the identity of the commit, so the
+		// land can only write the commit the caller verified when the date is
+		// the one the verification used.
+		return usagef("land --expect requires --timestamp: the commit it names is the one the land writes only when the committer date is pinned")
+	}
+	if o.dryRun && o.timestamp == "" {
+		// The commit a land produces carries the committer date, so without the
+		// date the commit the dry run names is not the one the land writes.
+		return usagef("land --dry-run requires --timestamp: the commit it names is the one the land produces only when the committer date is pinned")
+	}
+	if o.timestamp != "" && (o.resolve || o.conflictsDir != "" || o.resolved != "") {
+		return usagef("land --timestamp is for a plain land: a resolved land is not reproducible")
+	}
+	timestamp, err := parseLandTimestamp(o.timestamp)
+	if err != nil {
+		return err
+	}
+	if o.commit != "" {
+		return cmdLandCommit(ctx, out, o, branch, committer, timestamp)
+	}
 	ws, err := openWorkspace(ctx, o)
 	if err != nil {
 		return err
 	}
 	var res workspace.LandResult
-	if o.resolved != "" {
+	switch {
+	case o.dryRun:
+		res, err = ws.DryRunLand(ctx, branch, o.strategy, committer, timestamp)
+	case o.resolved != "":
 		resolution, rerr := readResolution(o.resolved)
 		if rerr != nil {
 			return rerr
 		}
 		res, err = ws.LandResolution(ctx, branch, committer, resolution)
-	} else {
+	case o.expect != "":
+		res, err = ws.LandVerified(ctx, branch, o.strategy, committer, timestamp, o.expect)
+	case o.timestamp != "":
+		res, err = ws.LandTimed(ctx, branch, o.strategy, committer, timestamp)
+	default:
 		res, err = ws.LandResolving(ctx, branch, o.strategy, committer, o.resolve)
 	}
 	warnSkipped(o, ws)
@@ -193,12 +255,64 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 			printConflict(out, pkg)
 			if o.conflictsDir != "" {
 				if werr := writeConflicts(ctx, ws, pkg, o.conflictsDir, out); werr != nil {
-					return fmt.Errorf("%w (and writing the conflicts failed: %v)", err, werr)
+					return fmt.Errorf("%w (and writing the conflicts failed: %w)", err, werr)
 				}
 				fmt.Fprintf(out, "wrote the conflicts to %s: edit the files, then run graft land --resolved %s\n", o.conflictsDir, o.conflictsDir)
 			}
 		}
 		return err
+	}
+	return printLandResult(out, o, res)
+}
+
+// cmdLandCommit lands the commit named by graft land --commit, on the branch
+// the caller names, without a workspace: it is the land of a CI that holds a
+// commit and a server, not a checkout. The commit is resolved against the
+// server first, so that a commit it does not hold is an error that names it.
+func cmdLandCommit(ctx context.Context, out io.Writer, o *options, branch string, committer workspace.Signature, timestamp time.Time) error {
+	t, _, err := resolveTarget(o, o.repo, "land")
+	if err != nil {
+		return err
+	}
+	backend, err := backendFactory(ctx, t)
+	if err != nil {
+		return err
+	}
+
+	commit, err := backend.ResolveRevision(ctx, o.commit)
+	if err != nil {
+		return fmt.Errorf("the commit %q: %w", o.commit, err)
+	}
+
+	res, err := backend.Land(ctx, workspace.LandOptions{
+		Branch:         branch,
+		Commit:         commit,
+		Strategy:       o.strategy,
+		Committer:      committer,
+		Timestamp:      timestamp,
+		DryRun:         o.dryRun,
+		ExpectedResult: o.expect,
+	})
+	if err != nil {
+		// The conflict package of the failed land is printed for the caller
+		// that asked for the server's resolution; a named commit is never
+		// resolved with a local resolution directory.
+		if pkg, ok := sdk.LandConflict(err); ok {
+			printConflict(out, pkg)
+		}
+		return err
+	}
+	return printLandResult(out, o, res)
+}
+
+// printLandResult prints the outcome of a land: the object ID alone for a dry
+// run, whose output is read by the script that verifies the result.
+func printLandResult(out io.Writer, o *options, res workspace.LandResult) error {
+	if o.dryRun {
+		// The command exists for a script that verifies the result and publishes
+		// it: the object ID is the output, and nothing else is printed.
+		fmt.Fprintf(out, "%s\n", res.Commit)
+		return nil
 	}
 	if res.AlreadyLanded {
 		fmt.Fprintf(out, "already landed at %s\n", shortOID(res.Commit))
@@ -206,6 +320,19 @@ func cmdLand(ctx context.Context, out io.Writer, o *options, args []string) erro
 	}
 	fmt.Fprintf(out, "landed at %s%s%s\n", shortOID(res.Commit), resolvedNote(res.ResolvedPaths), batchNote(res.BatchSize, res.BatchPosition, res.Attempts))
 	return nil
+}
+
+// parseLandTimestamp parses the committer date of graft land --timestamp, the
+// empty string meaning the server's clock.
+func parseLandTimestamp(value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	timestamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, usagef("--timestamp %q: want an RFC 3339 date, such as 2026-11-14T00:00:00Z", value)
+	}
+	return timestamp, nil
 }
 
 // batchNote describes the land batch a change was part of, such as " (batch 3/17,

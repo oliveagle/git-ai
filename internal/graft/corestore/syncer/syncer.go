@@ -46,10 +46,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -280,7 +282,7 @@ func (s *Syncer) EnsureFresh(ctx context.Context, repo storage.Repository) error
 			s.hook("synced")
 			if err != nil && syncCtx.Err() != nil {
 				// The budget ran out (lock contention, a slow database or bucket).
-				return ticket, structerr.NewUnavailable("storage core: sync of %s did not finish within %s: %v", key, timeout, err)
+				return ticket, structerr.NewInternal("storage core: sync of %s did not finish within %s: %w", key, timeout, err)
 			}
 			return ticket, err
 		})
@@ -296,12 +298,12 @@ func (s *Syncer) EnsureFresh(ctx context.Context, repo storage.Repository) error
 			// The joined sync read the head before this call arrived: sync again.
 		case <-waitCtx.Done():
 			if ctx.Err() != nil {
-				return structerr.NewUnavailable("storage core: waiting for the sync of %s: %w", key, ctx.Err())
+				return structerr.NewInternal("storage core: waiting for the sync of %s: %w", key, ctx.Err())
 			}
 			// A flight outlived its budget: a step of it does not respect its context.
 			s.logger.WithField("repository", key.String()).WithField("backstop", backstop).
 				Error("storage core: a sync did not end within its budget; the call stops waiting for it")
-			return structerr.NewUnavailable("storage core: waiting for the sync of %s: no sync ended within %s", key, backstop)
+			return structerr.NewInternal("storage core: waiting for the sync of %s: no sync ended within %s", key, backstop)
 		}
 	}
 }
@@ -418,13 +420,13 @@ func (s *Syncer) sync(ctx context.Context, key corestore.RepoKey) error {
 	seeded := false
 	for {
 		if err := ctx.Err(); err != nil {
-			return structerr.NewUnavailable("storage core: sync: %w", err)
+			return structerr.NewInternal("storage core: sync: %w", err)
 		}
 		// A repository whose references may have lost writes is never served:
 		// the durable step moves a cache aside (the next request hydrates it), and
 		// any other one waits for an operator.
 		if s.core.RefDurability.Untrusted(path) {
-			return structerr.NewUnavailable("storage core: the local references of %s may have lost writes; the repository is not served until it is rebuilt", key)
+			return structerr.NewInternal("storage core: the local references of %s may have lost writes; the repository is not served until it is rebuilt", key)
 		}
 
 		// The record is read again on every round: a restart can mean that the
@@ -475,7 +477,7 @@ func (s *Syncer) sync(ctx context.Context, key corestore.RepoKey) error {
 			readAt := time.Now()
 			cp, hasCheckpoint, err := s.core.Meta.NewestCheckpoint(ctx, r.ID)
 			if err != nil {
-				return structerr.NewUnavailable("storage core: newest checkpoint: %w", err)
+				return structerr.NewInternal("storage core: newest checkpoint: %w", err)
 			}
 			if hasCheckpoint {
 				// The checkpoint pack is a whole repository: it is seeded in the
@@ -492,10 +494,10 @@ func (s *Syncer) sync(ctx context.Context, key corestore.RepoKey) error {
 					continue
 				case <-rd.stopped():
 					result = resultSeeding
-					return structerr.NewUnavailable("storage core: %s is being seeded from its checkpoint at changeset %d; the next request goes on from there", key, cp.Seq).
+					return structerr.NewInternal("storage core: %s is being seeded from its checkpoint at changeset %d; the next request goes on from there", key, cp.Seq).
 						WithMetadata("checkpoint", cp.Seq)
 				case <-ctx.Done():
-					return structerr.NewUnavailable("storage core: sync: %w", ctx.Err())
+					return structerr.NewInternal("storage core: sync: %w", ctx.Err())
 				}
 			}
 
@@ -540,7 +542,7 @@ func (s *Syncer) sync(ctx context.Context, key corestore.RepoKey) error {
 // the head (doc/graft/PLAN7.md, "Resumable rounds"): the repository is not
 // served as current, and the next request's round goes on from reached.
 func partialError(key corestore.RepoKey, reached, head uint64) error {
-	return structerr.NewUnavailable("storage core: %s is at changeset %d of %d after one sync round; the next request goes on from there", key, reached, head).
+	return structerr.NewInternal("storage core: %s is at changeset %d of %d after one sync round; the next request goes on from there", key, reached, head).
 		WithMetadata("reached", reached).WithMetadata("head", head)
 }
 
@@ -559,7 +561,7 @@ func (s *Syncer) syncBoundary(ctx context.Context, repoID int64) (uint64, error)
 		if errors.Is(err, corestore.ErrRepositoryNotFound) {
 			return 0, errRestart
 		}
-		return 0, structerr.NewUnavailable("storage core: sync boundary: %w", err)
+		return 0, structerr.NewInternal("storage core: sync boundary: %w", err)
 	}
 	return boundary, nil
 }
@@ -571,7 +573,7 @@ func (s *Syncer) record(ctx context.Context, key corestore.RepoKey, repo *gitaly
 	r, err := s.core.Meta.GetRepository(ctx, key)
 	if err != nil {
 		if !errors.Is(err, corestore.ErrRepositoryNotFound) {
-			return corestore.Repository{}, git.ObjectHash{}, structerr.NewUnavailable("storage core: get repository: %w", err)
+			return corestore.Repository{}, git.ObjectHash{}, structerr.NewInternal("storage core: get repository: %w", err)
 		}
 		return corestore.Repository{}, git.ObjectHash{}, s.untracked(ctx, key, repo)
 	}
@@ -629,7 +631,7 @@ func (s *Syncer) untracked(ctx context.Context, key corestore.RepoKey, repo *git
 	if _, err := s.core.Meta.GetRepository(ctx, key); err == nil {
 		return errRestart
 	} else if !errors.Is(err, corestore.ErrRepositoryNotFound) {
-		return structerr.NewUnavailable("storage core: get repository: %w", err)
+		return structerr.NewInternal("storage core: get repository: %w", err)
 	}
 
 	if err := s.moveStale(ctx, repo, path, wm); err != nil {
@@ -741,7 +743,7 @@ func (s *Syncer) checkReplaceable(ctx context.Context, r corestore.Repository, p
 	}
 	dbReviews, err := s.core.Meta.ListReviews(ctx, r.ID, "", true, 0)
 	if err != nil {
-		return structerr.NewUnavailable("storage core: list reviews: %w", err)
+		return structerr.NewInternal("storage core: list reviews: %w", err)
 	}
 	byID := make(map[string]*gitalypb.Review, len(dbReviews))
 	for _, review := range dbReviews {
@@ -827,7 +829,7 @@ func (s *Syncer) lock(ctx context.Context, path string) (func(), error) {
 		}, nil
 	case <-ctx.Done():
 		s.releaseEntry(path, l)
-		return nil, structerr.NewUnavailable("storage core: waiting for the repository lock: %w", ctx.Err())
+		return nil, structerr.NewInternal("storage core: waiting for the repository lock: %w", ctx.Err())
 	}
 }
 
@@ -1070,7 +1072,7 @@ func (s *Syncer) catchUp(ctx context.Context, repo *gitalypb.Repository, r cores
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return false, 0, structerr.NewUnavailable("storage core: reference locked by a concurrent writer: %w", out.lockErr)
+				return false, 0, structerr.NewInternal("storage core: reference locked by a concurrent writer: %w", out.lockErr)
 			case <-timer.C:
 			}
 			backoff = min(backoff*2, maxBackoff)
@@ -1086,7 +1088,7 @@ func (s *Syncer) catchUp(ctx context.Context, repo *gitalypb.Repository, r cores
 			if errors.Is(err, corestore.ErrRepositoryNotFound) {
 				return false, 0, structerr.NewNotFound("repository not found")
 			}
-			return false, 0, structerr.NewUnavailable("storage core: get repository: %w", err)
+			return false, 0, structerr.NewInternal("storage core: get repository: %w", err)
 		}
 		if latest.ID != r.ID {
 			return false, 0, errRestart
@@ -1197,6 +1199,11 @@ func (s *Syncer) checkLocked(ctx context.Context, repo *localrepo.Repo, path str
 		}
 		moves[name] = move{old: current, new: h.final}
 	}
+
+	moves, err = withLocalAbsenceProofs(ctx, repo, moves)
+	if err != nil {
+		return checkOutcome{}, structerr.NewInternal("storage core: %w", err)
+	}
 	return checkOutcome{moves: moves}, nil
 }
 
@@ -1231,7 +1238,7 @@ func (s *Syncer) newerLocalWrites(ctx context.Context, repoID int64, after uint6
 
 		changesets, err := s.core.Meta.ListChangesets(ctx, repoID, cur, end)
 		if err != nil {
-			return 0, structerr.NewUnavailable("storage core: list changesets: %w", err)
+			return 0, structerr.NewInternal("storage core: list changesets: %w", err)
 		}
 
 		for _, cs := range changesets {
@@ -1415,7 +1422,7 @@ func applyMoves(ctx context.Context, repo *localrepo.Repo, w refWriter, hash git
 func applyChecked(ctx context.Context, repo *localrepo.Repo, w refWriter, hash git.ObjectHash, names []string, moves map[string]move) error {
 	var removals, others []string
 	twoSteps := false
-	for _, name := range names {
+	for _, name := range withoutImpliedAbsences(names, moves) {
 		del, set := casSteps(name, moves[name], hash)
 		if del != "" {
 			removals = append(removals, del)
@@ -1440,6 +1447,117 @@ func applyChecked(ctx context.Context, repo *localrepo.Repo, w refWriter, hash g
 		return fmt.Errorf("apply removals: %w", err)
 	}
 	return refTransaction(ctx, repo, w, others)
+}
+
+// withLocalAbsenceProofs returns moves, or a copy of it in which the verification of an absent
+// name that conflicts with a local reference outside moves is replaced by the verification of that
+// local reference at its current value.
+//
+// A name is verified absent when the range creates and deletes it, and the database at the end of
+// the range confirms it absent (the move's new value). git refuses that verification while a local
+// reference exists that it could not hold next to the name (refs/a next to a verification of
+// refs/a/b), as for a creation, so such a catch-up would fail on every attempt. That is the usual
+// state after the operator deleted one side of a pair that two nodes each held one side of: the
+// node that holds the kept side catches up over the deleted side, created and deleted. Names the
+// range itself conflicts with are left to withoutImpliedAbsences.
+//
+// The local reference proves the absence: git cannot hold both names, so while it exists the name
+// does not. Verifying it at the value read keeps the compare-and-swap: a local write that moved it
+// since, which a write of the name would need, fails the transaction, and the check runs again. A
+// database that holds both names at the end of the range is not touched by this: the name is then
+// created, not verified, and git still refuses it.
+func withLocalAbsenceProofs(ctx context.Context, repo *localrepo.Repo, moves map[string]move) (map[string]move, error) {
+	var absent []string
+	for name, m := range moves {
+		if name != "HEAD" && m.verify() && m.old.Absent() {
+			absent = append(absent, name)
+		}
+	}
+	if len(absent) == 0 {
+		return moves, nil
+	}
+
+	conflicts, err := gitops.LocalNameConflicts(ctx, repo, absent)
+	if err != nil {
+		return nil, fmt.Errorf("read the local references next to names verified absent: %w", err)
+	}
+
+	var proved map[string]move
+	for _, name := range absent {
+		local, ok := conflicts[name]
+		if !ok {
+			continue
+		}
+		if _, inRange := moves[local.Name]; inRange {
+			continue
+		}
+		if proved == nil {
+			proved = maps.Clone(moves)
+		}
+		delete(proved, name)
+		proved[local.Name] = move{old: local.Target, new: local.Target}
+	}
+	if proved == nil {
+		return moves, nil
+	}
+	return proved, nil
+}
+
+// withoutImpliedAbsences returns the sorted names without the verifications of
+// an absence that another command already implies. A reference can be absent both
+// before and after a range that created and deleted it, while a name it conflicts
+// with exists: refs/a in a range that ends with refs/a/b. git applies its
+// file/directory check to the verification of an absent name too, as if it were
+// created, so it refuses it next to refs/a/b, in one transaction or with refs/a/b
+// existing, and no order of the commands would help.
+//
+// Git's own check makes that verification redundant, whichever of the two
+// conflicting names the other command is about. A command on a name that exists
+// before or after the range requires it to exist or to be creatable, which git
+// refuses while the absent name exists, and git refuses a concurrent local
+// creation of the absent name while the other one exists. The verification of
+// an absent name does the same for an absent name below it (git refuses it while
+// the name below exists). So a local write to a name left out still fails the
+// transaction or finds the name it needs taken, and the check runs again
+// (applyLocked reads every name of moves).
+//
+// Only a name that conflicts with a command that stays is left out: siblings
+// below a verification that is itself left out are verified.
+func withoutImpliedAbsences(names []string, moves map[string]move) []string {
+	absence := func(name string) bool {
+		m := moves[name]
+		return m.verify() && m.old.Absent()
+	}
+
+	// parentsOfExisting holds the parent directories of the names that exist before
+	// or after the range. names being sorted, a parent comes before its children.
+	parentsOfExisting := map[string]struct{}{}
+	for _, name := range names {
+		if !absence(name) {
+			for _, parent := range corestore.ParentRefNames(name) {
+				parentsOfExisting[parent] = struct{}{}
+			}
+		}
+	}
+
+	kept := make([]string, 0, len(names))
+	stays := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if absence(name) {
+			if _, implied := parentsOfExisting[name]; implied {
+				continue
+			}
+			if slices.ContainsFunc(corestore.ParentRefNames(name), func(parent string) bool {
+				_, ok := stays[parent]
+				return ok
+			}) {
+				continue
+			}
+		}
+		stays[name] = struct{}{}
+		kept = append(kept, name)
+	}
+	return kept
 }
 
 // refWriter runs the reference transactions of the catch-up on the local
@@ -1673,7 +1791,7 @@ func (s *Syncer) hydrate(ctx context.Context, repo *gitalypb.Repository, r cores
 		return 0, err
 	}
 	if f.head == 0 {
-		return 0, structerr.NewUnavailable("storage core: the hydration of %s fetched no changeset within %s", r.Key, s.syncTimeout())
+		return 0, structerr.NewInternal("storage core: the hydration of %s fetched no changeset within %s", r.Key, s.syncTimeout())
 	}
 	refs := map[string]corestore.Target{}
 	for name, target := range f.finalRefs() {
@@ -1724,7 +1842,7 @@ func (s *Syncer) startSeed(ctx context.Context, key corestore.RepoKey, repo *git
 
 	j := &seedJob{cp: cp, done: make(chan struct{})}
 	if s.seedsStopped {
-		j.err = structerr.NewUnavailable("storage core: the server is stopping: %s is not seeded", key)
+		j.err = structerr.NewInternal("storage core: the server is stopping: %s is not seeded", key)
 		close(j.done)
 		return j
 	}
@@ -1771,11 +1889,11 @@ func (s *Syncer) runSeed(ctx context.Context, repo *gitalypb.Repository, r cores
 	}
 	if s.seedsCtx.Err() != nil {
 		// StopSeeds cancelled it: the server is stopping.
-		return structerr.NewUnavailable("storage core: the server is stopping: the seed of %s from checkpoint %d is cancelled (%v)", r.Key, cp.Seq, err)
+		return structerr.NewInternal("storage core: the server is stopping: the seed of %s from checkpoint %d is cancelled (%w)", r.Key, cp.Seq, err)
 	}
 	if checkErr := s.checkSeedDeadline(context.WithoutCancel(ctx), r, cp); checkErr != nil {
 		// The cause is reported as text: the code is that of checkErr.
-		return fmt.Errorf("%w (the seed failed with: %v)", checkErr, err)
+		return fmt.Errorf("%w (the seed failed with: %w)", checkErr, err)
 	}
 	return err
 }
@@ -1796,13 +1914,13 @@ func (s *Syncer) checkSeedDeadline(ctx context.Context, r corestore.Repository, 
 	current, err := s.core.Meta.GetRepository(ctx, r.Key)
 	switch {
 	case errors.Is(err, corestore.ErrRepositoryNotFound) || (err == nil && current.ID != r.ID):
-		return structerr.NewUnavailable("storage core: seeding %s from checkpoint %d: %w; the next request starts from its current state", r.Key, cp.Seq, errSeedRepositoryGone)
+		return structerr.NewInternal("storage core: seeding %s from checkpoint %d: %w; the next request starts from its current state", r.Key, cp.Seq, errSeedRepositoryGone)
 	case err != nil:
-		return structerr.NewUnavailable("storage core: seeding %s: read the repository record: %w", r.Key, err)
+		return structerr.NewInternal("storage core: seeding %s: read the repository record: %w", r.Key, err)
 	}
 	deadline := r.ReadAt.Add(s.core.WriteDeadline())
 	if !current.ReadAt.Before(deadline) {
-		return structerr.NewUnavailable("storage core: seeding %s from checkpoint %d: %w at %s on the database clock (%s): the checkpoint may be collected; the next request seeds from the newest",
+		return structerr.NewInternal("storage core: seeding %s from checkpoint %d: %w at %s on the database clock (%s): the checkpoint may be collected; the next request seeds from the newest",
 			r.Key, cp.Seq, errSeedDeadline, deadline.UTC().Format(time.RFC3339Nano), current.ReadAt.UTC().Format(time.RFC3339Nano))
 	}
 	return nil
@@ -1856,7 +1974,7 @@ func (s *Syncer) seed(ctx context.Context, repo *localrepo.Repo, tmpDir string, 
 	}
 	refs, err := s.core.Meta.CheckpointRefs(ctx, r.ID, cp.Seq)
 	if err != nil {
-		return nil, 0, structerr.NewUnavailable("storage core: checkpoint %d references: %w", cp.Seq, err)
+		return nil, 0, structerr.NewInternal("storage core: checkpoint %d references: %w", cp.Seq, err)
 	}
 	for name, target := range refs {
 		if target.Absent() {
@@ -1970,7 +2088,7 @@ func (s *Syncer) fetch(ctx context.Context, repo *localrepo.Repo, tmpDir string,
 
 		changesets, err := s.core.Meta.ListChangesets(ctx, repoID, cur, end)
 		if err != nil {
-			return structerr.NewUnavailable("storage core: list changesets: %w", err)
+			return structerr.NewInternal("storage core: list changesets: %w", err)
 		}
 		if uint64(len(changesets)) != end-cur {
 			return structerr.NewInternal("storage core: repository %d: expected changesets %d to %d, the database returned %d", repoID, cur+1, end, len(changesets))
@@ -2154,7 +2272,7 @@ func (s *Syncer) indexPack(ctx context.Context, repo *localrepo.Repo, tmpDir, ke
 		if errors.Is(err, corestore.ErrBlobNotFound) {
 			return 0, structerr.NewInternal("storage core: pack %q is missing from the bucket: %w", key, err)
 		}
-		return 0, structerr.NewUnavailable("storage core: get pack %q: %w", key, err)
+		return 0, structerr.NewInternal("storage core: get pack %q: %w", key, err)
 	}
 	defer func() { _ = rc.Close() }()
 
@@ -2173,7 +2291,7 @@ func (s *Syncer) indexPack(ctx context.Context, repo *localrepo.Repo, tmpDir, ke
 		if errors.Is(err, corestore.ErrBlobCorrupt) {
 			return 0, structerr.NewInternal("storage core: pack %q: %w", key, err)
 		}
-		return 0, structerr.NewUnavailable("storage core: download pack %q: %w", key, err)
+		return 0, structerr.NewInternal("storage core: download pack %q: %w", key, err)
 	}
 	var got [32]byte
 	copy(got[:], hasher.Sum(nil))
@@ -2212,7 +2330,7 @@ func (s *Syncer) applyBuild(ctx context.Context, repo *localrepo.Repo, refs map[
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return structerr.NewUnavailable("storage core: reference locked: %w", err)
+			return structerr.NewInternal("storage core: reference locked: %w", err)
 		case <-timer.C:
 		}
 		backoff = min(backoff*2, maxBackoff)

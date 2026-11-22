@@ -22,7 +22,7 @@ func specBuildBench(t *testing.T) string {
 	t.Helper()
 
 	bin := filepath.Join(t.TempDir(), "graft-bench")
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin, ".")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -50,7 +50,7 @@ func specReadScript(t *testing.T) string {
 func TestSpecFlagsDocumented(t *testing.T) {
 	bin := specBuildBench(t)
 
-	out, _ := exec.Command(bin, "-h").CombinedOutput()
+	out, _ := exec.CommandContext(t.Context(), bin, "-h").CombinedOutput()
 	usage := string(out)
 	if strings.TrimSpace(usage) == "" {
 		t.Fatalf("graft-bench -h printed nothing; expected usage listing the flags")

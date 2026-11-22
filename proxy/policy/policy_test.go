@@ -5,9 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/feder-cr/git-ai/proxy/policy/testdata"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,6 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/types/descriptorpb"
+
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/feder-cr/git-ai/proxy/policy/testdata"
 )
 
 func TestCheckUniversalInvariants(t *testing.T) {

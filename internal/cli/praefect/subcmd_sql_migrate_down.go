@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
-	"github.com/urfave/cli/v3"
 )
 
 const sqlMigrateDownCmdName = "sql-migrate-down"

@@ -165,7 +165,7 @@ func TestGatePassesThroughUncheckedMethods(t *testing.T) {
 			t.Parallel()
 
 			ctx := testhelper.Context(t)
-			fresh := &fakeFreshener{err: structerr.NewUnavailable("must not be called")}
+			fresh := &fakeFreshener{err: structerr.NewInternal("must not be called")}
 			g := newGate(t, corestore.ModeAuthoritative, fresh)
 
 			handled := false
@@ -217,7 +217,7 @@ func TestGateCatchUpErrorStopsHandler(t *testing.T) {
 		err  error
 	}{
 		{desc: "untracked", err: structerr.NewFailedPrecondition("repository is not imported into the storage core")},
-		{desc: "database down", err: structerr.NewUnavailable("storage core: get repository")},
+		{desc: "database down", err: structerr.NewInternal("storage core: get repository")},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()

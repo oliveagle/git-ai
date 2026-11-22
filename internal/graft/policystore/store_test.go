@@ -10,12 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 )
-
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
 
 var (
 	allowMain = []config.GraftPolicyRule{{Actor: "planner", Refs: []string{"refs/heads/main"}, Allow: true}}

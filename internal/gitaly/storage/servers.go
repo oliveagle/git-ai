@@ -7,8 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/internal/helper/env"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/helper/env"
 )
 
 // ServerInfo contains information about how to reach a Gitaly server or a

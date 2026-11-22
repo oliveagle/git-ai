@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // closedLoopRound submits n requests of testKey at once and waits until all of

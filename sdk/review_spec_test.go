@@ -44,8 +44,10 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
-const specAuthor = "spec-author"
-const specReviewer = "spec-reviewer"
+const (
+	specAuthor   = "spec-author"
+	specReviewer = "spec-reviewer"
+)
 
 // specSetup creates a repository with main (base) and a feature branch that
 // changes a Go code file. It returns the repo, the repo path and the feature

@@ -12,6 +12,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/localrefs"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorstate"
 )
 
 // BlobStore is the object storage of the storage core. Objects are immutable
@@ -89,6 +90,10 @@ type Core struct {
 	NodeID string
 	Meta   MetaStore
 	Blobs  BlobStore
+	// Mirrors holds the mirror targets of the repositories and the state of
+	// their last publication (doc/graft/MIRROR.md). It is nil when the
+	// storage core is off.
+	Mirrors mirrorstate.Store
 	// SyncTimeout bounds EnsureFresh, ShadowTimeout bounds the shadow work of
 	// one reference transaction.
 	SyncTimeout   time.Duration

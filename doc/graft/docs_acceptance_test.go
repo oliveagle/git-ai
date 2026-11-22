@@ -56,7 +56,7 @@ func TestAcceptancePhase4DryRunChecksP99Presence(t *testing.T) {
 
 	runScript := func(t *testing.T, work string) (string, error) {
 		t.Helper()
-		cmd := exec.Command(bash, script, "--dry-run", work)
+		cmd := exec.CommandContext(t.Context(), bash, script, "--dry-run", work)
 		cmd.Env = append(os.Environ(), "AGENT_COUNTS=50")
 		out, err := cmd.CombinedOutput()
 		return string(out), err

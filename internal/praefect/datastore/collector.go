@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (

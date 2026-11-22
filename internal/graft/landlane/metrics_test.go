@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // gatherValues returns the value of every gauge and the sample count of every

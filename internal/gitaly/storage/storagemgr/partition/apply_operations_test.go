@@ -7,13 +7,14 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/keyvalue"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/storagemgr/partition/fsrecorder"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/wal"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 func TestApplyOperations(t *testing.T) {

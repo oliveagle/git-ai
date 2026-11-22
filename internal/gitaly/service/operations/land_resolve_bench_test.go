@@ -44,7 +44,7 @@ func TestLandResolveBench(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "answer.json"), answer, 0o600))
 	require.NoError(t, os.WriteFile(script, []byte(fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 cat > /dev/null
 echo x >> "$DIR/calls"
 sleep %.3f
@@ -140,8 +140,9 @@ cat "$DIR/answer.json"
 func answerOfPaths(paths ...string) resolver.Response {
 	resp := resolver.Response{Version: resolver.ProtocolVersion, Resolver: "graft-resolve/bench"}
 	for _, p := range paths {
-		resp.Files = append(resp.Files, resolver.ResponseFile{Origin: resolver.OriginRule,
-			Path: p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
+		resp.Files = append(resp.Files, resolver.ResponseFile{
+			Origin: resolver.OriginRule,
+			Path:   p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
 		})
 	}
 	return resp

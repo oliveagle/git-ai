@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	migrate "github.com/rubenv/sql-migrate"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
-	migrate "github.com/rubenv/sql-migrate"
 )
 
 // MigrationStatusRow represents an entry in the schema migrations table.

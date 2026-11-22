@@ -58,6 +58,15 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 
 	"gitaly.Branch.name": isRef,
 
+	"gitaly.BranchRule.allow_direct_update":     notRef,
+	"gitaly.BranchRule.allow_stale_base":        notRef,
+	"gitaly.BranchRule.name":                    isBranchName,
+	"gitaly.BranchRule.require_full_tree":       notRef,
+	"gitaly.BranchRule.require_review":          notRef,
+	"gitaly.BranchRule.require_suites":          notRef,
+	"gitaly.BranchRule.require_verified":        notRef,
+	"gitaly.BranchRule.require_verified_result": notRef,
+
 	"gitaly.ChangedPaths.commit_id":   isRef,
 	"gitaly.ChangedPaths.new_blob_id": notRef,
 	"gitaly.ChangedPaths.old_blob_id": notRef,
@@ -157,6 +166,23 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 	"gitaly.FindTagRequest.tag_name": notRef,
 
 	"gitaly.GetBlobRequest.oid": isRef,
+
+	"gitaly.GetBranchDecisionRequest.branch":  isBranchName,
+	"gitaly.GetBranchDecisionRequest.commits": isRef,
+	"gitaly.GetBranchDecisionRequest.direct":  notRef,
+	"gitaly.GetBranchDecisionRequest.result":  isRef,
+
+	"gitaly.GetBranchDecisionResponse.allowed":           notRef,
+	"gitaly.GetBranchDecisionResponse.branch":            isBranchName,
+	"gitaly.GetBranchDecisionResponse.certified_tree":    notRef,
+	"gitaly.GetBranchDecisionResponse.change":            isRef,
+	"gitaly.GetBranchDecisionResponse.checkpoint":        isRef,
+	"gitaly.GetBranchDecisionResponse.checkpoint_suites": notRef,
+	"gitaly.GetBranchDecisionResponse.checkpoint_tree":   notRef,
+	"gitaly.GetBranchDecisionResponse.code":              notRef,
+	"gitaly.GetBranchDecisionResponse.managed":           notRef,
+	"gitaly.GetBranchDecisionResponse.reason":            notRef,
+	"gitaly.GetBranchDecisionResponse.tip":               isRef,
 
 	"gitaly.GetBlobResponse.data": notRef,
 	"gitaly.GetBlobResponse.oid":  isRef,
@@ -459,12 +485,15 @@ var agentRefFields = map[protoreflect.FullName]refFieldKind{
 	"gitaly.UserLandRequest.branch":            notRef,
 	"gitaly.UserLandRequest.commit_id":         isRef,
 	"gitaly.UserLandRequest.create_branch":     notRef,
+	"gitaly.UserLandRequest.dry_run":           notRef,
+	"gitaly.UserLandRequest.expected_result":   notRef,
 	"gitaly.UserLandRequest.merge_message":     notRef,
 	"gitaly.UserLandRequest.resolve_conflicts": notRef,
 	"gitaly.UserLandRequest.strategy":          notRef,
 
 	"gitaly.UserLandResponse.already_landed":        notRef,
 	"gitaly.UserLandResponse.already_landed_detail": notRef,
+	"gitaly.UserLandResponse.dry_run":               notRef,
 	"gitaly.UserLandResponse.landed_commit_id":      notRef,
 	"gitaly.UserLandResponse.old_tip":               notRef,
 	"gitaly.UserLandResponse.resolved_paths":        notRef,

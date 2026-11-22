@@ -87,7 +87,7 @@ func (h *harness) failedImport() int64 {
 	h.t.Helper()
 
 	_, err := h.client.ImportRepository(h.ctx, &gitalypb.ImportRepositoryRequest{Repository: h.repo})
-	requireResumeHint(h.t, err, codes.Unavailable)
+	requireResumeHint(h.t, err, codes.Internal)
 	require.ErrorContains(h.t, err, corestore.ErrPackDeadline.Error())
 
 	state, err := h.client.GetStorageState(h.ctx, &gitalypb.GetStorageStateRequest{Repository: h.repo})

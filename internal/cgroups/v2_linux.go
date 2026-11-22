@@ -16,11 +16,12 @@ import (
 
 	"github.com/containerd/cgroups/v3/cgroup2"
 	stats2 "github.com/containerd/cgroups/v3/cgroup2/stats"
+	"github.com/opencontainers/runtime-spec/specs-go"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	cgroupscfg "github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/kernel"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // supportsCloneIntoCgroup performs two checks to determine whether the running system allows

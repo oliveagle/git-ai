@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/backoff"
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
+
+	"github.com/feder-cr/git-ai/internal/backoff"
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 var backoffStrategyInTest = constantBackoff{}

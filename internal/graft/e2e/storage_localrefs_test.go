@@ -147,7 +147,7 @@ func (n *realNode) spawn(t *testing.T, env ...string) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = logFile.Close() })
 
-	cmd := exec.Command(n.bin, "serve", n.cfgPath)
+	cmd := exec.CommandContext(n.ctx, n.bin, "serve", n.cfgPath)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -229,7 +229,9 @@ func freeAddr(t *testing.T) string {
 func (n *realNode) counter(t *testing.T, name string) float64 {
 	t.Helper()
 
-	resp, err := http.Get("http://" + n.cfg.PrometheusListenAddr + "/metrics")
+	req, err := http.NewRequestWithContext(n.ctx, http.MethodGet, "http://"+n.cfg.PrometheusListenAddr+"/metrics", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -324,7 +326,7 @@ func (n *realNode) requireServed(t *testing.T, relPath string, want map[string]s
 
 // writeBranches commits one file on each of count new branches and returns
 // the commits by branch.
-func writeBranches(t *testing.T, onA *sdk.Repo, ctx context.Context, base string, prefix string, count int) map[string]string {
+func writeBranches(t *testing.T, ctx context.Context, onA *sdk.Repo, base string, prefix string, count int) map[string]string {
 	t.Helper()
 
 	written := map[string]string{}
@@ -350,7 +352,7 @@ func TestStorageLocalReferencesAfterAProcessKill(t *testing.T) {
 	onA := n.agent(t, rel)
 	base, err := commitFile(n.ctx, onA, workerName(0), "main", "", "README.md", "base\n")
 	require.NoError(t, err)
-	written := writeBranches(t, onA, n.ctx, base, "before-kill", 5)
+	written := writeBranches(t, n.ctx, onA, base, "before-kill", 5)
 	written["main"] = base
 
 	// The last write is less than the idle period old: the marker is there.
@@ -380,7 +382,7 @@ func TestStorageLocalReferencesAfterAKillInTheDurableStep(t *testing.T) {
 	onA := n.agent(t, rel)
 	base, err := commitFile(n.ctx, onA, workerName(0), "main", "", "README.md", "base\n")
 	require.NoError(t, err)
-	written := writeBranches(t, onA, n.ctx, base, "before-crash", 3)
+	written := writeBranches(t, n.ctx, onA, base, "before-crash", 3)
 	written["main"] = base
 	require.Len(t, n.markers(t), 1)
 	n.kill(t)
@@ -406,7 +408,7 @@ func TestStorageLocalReferencesAfterAKillInTheDurableStep(t *testing.T) {
 	}
 	n.requireServed(t, rel, written)
 
-	more := writeBranches(t, n.agent(t, rel), n.ctx, base, "after-restart", 2)
+	more := writeBranches(t, n.ctx, n.agent(t, rel), base, "after-restart", 2)
 	for branch, commit := range more {
 		written[branch] = commit
 	}
@@ -427,7 +429,7 @@ func TestStorageLocalReferencesAfterAKernelRestart(t *testing.T) {
 	onA := n.agent(t, rel)
 	base, err := commitFile(n.ctx, onA, workerName(0), "main", "", "README.md", "base\n")
 	require.NoError(t, err)
-	written := writeBranches(t, onA, n.ctx, base, "before-power-loss", 5)
+	written := writeBranches(t, n.ctx, onA, base, "before-power-loss", 5)
 	written["main"] = base
 
 	markers := n.markers(t)
@@ -470,14 +472,14 @@ func TestStorageLocalReferencesDuringAGracefulUpgrade(t *testing.T) {
 	rel := old.createRepository(t)
 	base, err := commitFile(old.ctx, old.agent(t, rel), workerName(0), "main", "", "README.md", "base\n")
 	require.NoError(t, err)
-	written := writeBranches(t, old.agent(t, rel), old.ctx, base, "old", 3)
+	written := writeBranches(t, old.ctx, old.agent(t, rel), base, "old", 3)
 	written["main"] = base
 	require.Len(t, old.markers(t), 1)
 
 	next := old.sibling(t)
 	next.start(t)
 	require.Contains(t, next.log(t), "another gitaly process owns the deferred durability")
-	for branch, commit := range writeBranches(t, next.agent(t, rel), next.ctx, base, "during", 3) {
+	for branch, commit := range writeBranches(t, next.ctx, next.agent(t, rel), base, "during", 3) {
 		written[branch] = commit
 	}
 	next.requireServed(t, rel, written)
@@ -493,7 +495,7 @@ func TestStorageLocalReferencesDuringAGracefulUpgrade(t *testing.T) {
 		return strings.Contains(next.log(t), "this process owns the deferred durability of the storages now")
 	}, 30*time.Second, 50*time.Millisecond)
 
-	for branch, commit := range writeBranches(t, next.agent(t, rel), next.ctx, base, "after", 2) {
+	for branch, commit := range writeBranches(t, next.ctx, next.agent(t, rel), base, "after", 2) {
 		written[branch] = commit
 	}
 	require.Equal(t, float64(1), next.counter(t, "graft_storage_ref_durability_owner"))
@@ -521,7 +523,7 @@ func TestStorageBackgroundMaintenanceCheckpoints(t *testing.T) {
 	onA := n.agent(t, rel)
 	base, err := commitFile(n.ctx, onA, workerName(0), "main", "", "README.md", "base\n")
 	require.NoError(t, err)
-	written := writeBranches(t, onA, n.ctx, base, "maintained", 3)
+	written := writeBranches(t, n.ctx, onA, base, "maintained", 3)
 	written["main"] = base
 
 	require.Eventually(t, func() bool { return strings.Contains(n.log(t), "storage core: checkpoint created") },

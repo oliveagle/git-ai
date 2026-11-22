@@ -15,14 +15,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // specEnv starts a gitaly server with the search service and returns a client,
@@ -68,7 +69,7 @@ func specCollect(t *testing.T, stream gitalypb.SearchService_SearchCodeClient) (
 	}
 }
 
-func specSearch(t *testing.T, client gitalypb.SearchServiceClient, ctx context.Context, req *gitalypb.SearchCodeRequest) ([]*gitalypb.SearchCodeResponse_Match, string, bool, error) {
+func specSearch(t *testing.T, ctx context.Context, client gitalypb.SearchServiceClient, req *gitalypb.SearchCodeRequest) ([]*gitalypb.SearchCodeResponse_Match, string, bool, error) {
 	t.Helper()
 	stream, err := client.SearchCode(ctx, req)
 	require.NoError(t, err)
@@ -85,7 +86,7 @@ func TestSpecFixedVersusRegexAndSorting(t *testing.T) {
 		"a.txt": "x\na.b\n",
 	})
 
-	fixed, commitID, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	fixed, commitID, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "a.b",
 	})
 	require.NoError(t, err)
@@ -96,7 +97,7 @@ func TestSpecFixedVersusRegexAndSorting(t *testing.T) {
 	require.Equal(t, "b.txt", string(fixed[1].GetPath()))
 	require.Equal(t, int32(1), fixed[1].GetLineNumber())
 
-	regex, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	regex, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "a.b", Regex: true,
 	})
 	require.NoError(t, err)
@@ -111,13 +112,13 @@ func TestSpecCaseInsensitive(t *testing.T) {
 		"f.txt": "Hello\nhello\nHELLO\n",
 	})
 
-	sensitive, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	sensitive, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "hello", CaseSensitive: true,
 	})
 	require.NoError(t, err)
 	require.Len(t, sensitive, 1)
 
-	insensitive, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	insensitive, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "hello",
 	})
 	require.NoError(t, err)
@@ -133,14 +134,14 @@ func TestSpecPathsFilterAndNoMatch(t *testing.T) {
 		"other/two.go": "needle\n",
 	})
 
-	filtered, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	filtered, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "needle", Paths: [][]byte{[]byte("dir")},
 	})
 	require.NoError(t, err)
 	require.Len(t, filtered, 1)
 	require.Equal(t, "dir/one.go", string(filtered[0].GetPath()))
 
-	none, _, truncated, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	none, _, truncated, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "absent-token-xyz",
 	})
 	require.NoError(t, err, "exit status 1 of git grep is no match, not an error")
@@ -164,7 +165,7 @@ func TestSpecContextLinesCapped(t *testing.T) {
 	commit := specCommit(t, cfg, repoPath, map[string]string{"ctx.txt": b.String()})
 
 	maxCtx := cfg.Graft.Search.MaxContextLinesOrDefault()
-	matches, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	matches, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "TARGET", ContextLines: 100,
 	})
 	require.NoError(t, err)
@@ -184,7 +185,7 @@ func TestSpecMaxResultsTruncates(t *testing.T) {
 		"many.txt": "hit\nhit\nhit\nhit\nhit\n",
 	})
 
-	matches, _, truncated, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	matches, _, truncated, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "hit", MaxResults: 2,
 	})
 	require.NoError(t, err)
@@ -202,7 +203,7 @@ func TestSpecBinaryFilesSkippedAndUnicode(t *testing.T) {
 		"my file.txt": "naïve café needle\n",
 	})
 
-	matches, _, _, err := specSearch(t, client, ctx, &gitalypb.SearchCodeRequest{
+	matches, _, _, err := specSearch(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "needle",
 	})
 	require.NoError(t, err)
@@ -217,17 +218,17 @@ func TestSpecValidationErrors(t *testing.T) {
 	client, repo, repoPath, cfg, ctx := specEnv(t)
 	commit := specCommit(t, cfg, repoPath, map[string]string{"f.txt": "x\n"})
 
-	_, _, _, err := specCollect2(t, client, ctx, &gitalypb.SearchCodeRequest{
+	_, _, _, err := specCollect2(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "",
 	})
 	require.Equal(t, codes.InvalidArgument, status.Code(err), "empty query")
 
-	_, _, _, err = specCollect2(t, client, ctx, &gitalypb.SearchCodeRequest{
+	_, _, _, err = specCollect2(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte(commit.String()), Query: "([", Regex: true,
 	})
 	require.Equal(t, codes.InvalidArgument, status.Code(err), "invalid regex")
 
-	_, _, _, err = specCollect2(t, client, ctx, &gitalypb.SearchCodeRequest{
+	_, _, _, err = specCollect2(t, ctx, client, &gitalypb.SearchCodeRequest{
 		Repository: repo, Revision: []byte("refs/heads/does-not-exist"), Query: "x",
 	})
 	require.Equal(t, codes.NotFound, status.Code(err), "unknown revision")
@@ -235,7 +236,7 @@ func TestSpecValidationErrors(t *testing.T) {
 
 // specCollect2 is specSearch without a require on the initial call, so error
 // codes can be inspected on either the call or the first Recv.
-func specCollect2(t *testing.T, client gitalypb.SearchServiceClient, ctx context.Context, req *gitalypb.SearchCodeRequest) ([]*gitalypb.SearchCodeResponse_Match, string, bool, error) {
+func specCollect2(t *testing.T, ctx context.Context, client gitalypb.SearchServiceClient, req *gitalypb.SearchCodeRequest) ([]*gitalypb.SearchCodeResponse_Match, string, bool, error) {
 	t.Helper()
 	stream, err := client.SearchCode(ctx, req)
 	if err != nil {

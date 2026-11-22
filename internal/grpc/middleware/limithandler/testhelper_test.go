@@ -8,10 +8,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc/interop/grpc_testing"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 type server struct {

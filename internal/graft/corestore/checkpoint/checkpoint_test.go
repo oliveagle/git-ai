@@ -31,10 +31,6 @@ import (
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 // relPath is the relative path of the repository the tests checkpoint.
 const relPath = "repo.git"
 
@@ -493,7 +489,7 @@ func TestCreateWriteDeadline(t *testing.T) {
 				e.core.Blobs = slowBlobs{BlobStore: e.core.Blobs, late: late}
 
 				_, _, err := e.cp.Create(e.ctx, e.pbRepo())
-				require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+				require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 				require.ErrorIs(t, err, corestore.ErrPackDeadline)
 
 				_, ok, err := e.core.Meta.NewestCheckpoint(e.ctx, repo.ID)

@@ -9,11 +9,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 // fanOutRemovalShim is an LD_PRELOAD library whose mkdir removes a loose object directory (xx, two
@@ -76,7 +77,7 @@ func NewFanOutRemovingCommandFactory(tb testing.TB, ctx context.Context, cfg con
 	library := filepath.Join(dir, "fanout_removal.so")
 	armed := filepath.Join(dir, "armed")
 	require.NoError(tb, os.WriteFile(source, []byte(fanOutRemovalShim), mode.File))
-	if out, err := exec.Command("cc", "-shared", "-fPIC", "-o", library, source, "-ldl").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "cc", "-shared", "-fPIC", "-o", library, source, "-ldl").CombinedOutput(); err != nil {
 		require.FailNow(tb, "compiling the fan-out removal library", "%v: %s", err, out)
 	}
 

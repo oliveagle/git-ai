@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
@@ -11,8 +14,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes/tracker"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // Node is a storage node in a virtual storage.

@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitlab/client"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/interop/stress/grpc_testing"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/gitlab/client"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestStatushandler(t *testing.T) {

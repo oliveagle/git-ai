@@ -1,8 +1,9 @@
 package corestore
 
 import (
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // ReviewNeedsImport reports whether MetaStore.ImportHistory writes the file

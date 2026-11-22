@@ -3,9 +3,10 @@ package customfieldshandler
 import (
 	"context"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	grpcmw "github.com/grpc-ecosystem/go-grpc-middleware"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // UnaryInterceptor returns a Unary Interceptor that initializes and injects a log.CustomFields object into the context

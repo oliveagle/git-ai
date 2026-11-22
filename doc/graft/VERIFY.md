@@ -29,8 +29,10 @@ into leaking it (a prompt injection planted in the repository). See
    `internal/graft/workspace`, sparse prefixes allowed) and run the test
    command with its argv, environment and timeout.
 4. On success, move the green ref (default `refs/graft/green/<branch>`) to the
-   tested tip with a compare-and-swap. The green ref lets consumers ask for
-   the newest tested tip.
+   tested tip with a compare-and-swap, and the tree it certifies
+   (`refs/graft/green-tree/<branch>`) with it. The green ref lets consumers ask
+   for the newest tested tip; the tree says which tree was tested, and the two
+   are the same tree only when the verification covered the whole tree.
 5. On failure, re-run the test once to rule out flakiness. If it still fails
    and `[revert] enabled = true`, bisect (below) and revert the culprit (below).
    Reverts are off unless `enabled = true` is set. Then a failing tip is only
@@ -42,6 +44,26 @@ into leaking it (a prompt injection planted in the repository). See
 `--once` runs one batch, prints the outcome as one JSON object and exits. Use
 it in CI. Exit status 0 means the batch passed or was skipped, 2 means the
 test failed on the tip, and 1 means an error, including a configuration error.
+
+A CI that runs its own tests instead of running `graft-verify` publishes the
+same checkpoint with `graft green set --branch <branch> --commit <oid>`
+(see [BRANCHES.md](BRANCHES.md)). It moves the same reference, and both move
+it with a compare-and-swap, so a CI and a verifier never overwrite each
+other.
+
+`graft-verify` verifies the tip of the branch, after a land. A CI that wants to
+verify a change before it lands — a merge queue — asks the server what the land
+would produce (`UserLand` with `dry_run`, `sdk.LandOptions.DryRun`), verifies
+that commit, and publishes it as the checkpoint: the branch policy accepts a
+checkpoint that covers the commit a land produces, so the branch is green the
+moment the land is written and nothing has to be reverted. See "Verifying the
+result of a land" in [BRANCHES.md](BRANCHES.md).
+
+A branch whose rule sets `require_verified_result` takes only that: the
+checkpoint must cover the commit the land produces, and a checkpoint on the tip
+does not authorize the next land (`not_verified`). Every change of such a branch
+goes through the queue; `graft-verify` is then for what the queue cannot see —
+a revert, a rerun after a flake, a nightly suite — not for letting a change in.
 
 The outcome object has the fields `branch`, `tip`, `passed`, `timed_out`,
 `green`, `green_moved`, `skipped`, `output`, `bisect_error` and `cursor`. It
@@ -66,6 +88,7 @@ state_file = "/var/lib/graft/verify/main.cursor"
 command = ["go", "test", "./services/api/..."]   # runs in the materialized tree
 env = ["GOFLAGS=-mod=readonly"]                  # KEY=VALUE, added to the environment
 timeout = "15m"
+allow_sparse = true                              # the sparse set above is intended
 
 [revert]
 enabled = true
@@ -89,12 +112,27 @@ webhook_url = "https://hooks.internal.example/graft"
 | `test.command` | required | argv of the test command, run in the materialized tree. `GRAFT_VERIFY_COMMIT` is set to the commit under test. |
 | `test.env` | none | Extra `KEY=VALUE` entries. The rest of the environment is inherited. |
 | `test.timeout` | `10m` | Bound on one test run. |
+| `test.allow_sparse` | `false` | Permit the command to run on a work tree that `sparse` leaves partial. Without it a configuration with `sparse` is refused: the checkpoint this verifier publishes is the trust anchor of the branch management policy, and a test that passes on part of the tree says nothing about the rest. A verifier that runs sparse certifies no tree, so a branch that asks for the whole tree (`require_full_tree`) refuses its checkpoint. |
 | `revert.enabled` | `false` | Bisect and revert culprits. |
 | `revert.dry_run` | `false` | Report the planned revert without making it. |
 | `revert.max_per_hour` | `0` | Reverts allowed per hour. `0` allows none, so set it with `enabled`. |
 | `revert.webhook_url` | none | Receives a JSON notification for every revert decision. |
 
 Unknown keys are an error.
+
+A sparse work tree is a partial one: the files `sparse` leaves out are files
+the command cannot see, so a suite that needs the rest of the monorepo fails,
+and one that silently reads less than it should can pass. The verifier therefore
+refuses a configuration with `sparse` unless `test.allow_sparse = true` says the
+partial tree is intended, and logs a warning for the whole life of the process
+when it is. Verify the whole tree when the checkpoint has to mean "the commit
+passed", which is what a branch with `require_verified` asks it to mean.
+
+A verifier with a `sparse` set certifies no tree at all: its checkpoint says
+the tip passed, and says nothing about the files the command could not see. A
+branch whose rule asks for the whole tree (`require_full_tree`) refuses the
+land of such a checkpoint with `not_full_tree`, so a monorepo that wants that
+rule has to verify the whole tree.
 
 ## Bisection
 
@@ -119,7 +157,12 @@ Unknown keys are an error.
 - The green ref and the branch are read by their exact reference names, never
   through git's DWIM revision rules, so that a branch named like them
   (`refs/heads/refs/graft/green/main`, `refs/heads/refs/heads/main`) is never
-  taken for them.
+  taken for them. A consumer has to read the green ref the same way (`ListRefs`
+  with the full name, `git show-ref --verify`): until the green ref exists, a
+  revision lookup such as `FindCommit` or `git rev-parse` answers with such a
+  branch. Agents can no longer create or update one
+  ([AGENT-SECURITY](AGENT-SECURITY.md)), but one from before that rule, or one
+  an operator made, still answers.
 
 ## Auto-revert
 

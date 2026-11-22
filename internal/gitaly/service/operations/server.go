@@ -16,6 +16,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
+	"github.com/feder-cr/git-ai/internal/graft/proposals"
 	"github.com/feder-cr/git-ai/internal/graft/resolver"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
@@ -41,6 +42,9 @@ type Server struct {
 	localRepoFactory localrepo.Factory
 	// resolveCfg configures conflict resolution of UserLand.
 	resolveCfg config.GraftResolver
+	// proposalSweeper sweeps the proposals of a branch, one land at a time; the servers of the
+	// process share proposals.ProcessSweeper.
+	proposalSweeper *proposals.Sweeper
 	// checkBatchBytes, when set, replaces the bound of the file data of one check request
 	// (landCheckBatchBytes); only tests set it.
 	checkBatchBytes int64
@@ -58,6 +62,8 @@ type Server struct {
 	landLaneHook func()
 	// landInlineCallContext, when set, replaces context.WithTimeout for every inline call of the lane (land_inline.go); only tests set it.
 	landInlineCallContext func(ctx context.Context, allowed time.Duration) (context.Context, context.CancelFunc)
+	// landDeadlineContext, when set, replaces context.WithTimeout for the deadline of a land with resolve_conflicts (landResolving); only tests set it.
+	landDeadlineContext func(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
 	// landResolveHook, when set, runs in every resolver call while it holds its resolve slot; only
 	// tests set it.
 	landResolveHook func()
@@ -127,6 +133,7 @@ func NewServer(deps *service.Dependencies) *Server {
 		graftPolicy:      deps.GetGraftPolicy(),
 		localRepoFactory: deps.GetRepositoryFactory(),
 		resolveCfg:       resolveCfg,
+		proposalSweeper:  proposals.ProcessSweeper,
 		conflictResolver: conflictResolver,
 		resolverErr:      resolverErr,
 		verifyPool:       verifyPool,

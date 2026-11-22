@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // jsonKey is a valid store key, as the store only accepts keys of the derived form.

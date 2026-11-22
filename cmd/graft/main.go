@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
+	"github.com/feder-cr/git-ai/sdk"
 )
 
 const (
@@ -57,20 +58,33 @@ type options struct {
 	author   string
 	dir      string
 	branch   string
-	sparse   string
-	message  string
-	land     string
-	abort    bool
-	resolve  bool
+	// at is the commit graft clone --at materializes, instead of a branch.
+	at      string
+	sparse  string
+	message string
+	land    string
+	abort   bool
+	resolve bool
 	// conflictsDir and resolved are the directories of graft land --conflicts-dir and
 	// --resolved.
 	conflictsDir string
 	resolved     string
 	strategy     string
-	revision     string
-	after        uint64
-	limit        int
-	jsonOut      bool
+	// dryRun and timestamp are those of graft land --dry-run and --timestamp.
+	dryRun    bool
+	timestamp string
+	// expect is the commit graft land --expect writes, the one the caller
+	// verified.
+	expect string
+	// commit is the commit graft land --commit lands, instead of the pending
+	// commit of a workspace. repo is the repository that land --commit works
+	// on when there is no workspace.
+	commit   string
+	repo     string
+	revision string
+	after    uint64
+	limit    int
+	jsonOut  bool
 	// stderr receives warnings of commands that succeed.
 	stderr io.Writer
 }
@@ -111,6 +125,11 @@ func commandTable() map[string]command {
 		"storage": storageCommand(),
 		"repo":    repoCommand(),
 		"policy":  policyCommand(),
+		"gate":    gateCommand(),
+		"green":   greenCommand(),
+		"mirror":  mirrorCommand(),
+		"upgrade": upgradeCommand(),
+		"version": {run: cmdVersion},
 	}
 }
 
@@ -175,6 +194,12 @@ func runContext(parent context.Context, args []string, stdout, stderr io.Writer)
 		return exitInterrupted
 	}
 	fmt.Fprintf(stderr, "graft %s: %v\n", name, err)
+	// A refusal by the branch management policy carries the code of the
+	// decision, and the code is what a script branches on: the reason is for
+	// a human.
+	if code := sdk.BranchGateCode(err); code != "" {
+		fmt.Fprintf(stderr, "graft %s: the branch policy refused the update: %s\n", name, code)
+	}
 	var ue *usageError
 	if errors.As(err, &ue) {
 		return exitUsage
@@ -227,7 +252,8 @@ func bindCommon(fs *flag.FlagSet, o *options) {
 }
 
 func bindClone(fs *flag.FlagSet, o *options) {
-	fs.StringVar(&o.branch, "branch", "main", "branch to check out")
+	fs.StringVar(&o.branch, "branch", "", "branch to check out (default main)")
+	fs.StringVar(&o.at, "at", "", "materialize the tree of this commit instead of a branch, such as the commit a dry-run land named")
 	fs.StringVar(&o.sparse, "sparse", "", "comma-separated paths to materialize (default: whole repository)")
 }
 
@@ -244,6 +270,11 @@ func bindLand(fs *flag.FlagSet, o *options) {
 	fs.BoolVar(&o.resolve, "resolve", false, "let the server resolve merge conflicts")
 	fs.StringVar(&o.conflictsDir, "conflicts-dir", "", "with --resolve: write the conflicts the server did not resolve into this directory")
 	fs.StringVar(&o.resolved, "resolved", "", "land the resolution in this directory (written by --conflicts-dir, then edited)")
+	fs.BoolVar(&o.dryRun, "dry-run", false, "print the commit the land would produce, without landing it (needs --timestamp)")
+	fs.StringVar(&o.timestamp, "timestamp", "", "committer date of the rewritten commit (RFC 3339), to land the commit --dry-run named")
+	fs.StringVar(&o.commit, "commit", "", "land this commit instead of the pending one; needs BRANCH, and -address with --repo outside a workspace")
+	fs.StringVar(&o.expect, "expect", "", "land exactly this commit: the land fails when it would write another one (needs --timestamp)")
+	fs.StringVar(&o.repo, "repo", "", "repository path, used without a workspace together with -address and -storage")
 }
 
 func bindLog(fs *flag.FlagSet, o *options) {
@@ -270,12 +301,14 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: graft <command> [flags] [arguments]
 
 commands:
-  clone ADDR REPO DIR    materialize REPO into DIR (--branch, --sparse a/,b/)
+  clone ADDR REPO DIR    materialize REPO into DIR (--branch B, --at OID, --sparse a/,b/)
   status                 list local changes
   diff                   show line changes against the base commit
   commit -m MSG          commit local changes (--land BRANCH to land them, --resolve for conflicts)
-  land [BRANCH]          land the pending commit (--strategy, --resolve [--conflicts-dir DIR],
-                         --resolved DIR; --abort drops it)
+  land [BRANCH]          land the pending commit, or the one --commit OID names without a
+                         workspace (--strategy, --resolve [--conflicts-dir DIR], --resolved
+                         DIR; --abort drops it; --dry-run --timestamp T prints the commit
+                         the land would produce; --expect OID lands that commit and no other)
   revert [PATH...]       discard local changes to PATHs (default: all) and restore them
   update                 move the workspace to the tip of its branch
   sparse [PREFIX...]     restrict the workspace to PREFIX paths
@@ -287,12 +320,25 @@ commands:
   cat REV:PATH           print a file at a revision
   search QUERY           search file contents (--regex, -i, --path, --context, -n, --rev, --json)
   review SUBCOMMAND      create, show, list, comment, approve, request-changes, update, close (--branch, --title, --json)
-  storage SUBCOMMAND     import, state, verify, checkpoint, archive, unarchive, purge and gc a repository in the storage
-                         core; archived and gc --removed for a storage (--connectivity, --dry-run, --json)
+  storage SUBCOMMAND     import, state, verify, checkpoint, archive, unarchive, purge, gc and delete-conflicting-ref
+                         a repository in the storage core; archived and gc --removed for a storage (--connectivity,
+                         --dry-run, --json)
   repo create REPO       create a repository, with the shared token (--default-branch, --object-format,
                          --initial-commit [--branch NAME], --json)
   policy check FILE      validate the access policy of a configuration file before a reload, and list
                          what it would deny among recent changesets (-repo, --limit, --json)
+  gate check --branch B  ask the branch management policy of the server whether a change may land on a
+                         branch (--commit OID, --direct, --repo, --json); gate rules lists the rules the
+                         server enforces (--repo, --json)
+  green SUBCOMMAND       publish or read the verification checkpoint of a branch: set --branch B --commit OID,
+                         show --branch B (--repo, --json)
+  mirror push            publish selected branches to another Git host, named only by URL, for the
+                         workflows that still run there; one command for every host (--repo, --url,
+                         --branch, --token-env, --username, --ssh-key, --known-hosts, --force, --json)
+
+  upgrade                self-update the graft tools from the GitHub release (--check,
+                         --version, --repo, --json)
+  version                print the version of the graft tools
 
 environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_AGENT_KEY, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
 

@@ -2,7 +2,6 @@ package operations
 
 import (
 	"fmt"
-	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
+	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -202,7 +202,10 @@ func TestUserLand_aRuleResolvedInTheLaneRidesTheBatchOfTheCleanLands(t *testing.
 	cfg := testcfg.Build(t)
 	cfg.Graft = config.Graft{
 		Standalone: true,
-		Land:       config.GraftLand{Batch: config.GraftLandBatch{Window: "100ms"}, Resolver: rcfg},
+		// The lane runs the batch once its five requests are queued, however slowly they reach it (as in
+		// agentBatchingGraft): the window never ends it, and the adaptation is off. With a real 100 ms a loaded
+		// machine let the requests arrive in different batches.
+		Land: config.GraftLand{Batch: config.GraftLandBatch{Window: "1m", MaxSize: 5, TargetLatency: "0s"}, Resolver: rcfg},
 	}
 	ctx, cfg, client := setupOperationsServiceWithCfg(t, testhelper.Context(t), cfg)
 	ctx = featureflag.ContextWithFeatureFlag(ctx, featureflag.GPGSigning, true)

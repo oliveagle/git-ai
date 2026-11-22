@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -18,7 +20,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 // fiOp is a file operation of a test commit: a write of content to path, or the
@@ -211,7 +212,7 @@ func (q countingQueue) ReadObject(ctx context.Context) (*catfile.Object, error) 
 }
 
 // derivedHistory returns the commits that the Deriver reports for the arguments.
-func derivedHistory(ctx context.Context, tb testing.TB, deriver *derived.Deriver, start git.ObjectID, path string, limit int) []string {
+func derivedHistory(tb testing.TB, ctx context.Context, deriver *derived.Deriver, start git.ObjectID, path string, limit int) []string {
 	tb.Helper()
 
 	var ids []string
@@ -223,7 +224,7 @@ func derivedHistory(ctx context.Context, tb testing.TB, deriver *derived.Deriver
 }
 
 // indexHistory returns the commits that the index reports for the arguments.
-func indexHistory(ctx context.Context, tb testing.TB, index *Index, start git.ObjectID, path string, limit int) []string {
+func indexHistory(tb testing.TB, ctx context.Context, index *Index, start git.ObjectID, path string, limit int) []string {
 	tb.Helper()
 
 	var ids []string
@@ -274,12 +275,12 @@ func TestIndex_MatchesDeriverPathHistory(t *testing.T) {
 					require.True(t, Supports(path), path)
 
 					for _, limit := range []int{1000, 2} {
-						want := derivedHistory(ctx, t, cachedDeriver, ids[commit.name], path, limit)
-						require.Equal(t, want, derivedHistory(ctx, t, uncachedDeriver, ids[commit.name], path, limit),
+						want := derivedHistory(t, ctx, cachedDeriver, ids[commit.name], path, limit)
+						require.Equal(t, want, derivedHistory(t, ctx, uncachedDeriver, ids[commit.name], path, limit),
 							"uncached deriver: %q from %s, limit %d", path, commit.name, limit)
-						require.Equal(t, want, indexHistory(ctx, t, stored, ids[commit.name], path, limit),
+						require.Equal(t, want, indexHistory(t, ctx, stored, ids[commit.name], path, limit),
 							"stored index: %q from %s, limit %d", path, commit.name, limit)
-						require.Equal(t, want, indexHistory(ctx, t, uncached, ids[commit.name], path, limit),
+						require.Equal(t, want, indexHistory(t, ctx, uncached, ids[commit.name], path, limit),
 							"uncached index: %q from %s, limit %d", path, commit.name, limit)
 					}
 				}
@@ -305,8 +306,8 @@ func TestIndex_ZeroLimitReportsNothing(t *testing.T) {
 	index := NewIndex(NewObjectReader(reader), nil)
 
 	for _, limit := range []int{0, -1} {
-		require.Empty(t, derivedHistory(ctx, t, deriver, ids["l9"], "a/x", limit))
-		require.Empty(t, indexHistory(ctx, t, index, ids["l9"], "a/x", limit))
+		require.Empty(t, derivedHistory(t, ctx, deriver, ids["l9"], "a/x", limit))
+		require.Empty(t, indexHistory(t, ctx, index, ids["l9"], "a/x", limit))
 	}
 }
 
@@ -336,7 +337,7 @@ func TestWarm_PersistsSummaries(t *testing.T) {
 	index := NewIndexFor(countingReader{ObjectContentReader: reader, trees: &trees}, store)
 	// a/x is added in l0, changed in l2, removed in l3 and added again in l4.
 	require.Equal(t, []string{ids["l4"].String(), ids["l3"].String(), ids["l2"].String(), ids["l0"].String()},
-		indexHistory(ctx, t, index, ids["l9"], "a/x", unlimited),
+		indexHistory(t, ctx, index, ids["l9"], "a/x", unlimited),
 	)
 	require.Equal(t, int64(0), index.Computed())
 	require.Zero(t, trees.Load())
@@ -385,13 +386,13 @@ func BenchmarkPathHistory(b *testing.B) {
 		run(b, func(counting countingReader) []string {
 			deriver, err := derived.NewDeriver(ctx, logger, repo, counting, false)
 			require.NoError(b, err)
-			return derivedHistory(ctx, b, deriver, start, "a/x", length)
+			return derivedHistory(b, ctx, deriver, start, "a/x", length)
 		})
 	})
 
 	b.Run("index", func(b *testing.B) {
 		run(b, func(counting countingReader) []string {
-			return indexHistory(ctx, b, NewIndex(NewObjectReader(counting), nil), start, "a/x", length)
+			return indexHistory(b, ctx, NewIndex(NewObjectReader(counting), nil), start, "a/x", length)
 		})
 	})
 
@@ -404,7 +405,7 @@ func BenchmarkPathHistory(b *testing.B) {
 
 	b.Run("index-persisted", func(b *testing.B) {
 		run(b, func(counting countingReader) []string {
-			return indexHistory(ctx, b, NewIndexFor(counting, warmed), start, "a/x", length)
+			return indexHistory(b, ctx, NewIndexFor(counting, warmed), start, "a/x", length)
 		})
 	})
 
@@ -422,7 +423,7 @@ func BenchmarkPathHistory(b *testing.B) {
 			}
 			deriver, err := derived.NewDeriver(ctx, logger, repo, counting, true)
 			require.NoError(b, err)
-			return filteredHistory(ctx, b, deriver, NewIndexFor(counting, summaries), start, "a/x", length)
+			return filteredHistory(b, ctx, deriver, NewIndexFor(counting, summaries), start, "a/x", length)
 		})
 	}
 

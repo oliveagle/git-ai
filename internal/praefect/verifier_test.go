@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	gitalyconfig "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
@@ -28,8 +31,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 type erroringRepositoryService struct {

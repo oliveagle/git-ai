@@ -180,7 +180,7 @@ func TestRevisionInjection_nameAndPathRPCsReachNothingHidden(t *testing.T) {
 				})
 				require.NoError(t, err)
 				var data []byte
-				err = drainStream(func() error {
+				_ = drainStream(func() error {
 					resp, err := stream.Recv()
 					data = append(data, resp.GetData()...)
 					return err

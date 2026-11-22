@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 )
 
 func TestFile_Resolve(t *testing.T) {

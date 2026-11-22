@@ -8,12 +8,13 @@ import (
 	"io"
 	"time"
 
+	migrate "github.com/rubenv/sql-migrate"
+
 	"github.com/feder-cr/git-ai/internal/praefect/config"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes"
-	migrate "github.com/rubenv/sql-migrate"
 )
 
 // Severity is a type that indicates the severity of a check

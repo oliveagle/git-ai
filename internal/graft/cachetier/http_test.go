@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPHandler_StatsAndMetrics(t *testing.T) {
@@ -31,7 +32,7 @@ func TestHTTPHandler_StatsAndMetrics(t *testing.T) {
 
 	t.Run("stats", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stats", nil))
+		handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/stats", nil))
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -50,7 +51,7 @@ func TestHTTPHandler_StatsAndMetrics(t *testing.T) {
 
 	t.Run("metrics", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil))
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		body := rec.Body.String()

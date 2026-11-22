@@ -21,6 +21,42 @@ machine.
   write where. Protect the configuration, the agents' private keys and the
   token files accordingly.
 
+## Reference name length
+
+Reference names, and symbolic reference targets, over 1024 bytes are refused.
+An existing reference over the limit can still be read and deleted. An object
+pool's names under `refs/remotes/origin/` may be 15 bytes longer, which is what
+the pool's refspec adds to a name of its source.
+
+A repository that holds such a reference fails, with a permanent error, whatever
+copies its references until the reference is deleted: forking it, creating or
+replicating a replica, creating or fetching into an object pool, restoring a
+backup, `FetchBundle`, `CreateRepositoryFromBundle`, `RewriteHistory` and
+importing it into the storage core. One such reference on a remote fails the
+whole of a mirror's `FetchRemote`.
+
+To find such references (the second command is for an unborn `HEAD`, which the
+first does not list), and delete one:
+
+    git -C <repository> for-each-ref --format='%(refname) %(symref)' | LC_ALL=C awk 'length($1) > 1024 || length($2) > 1024'
+    git -C <repository> symbolic-ref -q HEAD | LC_ALL=C awk 'length($0) > 1024'
+    git -C <repository> update-ref --no-deref -d <reference>
+
+`--no-deref` matters: without it, deleting a symbolic reference deletes its target.
+In an object pool the first command also lists the allowed names of 1025 to 1039
+bytes under `refs/remotes/origin/`. The `DeleteRefs` RPC and a push that deletes
+the reference work too, where the repository's writes are allowed.
+
+An incomplete registration left by an earlier failed import is refused the same
+way. In authoritative mode the server may refuse writes to such a repository, so
+run the commands above on the node, with writers stopped, and import again: the
+import resumes.
+
+The allowance of object pools goes by the path of the repository, so a repository
+at a pool-shaped path has it too, up to 1039 bytes under `refs/remotes/origin/`.
+A symbolic reference that points at nothing, other than `HEAD`, is not checked
+when a repository is created from a copy.
+
 ## Security limitations
 
 ### Who the policy decides on
@@ -259,6 +295,75 @@ Git hooks use private.
 - `graft land --strategy merge` and `ff_only` are available in the CLI. The
   CLI's default strategy is rebase.
 
+### Branch management
+
+- The branch management policy (`[[graft.branch]]`, see
+  [BRANCHES](BRANCHES.md)) is decided in the reference-transaction hook, in
+  the prepared phase, so that a refusal aborts the update. The rules reload
+  with the access policy on SIGUSR1 (see
+  [CONFIGURATION](CONFIGURATION.md#reloading-the-policy)); the approval rules
+  of `[graft.review]`, which the gate judges a review with, need a restart.
+- The gate binds the callers that authenticated with a per-agent token. The
+  operator credential (the shared token) and the server's own operations are
+  trusted, like for the access policy: the verifier may revert a commit that
+  broke the branch. A CI that lands with the shared token is not decided by
+  the server when it lands, and has to run `graft gate check` itself: the
+  server answers that question with the policy it enforces, so the check and
+  the enforcement cannot disagree, but the server does not run the check for
+  the CI. The land itself is bound to the commit the caller verified: `graft
+  land --expect <oid>` makes the server refuse a land that would write another
+  commit, so the operator credential cannot land a commit nobody tested
+  either.
+- The gate does not run the tests. With `require_verified` it asks whether the
+  verification checkpoint of the branch covers the update: the tip it builds
+  on, or the commit the land produces when the caller names it. With
+  `require_verified_result` it asks only the second, so a land cannot stand on a
+  tip that was green before it. With `require_suites` it asks which of the
+  suites the rule names the checkpoint certifies: the publisher says what ran
+  (`graft green set --suite`), and a checkpoint that certifies only some of
+  them is refused with `suites_missing`. What the checkpoint means is what the
+  verifier recorded (graft-verify, or a CI with `graft green set`); a server
+  without a verifier has no checkpoint, and every land of such a branch is
+  refused. The gate believes the publisher: a suite that says it ran and did
+  not is not caught by the server.
+- A dry-run land names the commit a land would produce, and the checkpoint may
+  cover that commit. The name holds only while the request and the tip hold: a
+  land whose tip moved produces another commit, which the checkpoint does not
+  cover, and the branch policy then refuses it. A land that names the commit it
+  expects (`--expect`) is refused with the commit it would have written and the
+  tip it computed it on, so the queue knows what to compute again. A dry run
+  does not resolve conflicts, and its objects stay in the repository
+  unreferenced until the GC collects them.
+- A workspace cloned at a commit (`graft clone --at OID`) has no branch: it
+  materializes the tree of the commit, which is what a merge queue tests, and
+  `update` and a land without a branch name are errors. A land that names a
+  branch attaches the workspace to it.
+- A verified result and batched landing compose only one change at a time. A
+  batched land writes one commit for the whole batch, which depends on the
+  changes that happen to share it, so the commit a dry run names is not the one
+  the batch writes. The gate decides the combined update like any other land,
+  with the reviews of its members and with the commit it writes, so on a branch
+  that demands a verified checkpoint a batch of two or more is refused and its
+  changes land alone: the one whose result the checkpoint covers lands, and the
+  others wait for a queue that verifies the commit each of them produces on the
+  tip that landing left. Batching therefore buys a branch that demands a
+  verified result nothing but a refused attempt; `[graft.land.batch] disabled =
+  true` turns it off for the whole server.
+- The review of a change must be based on the tip of the branch, unless the
+  rule allows a stale base. A change that was reviewed against an older tip
+  needs a new review, even when the branch only moved forward.
+- A change that conflicts and needs a resolution cannot satisfy a branch that
+  demands a verified result: a dry run resolves nothing (a land that would
+  resolve is refused with `invalid_argument`), so the commit a resolving land
+  writes is one no queue named, and the gate refuses it. Make the resolution
+  part of the change — rebase the change onto the tip, resolve it, commit the
+  resolution — and let the queue verify the result. The resolver is for a
+  branch that takes the post-merge model ([VERIFY](VERIFY.md)) or for an
+  operator's land, not for a land a checkpoint has to cover.
+- The checkpoint is read from the local repository of the node that decides
+  the update. In a cluster of nodes the checkpoint of a branch is the one of
+  the node that runs the hook, which is the node that holds the repository.
+
 ### ObjectService and caching
 
 - `GetObjects` takes at most `max_objects` object IDs per request. The SDK
@@ -349,6 +454,23 @@ Git hooks use private.
   inside the workspace, need a normal Git clone.
 - `graft` does not speak the Git protocol for `git push` and `git pull`. Use the
   server's normal Git protocol for that.
+- In authoritative storage mode, a push without `--atomic` that git rejects one
+  update of because of its old value (a branch another client just created, or a
+  reference whose value the serving node does not have) is refused by the storage
+  core, where a plain git server would land the other references. git still hands
+  the rejected update to the reference-transaction hook, and the storage core
+  cannot tell the other rejected updates of the push apart. git runs such a push
+  in two transactions, the deletions first, then the other updates:
+  - a rejected deletion fails the first transaction, and nothing of the push
+    lands;
+  - a rejected create or update fails the second one. The deletions of the push
+    that git accepted have landed by then (in the database and on the node),
+    without a status line for them and without the post-receive hook.
+  Either way the client sees `fatal: in 'prepared' phase, update aborted by the
+  reference-transaction hook` (over SSH) and the connection ends, with no status
+  per reference. Check which references moved, and push the others again. The
+  same holds for a push that the database refuses for any other reason (a
+  compare-and-swap lost to another node). See [STORAGE](STORAGE.md#failures).
 - `graft` does not materialize repository paths that are reserved, such as
   `.git` or `.graft` directories at any depth, or that are not safe file names
   on the client's system, such as names with `:` or `\` on Windows. It lists
@@ -537,6 +659,16 @@ commitment.
    `--branches` it is given, each shared by its agents) and a simulated merge
    queue. It does not run real tests, and its conflict rate is a stress setting,
    not a forecast. See [BENCH](BENCH.md).
+
+## A mirror is not a second authority
+
+`graft mirror push` can publish selected branches to another Git host for a
+traditional CI ([MIRROR.md](MIRROR.md)). It is a one-way reconciliation, on a
+schedule: a failed push does not undo a Graft land, and the next run publishes
+what it missed. A divergent branch on the mirror is kept and the command fails
+unless `--force` is explicit. A CI result at the mirror is evidence for people,
+not a Graft branch rule; the managed branch still takes only the checkpoint its
+rule asks for.
 
 ## Reporting problems
 

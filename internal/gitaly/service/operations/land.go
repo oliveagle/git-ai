@@ -36,21 +36,21 @@ const (
 	landBackoffMax = 100 * time.Millisecond
 )
 
-// landConflict reports that the compare-and-swap of the branch lost a race against a concurrent
+// landConflictError reports that the compare-and-swap of the branch lost a race against a concurrent
 // writer. The attempt is discarded and UserLand retries from the top.
-type landConflict struct {
+type landConflictError struct {
 	reference      git.ReferenceName
 	oldOID, newOID git.ObjectID
 	cause          error
 }
 
 // Error returns the error message.
-func (e landConflict) Error() string {
+func (e landConflictError) Error() string {
 	return fmt.Sprintf("reference %s moved concurrently: %v", e.reference, e.cause)
 }
 
 // Unwrap returns the underlying reference update error.
-func (e landConflict) Unwrap() error {
+func (e landConflictError) Unwrap() error {
 	return e.cause
 }
 
@@ -67,9 +67,19 @@ func (s *Server) UserLand(ctx context.Context, in *gitalypb.UserLandRequest) (*g
 		return nil, structerr.NewInvalidArgument("%w", err)
 	}
 
+	if err := s.landOnWrittenBranch(ctx, in); err != nil {
+		return nil, err
+	}
+
 	committer, err := git.SignatureFromRequest(in)
 	if err != nil {
 		return nil, structerr.NewInvalidArgument("%w", err)
+	}
+
+	// A dry run is not a land: it computes the commit a land would produce, so
+	// that a CI can verify that commit before landing it (landDryRun).
+	if in.GetDryRun() {
+		return s.landDryRun(ctx, in, committer)
 	}
 
 	// The check of an agent's resolution runs an external process: it runs here, before the land
@@ -89,6 +99,74 @@ func (s *Server) UserLand(ctx context.Context, in *gitalypb.UserLandRequest) (*g
 	return s.landOnce(ctx, in, committer, precheck, nil)
 }
 
+// validateLandBranch checks the name of the branch that a land updates.
+func validateLandBranch(branch []byte) error {
+	if len(branch) == 0 {
+		return errors.New("empty branch name")
+	}
+
+	if strings.HasPrefix(string(branch), "refs/") {
+		return errors.New("branch must be a branch name, not a full reference name")
+	}
+
+	if err := git.ValidateRevision(branch); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	// git refuses to create a branch called HEAD, and ValidateReference does not see it as a
+	// branch because it only checks the full name.
+	if string(branch) == "HEAD" {
+		return errors.New("invalid branch name: HEAD is reserved")
+	}
+
+	if err := git.ValidateReference("refs/heads/" + string(branch)); err != nil {
+		return fmt.Errorf("invalid branch name: %w", err)
+	}
+
+	// The land records its identity in its update (doc/graft/PLAN11.md), which bounds the name of
+	// the branch. The request is refused here rather than its update, so that it fails alone, also
+	// in a batch.
+	if err := changelog.CheckLandReference("refs/heads/" + string(branch)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// landOnWrittenBranch makes a request for a symbolic branch a request for the branch it writes,
+// before anything of the land depends on the name: the lane that orders the land's compare-and-swap,
+// the policy that admits it, the identities and proposals kept per branch, and the tickets.
+//
+// A land only ever updates a branch, and those are all kept by branch, so a symbolic branch whose
+// target is no branch is refused, without saying what the target is: it may be hidden from the
+// caller, and so is a target it may not land on when named, as the request's checks say.
+//
+// A known limit: the branch is read here and again by the update. A retarget in between lands on what
+// the update reads, judged as ever by the hooks, but the update then does not match the branch of the
+// land's identities, and the identities are not recorded. It takes an operator, who retargets a
+// branch while it is being landed on.
+func (s *Server) landOnWrittenBranch(ctx context.Context, in *gitalypb.UserLandRequest) error {
+	requested := git.NewReferenceNameFromBranchName(string(in.GetBranch()))
+	written, err := s.localRepoFactory.Build(in.GetRepository()).WrittenReference(ctx, requested)
+	if err != nil {
+		return structerr.NewInternal("reading the branch to write: %w", err)
+	}
+	if written == requested {
+		return nil
+	}
+
+	branch, isBranch := strings.CutPrefix(written.String(), "refs/heads/")
+	if !isBranch {
+		return structerr.NewFailedPrecondition("branch %q is a symbolic reference to something that is not a branch", string(in.GetBranch()))
+	}
+	if err := validateLandBranch([]byte(branch)); err != nil {
+		return structerr.NewInvalidArgument("branch %q is a symbolic reference to a branch that cannot be landed on: %w", string(in.GetBranch()), err)
+	}
+	in.Branch = []byte(branch)
+
+	return nil
+}
+
 // landOnce lands the request once through its lane, in a batch or alone, with the precheck of an
 // agent's resolution or the pre-resolution of the server's, if any, and prunes the branch's
 // proposals once it landed.
@@ -98,7 +176,7 @@ func (s *Server) landOnce(ctx context.Context, in *gitalypb.UserLandRequest, com
 		if err != nil {
 			return nil, err
 		}
-		s.landPruneAfterLand(ctx, in)
+		s.landAfterLand(ctx, in, pre)
 		return resp, nil
 	}
 
@@ -106,7 +184,7 @@ func (s *Server) landOnce(ctx context.Context, in *gitalypb.UserLandRequest, com
 	if err != nil {
 		return nil, err
 	}
-	s.landPruneAfterLand(ctx, in)
+	s.landAfterLand(ctx, in, pre)
 
 	// A request that lands alone is a batch of one.
 	resp.BatchSize = 1
@@ -148,7 +226,7 @@ func (s *Server) landWithRetries(ctx context.Context, in *gitalypb.UserLandReque
 			return resp, nil
 		}
 
-		var conflict landConflict
+		var conflict landConflictError
 		if !errors.As(err, &conflict) {
 			return nil, err
 		}
@@ -204,8 +282,74 @@ func (s *Server) landAncestry(ctx context.Context, quarantineRepo *localrepo.Rep
 	return checker, release, nil
 }
 
-// landAttempt performs a single compare-and-swap attempt of UserLand. It returns a landConflict
+// landAttempt performs a single compare-and-swap attempt of UserLand. It returns a landConflictError
 // if the branch was moved by a concurrent writer, in which case the caller retries.
+// landDryRun computes the commit a land would produce on the current tip of the
+// branch, without updating the branch. It decides and replays the change through
+// the attempt a land uses (landingAttempt), so the commit it names is the one the
+// land would write, and it makes the objects it wrote readable before it returns:
+// a CI checks that commit out, verifies it, publishes it as the verification
+// checkpoint of the branch and lands the same request, which then produces exactly
+// that commit (UserLandRequest.dry_run).
+//
+// Nothing of the branch changes, so the branch policy is not applied here: it
+// decides updates, and a dry run writes no reference.
+func (s *Server) landDryRun(ctx context.Context, in *gitalypb.UserLandRequest, committer git.Signature) (*gitalypb.UserLandResponse, error) {
+	switch {
+	case in.GetResolveConflicts():
+		return nil, structerr.NewInvalidArgument("a dry-run land does not resolve conflicts: land with resolve_conflicts and the resolution is the result")
+	case in.GetResolution() != nil:
+		return nil, structerr.NewInvalidArgument("a dry-run land does not carry a resolution: land with the resolution is the result")
+	}
+
+	attempt, cleanup, err := s.newLandingAttempt(ctx, in.GetRepository(), landPublishPack, ignoreLandPhase)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	reference := git.NewReferenceNameFromBranchName(string(in.GetBranch()))
+	tip, err := attempt.Tip(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &landBatchRequest{ctx: ctx, in: in, committer: committer, actor: landBatchActor(ctx, in)}
+	step, err := attempt.decide(ctx, tip, req)
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case step.alreadyLanded:
+		return dryRunResponse(tip, tip, false, true, false), nil
+	case step.tip == tip:
+		// The change became empty on top of the tip: a land would leave the branch unchanged.
+		return dryRunResponse(tip, tip, false, false, false), nil
+	}
+
+	// The objects of the attempt live in its quarantine, which ends when this
+	// function returns. A land migrates them with the reference update; a dry run
+	// has no update, so it migrates them itself, which puts the commit a CI has to
+	// verify in the repository. An unreferenced commit is collected by the
+	// regular GC.
+	if err := attempt.publish(ctx); err != nil {
+		return nil, err
+	}
+	if err := attempt.quarantineDir.Migrate(ctx); err != nil {
+		return nil, structerr.NewInternal("migrating the objects of a dry-run land: %w", err)
+	}
+
+	return dryRunResponse(tip, step.tip, step.rewritten, false, step.created), nil
+}
+
+// dryRunResponse is the response of a dry run: the commit a land would produce.
+func dryRunResponse(oldTip, produced git.ObjectID, rewritten, alreadyLanded, created bool) *gitalypb.UserLandResponse {
+	resp := landResponse(oldTip, produced, rewritten, alreadyLanded, created)
+	resp.DryRun = true
+	return resp
+}
+
 func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, committer git.Signature, precheck *landPrecheck, pre *landPreResolution) (*gitalypb.UserLandResponse, error) {
 	attempt, cleanup, err := s.newLandingAttempt(ctx, in.GetRepository(), landPublishLoose, ignoreLandPhase)
 	if err != nil {
@@ -242,6 +386,14 @@ func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, 
 		return landResponse(tip, tip, false, false, false), nil
 	}
 
+	// The caller named the commit it verified: the land writes exactly that
+	// commit, or it fails. The branch moved after the result was computed, or
+	// the request is not the one that was verified, and either way the commit
+	// the land would write is not the one the caller tested.
+	if expected := in.GetExpectedResult(); expected != "" && step.tip.String() != expected {
+		return nil, expectedResultError(expected, step.tip, tip)
+	}
+
 	if err := attempt.publish(ctx); err != nil {
 		return nil, err
 	}
@@ -260,9 +412,27 @@ func (s *Server) landAttempt(ctx context.Context, in *gitalypb.UserLandRequest, 
 	return resp, nil
 }
 
+// expectedResultError is the refusal of a land that would write another commit than the one
+// the caller verified. The detail carries the commit the land would have written, so that a
+// merge queue knows which result it has to compute again.
+func expectedResultError(expected string, landed, tip git.ObjectID) error {
+	return structerr.NewFailedPrecondition(
+		"the land would write %s, not the expected %s: the result has to be computed again (the branch moved, or the request is not the one that was verified)",
+		landed, expected,
+	).WithDetail(&gitalypb.UserLandError{
+		Error: &gitalypb.UserLandError_ExpectedResult{
+			ExpectedResult: &gitalypb.ExpectedResultError{
+				Expected: expected,
+				Landed:   landed.String(),
+				Tip:      tip.String(),
+			},
+		},
+	})
+}
+
 // updateLandedReference performs the compare-and-swap of the branch, recording lands, the
 // identities of the changes it lands (doc/graft/PLAN11.md), in its changelog entry. Hook rejections
-// are returned as PermissionDenied errors, lost races as landConflict and invalid requests or
+// are returned as PermissionDenied errors, lost races as landConflictError and invalid requests or
 // conflicting references as InvalidArgument or FailedPrecondition. Everything else is Internal.
 func (s *Server) updateLandedReference(
 	ctx context.Context,
@@ -334,7 +504,7 @@ func (s *Server) updateLandedReference(
 		errors.As(err, &alreadyExistsErr) ||
 		errors.As(err, &unexpectedOldValErr) ||
 		errors.Is(err, gitupdateref.ErrPackedRefsLocked) {
-		return landConflict{
+		return landConflictError{
 			reference: reference,
 			oldOID:    oldOID,
 			newOID:    newOID,
@@ -369,7 +539,7 @@ func (s *Server) updateLandedReference(
 			return structerr.NewInternal("updating ref with hooks: %w", errors.Join(err, resolveErr))
 		}
 		if moved {
-			return landConflict{
+			return landConflictError{
 				reference: reference,
 				oldOID:    oldOID,
 				newOID:    newOID,
@@ -440,7 +610,7 @@ func landSnapshotPinned(ctx context.Context) bool {
 // FailedPrecondition for the client to retry, whatever the land holds: not even a model's
 // resolution is handed back to be verified again, as that would verify the same tree once more.
 // Otherwise the attempts run out at max_attempts and the land ends as landKeptMoving says.
-func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflict, attempt, maxAttempts int, pinned bool) error {
+func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflictError, attempt, maxAttempts int, pinned bool) error {
 	switch {
 	case pinned:
 		return landKeptMovingError(in, conflict, attempt)
@@ -455,16 +625,16 @@ func landLostRace(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict
 // cause: the branch moved on): UserLand goes out again, and at its deadline the agent gets the
 // proposals, not an error about a branch it has nothing to do with. The others get
 // landKeptMovingError.
-func landKeptMoving(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflict, attempts int) error {
+func landKeptMoving(in *gitalypb.UserLandRequest, pre *landPreResolution, conflict landConflictError, attempts int) error {
 	if pre.mustVerify() {
-		return &landNeedsResolution{tip: conflict.newOID, commit: git.ObjectID(in.GetCommitId()), moved: true}
+		return &landNeedsResolutionError{tip: conflict.newOID, commit: git.ObjectID(in.GetCommitId()), moved: true}
 	}
 	return landKeptMovingError(in, conflict, attempts)
 }
 
 // landKeptMovingError returns the FailedPrecondition error for a landing that lost the
 // compare-and-swap on every attempt, or that cannot be retried inside the RPC.
-func landKeptMovingError(in *gitalypb.UserLandRequest, conflict landConflict, attempts int) error {
+func landKeptMovingError(in *gitalypb.UserLandRequest, conflict landConflictError, attempts int) error {
 	return structerr.NewFailedPrecondition(
 		"branch %q kept moving, giving up after %d attempts: %w",
 		string(in.GetBranch()), attempts, conflict,
@@ -532,32 +702,7 @@ func validateUserLandRequest(ctx context.Context, locator storage.Locator, in *g
 		return errors.New("empty user email")
 	}
 
-	if len(in.GetBranch()) == 0 {
-		return errors.New("empty branch name")
-	}
-
-	if strings.HasPrefix(string(in.GetBranch()), "refs/") {
-		return errors.New("branch must be a branch name, not a full reference name")
-	}
-
-	if err := git.ValidateRevision(in.GetBranch()); err != nil {
-		return fmt.Errorf("invalid branch name: %w", err)
-	}
-
-	// git refuses to create a branch called HEAD, and ValidateReference does not see it as a
-	// branch because it only checks the full name.
-	if string(in.GetBranch()) == "HEAD" {
-		return errors.New("invalid branch name: HEAD is reserved")
-	}
-
-	if err := git.ValidateReference("refs/heads/" + string(in.GetBranch())); err != nil {
-		return fmt.Errorf("invalid branch name: %w", err)
-	}
-
-	// The land records its identity in its update (doc/graft/PLAN11.md), which bounds the name of
-	// the branch. The request is refused here rather than its update, so that it fails alone, also
-	// in a batch.
-	if err := changelog.CheckLandReference("refs/heads/" + string(in.GetBranch())); err != nil {
+	if err := validateLandBranch(in.GetBranch()); err != nil {
 		return err
 	}
 

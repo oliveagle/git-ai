@@ -135,9 +135,11 @@ func TestLLMDesignRepairOnTheRulesOfAnAnswer(t *testing.T) {
 // that the two changes do not contest each other and a good answer keeps both.
 func compositionFile() LLMFile {
 	base := numbered("line", 12)
-	return LLMFile{Path: "x.txt", Base: []byte(base),
+	return LLMFile{
+		Path: "x.txt", Base: []byte(base),
 		Ours:   []byte(strings.Replace(base, "line 5\n", "O5\n", 1)),
-		Theirs: []byte(strings.Replace(base, "line 6\n", "T6\n", 1))}
+		Theirs: []byte(strings.Replace(base, "line 6\n", "T6\n", 1)),
+	}
 }
 
 // TestLLMDesignCompositionReportsAndNeverRepairs: an answer that the rules and the syntax accept is never
@@ -190,16 +192,28 @@ func TestLLMComposition(t *testing.T) {
 		neither         bool
 	}{
 		{"keeps both uncontested changes", region("a\nb\n", "A\nb\n", "a\nB\n"), "A\nB\n", nil, 2, 0, false},
-		{"drops theirs", region("a\nb\n", "A\nb\n", "a\nB\n"), "A\nb\n",
-			[]string{`drops THEIRS' change at base line 12: the line "B" it adds is missing`}, 1, 0, false},
-		{"drops ours", region("a\nb\n", "A\nb\n", "a\nB\n"), "a\nB\n",
-			[]string{`drops OURS' change at base line 11: the line "A" it adds is missing`}, 1, 0, false},
-		{"a deletion that is still there", region("a\nb\nc\n", "a\nc\n", "a\nb\nC\n"), "a\nb\nC\n",
-			[]string{`drops OURS' deletion at base line 12: the line "b" it deletes is still there`}, 1, 0, false},
+		{
+			"drops theirs", region("a\nb\n", "A\nb\n", "a\nB\n"), "A\nb\n",
+			[]string{`drops THEIRS' change at base line 12: the line "B" it adds is missing`},
+			1, 0, false,
+		},
+		{
+			"drops ours", region("a\nb\n", "A\nb\n", "a\nB\n"), "a\nB\n",
+			[]string{`drops OURS' change at base line 11: the line "A" it adds is missing`},
+			1, 0, false,
+		},
+		{
+			"a deletion that is still there", region("a\nb\nc\n", "a\nc\n", "a\nb\nC\n"), "a\nb\nC\n",
+			[]string{`drops OURS' deletion at base line 12: the line "b" it deletes is still there`},
+			1, 0, false,
+		},
 		{"the same lines edited is contested, never a drop", region("a\n", "O\n", "T\n"), "something else\n", nil, 0, 2, true},
 		{"an insertion at the point of the other's edit is contested", region("a\nb\n", "a\nx\nb\n", "a\nB\n"), "a\nB\n", nil, 0, 2, false},
-		{"duplicates a line both sides added", region("a\n", "a\nnew\n", "a\nnew\nmore\n"), "a\nnew\nnew\nmore\n",
-			[]string{`duplicates a line both sides added: "new"`}, 1, 1, false},
+		{
+			"duplicates a line both sides added", region("a\n", "a\nnew\n", "a\nnew\nmore\n"), "a\nnew\nnew\nmore\n",
+			[]string{`duplicates a line both sides added: "new"`},
+			1, 1, false,
+		},
 		{"blank lines and trailing whitespace do not count", region("a\nb\n", "A\nb\n", "a\nB\n"), "A  \n\n  B\r\n", nil, 2, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

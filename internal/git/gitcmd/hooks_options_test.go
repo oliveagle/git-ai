@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	grpcmetadata "google.golang.org/grpc/metadata"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -12,8 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	grpcmetadata "google.golang.org/grpc/metadata"
 )
 
 func TestWithRefHook(t *testing.T) {
@@ -80,9 +81,12 @@ func TestWithRefTxHookChangelogInvocation(t *testing.T) {
 
 	ctx := testhelper.Context(t)
 
-	invocation := func(t *testing.T, disabled bool) string {
+	invocation := func(t *testing.T, disabled bool, storageMode ...string) string {
 		cfg := testcfg.Build(t)
 		cfg.Graft.Changelog.Disabled = disabled
+		if len(storageMode) > 0 {
+			cfg.Graft.Storage.Mode = storageMode[0]
+		}
 
 		repoProto, _ := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{
 			SkipCreationViaService: true,
@@ -111,6 +115,10 @@ func TestWithRefTxHookChangelogInvocation(t *testing.T) {
 
 	t.Run("no invocation without the changeset log", func(t *testing.T) {
 		require.Empty(t, invocation(t, true))
+	})
+
+	t.Run("the authoritative storage core needs one without the changeset log", func(t *testing.T) {
+		require.NotEmpty(t, invocation(t, true, "authoritative"))
 	})
 }
 

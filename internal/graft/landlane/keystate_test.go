@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 const effectiveMaxSizeGauge = "graft_land_lane_effective_max_size"

@@ -218,10 +218,10 @@ func TestLockHelperProcess(t *testing.T) {
 		t.Skip("only runs as a helper process")
 	}
 	if _, err := lockWithin(root, 0); err != nil {
-		os.Stdout.WriteString("error " + err.Error() + "\n")
+		_, _ = os.Stdout.WriteString("error " + err.Error() + "\n")
 		os.Exit(1)
 	}
-	os.Stdout.WriteString("locked\n")
+	_, _ = os.Stdout.WriteString("locked\n")
 	time.Sleep(time.Minute)
 	os.Exit(0)
 }
@@ -232,7 +232,7 @@ func TestLockOfKilledProcessIsReleased(t *testing.T) {
 	b := seedBackend(t, []string{"a.txt"}, []string{"base"})
 	ws := cloneTestWorkspace(t, b)
 
-	cmd := exec.Command(os.Args[0], "-test.run=^TestLockHelperProcess$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestLockHelperProcess$")
 	cmd.Env = append(os.Environ(), lockHelperEnv+"="+ws.Root())
 	stdout, err := cmd.StdoutPipe()
 	require.NoError(t, err)

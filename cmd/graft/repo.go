@@ -124,12 +124,12 @@ type repoProgress struct {
 	done, left []string
 }
 
-// repoRefusal is a state of the repository that graft repo create does not
+// repoRefusalError is a state of the repository that graft repo create does not
 // change: running the same command again fails the same way until the
 // repository or the arguments change.
-type repoRefusal struct{ reason string }
+type repoRefusalError struct{ reason string }
 
-func (r repoRefusal) Error() string { return r.reason }
+func (r repoRefusalError) Error() string { return r.reason }
 
 // fail reports err with what was done and what is left. A refusal and a denial
 // of the server's policy say so: running the command again fails the same way.
@@ -142,7 +142,7 @@ func (p *repoProgress) fail(relativePath string, err error) error {
 	if len(p.left) > 0 {
 		report += "\nleft: " + strings.Join(p.left, "; ")
 	}
-	var refusal repoRefusal
+	var refusal repoRefusalError
 	if errors.As(err, &refusal) {
 		return fmt.Errorf("repository %s: %w%s", displayText(relativePath), err, report)
 	}
@@ -305,13 +305,13 @@ func ensureInitialCommit(ctx context.Context, repo *sdk.Repo, defaultBranch stri
 	head, err := repo.Head(ctx)
 	if sdk.Code(err) == codes.FailedPrecondition {
 		// The server's answer for a detached HEAD.
-		return "", false, repoRefusal{fmt.Sprintf("HEAD does not point to a branch (%s), so no initial commit is made", status.Convert(err).Message())}
+		return "", false, repoRefusalError{fmt.Sprintf("HEAD does not point to a branch (%s), so no initial commit is made", status.Convert(err).Message())}
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("reading HEAD: %w", err)
 	}
 	if head != ref {
-		return "", false, repoRefusal{fmt.Sprintf("HEAD points to %s, not %s: pass --default-branch %s, or no --initial-commit", displayText(head), displayText(ref), displayText(strings.TrimPrefix(head, "refs/heads/")))}
+		return "", false, repoRefusalError{fmt.Sprintf("HEAD points to %s, not %s: pass --default-branch %s, or no --initial-commit", displayText(head), displayText(ref), displayText(strings.TrimPrefix(head, "refs/heads/")))}
 	}
 
 	if tip, ok, err := branchTip(ctx, repo, ref); err != nil || ok {
@@ -327,7 +327,7 @@ func ensureInitialCommit(ctx context.Context, repo *sdk.Repo, defaultBranch stri
 		if tip, ok, err := branchTip(ctx, repo, ref); err != nil || ok {
 			return tip, false, err
 		}
-		return "", false, repoRefusal{fmt.Sprintf("the repository has references but no %s: it is not empty, so no initial commit is made", displayText(ref))}
+		return "", false, repoRefusalError{fmt.Sprintf("the repository has references but no %s: it is not empty, so no initial commit is made", displayText(ref))}
 	}
 
 	zero, err := repo.ZeroOID(ctx)

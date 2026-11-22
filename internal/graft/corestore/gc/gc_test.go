@@ -24,10 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
-
 const grace = time.Hour
 
 func forEachDialect(t *testing.T, test func(t *testing.T, e *env)) {

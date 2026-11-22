@@ -3,8 +3,9 @@ package loadmonitor
 import (
 	"sync"
 
-	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/feder-cr/git-ai/internal/cgroups"
 )
 
 // monitorMetrics hold all metrics the LoadMonitor emits

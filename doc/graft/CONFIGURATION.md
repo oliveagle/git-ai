@@ -26,12 +26,14 @@ the example stays a working configuration.
 |---|---|---|---|
 | `standalone` | bool | `false` | Run without GitLab. No GitLab secret or URL is required, GitLab is never contacted, and access checks and hook callbacks are answered by the standalone client from `[[graft.policy]]`. Request defaults are applied on the external server. |
 | `policy` | array of tables | empty | Ordered access rules, see below. |
+| `branch` | array of tables | empty | Branch management rules, see below and [BRANCHES.md](BRANCHES.md). |
 | `agent` | array of tables | empty | Per-agent SSH public keys, see below. Every request of an agent is signed with its private key and verified by the server (doc/graft/PLAN14.md). |
 | `admin_token` | string | empty | Secret of the super admin: the only credential that may purge an archived repository (doc/graft/PLAN13.md). Set either `admin_token` or `admin_token_file`, never both. |
 | `admin_token_file` | string | empty | File holding the super admin's secret, surrounding whitespace removed. Read at startup. |
 | `agent_rpcs` | array of strings | empty | Extra full gRPC method names (for example `/gitaly.RepositoryService/RepositorySize`) that agents may call on top of the built-in allowlist. Startup fails on an unregistered method or on a method that agents may never call. See [AGENT-SECURITY.md](AGENT-SECURITY.md). |
 | `land` | table | | `[graft.land.batch]`: batching of concurrent lands, and `[graft.land.resolver]`: the conflict resolver of `UserLand`, see below. |
 | `storage` | table | | `[graft.storage]`: the storage core (database plus object storage), see below. |
+| `mirror` | table | | `[graft.mirror]`: the mirror policy, see below and [MIRROR.md](MIRROR.md). |
 
 ### Request defaults (standalone mode)
 
@@ -113,16 +115,18 @@ allow = true
 
 Send SIGUSR1 to the gitaly process (or to gitaly-wrapper, which forwards it):
 it reads its configuration file again and puts the new `[[graft.policy]]` in
-force. SIGHUP is not a reload: it stops the server, or upgrades it in place
-with the graceful-upgrade bootstrap.
+force, and the new `[[graft.branch]]` rules with it. SIGHUP is not a reload: it
+stops the server, or upgrades it in place with the graceful-upgrade bootstrap.
 
-- Only the policy is applied. Other changes of the file, `[[graft.agent]]`
-  included, are logged at WARN as needing a restart, and not applied.
+- Only the access policy and the branch rules are applied. Other changes of the
+  file, `[[graft.agent]]` and `[graft.review]` included, are logged at WARN as
+  needing a restart, and not applied.
 - A file that cannot be read, or whose policy is invalid (a bad glob, an empty
-  `refs` entry), is logged at ERROR and changes nothing: the policy in force
-  stays. Actors of the new policy that name no configured agent are logged at
-  WARN; they are not an error (an actor can be the user ID of a caller with
-  the shared token).
+  `refs` entry, a branch rule without a name or two rules for one branch), is
+  logged at ERROR and changes nothing: the policies in force stay, so a typo
+  never opens a managed branch. Actors of the new policy that name no
+  configured agent are logged at WARN; they are not an error (an actor can be
+  the user ID of a caller with the shared token).
 - An update in flight is decided by the policy in force when the
   reference-transaction hook runs, while git holds the references' locks: a
   tightening applies to it even if its earlier checks allowed it. A land batch
@@ -140,12 +144,66 @@ policy in force). A denied agent update is logged at INFO with the
 `policy_generation` and `policy_sha256` that denied it; an allowed one at
 DEBUG.
 
+The branch rules have their own series: `graft_branch_policy_reloads_total{result}`
+(`applied`, `unchanged`, `rejected`) and `graft_branch_policy_generation` (1 at
+startup, one more for every reload that changed the rules). A reload that
+changed them is logged at INFO as `branch policy reloaded`, with the generation
+and the number of rules.
+
 Before a reload, `graft policy check FILE` validates the file's policy as the
 reload will (exit 2 when the policy is invalid) and prints its hash; with
 `-repo REPO` it lists the recent updates of the repository that the new policy
 would deny, and exits 1 when there are any. It checks the policy only: the reload also validates the rest of
 the file, against the server's own paths and settings, and rejects a file that
 fails there.
+
+### `[[graft.branch]]`
+
+The branch management policy: what may update a branch, and what a change must
+carry to land on it. A branch without a rule is not managed. The rules are
+decided by the reference-transaction hook, in its prepared phase, so that a
+refusal aborts the update. See [BRANCHES.md](BRANCHES.md).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | required | The branch the rule governs, without the `refs/heads/` prefix. Two rules for one branch are refused when the configuration is loaded, as is a name that is not a branch name. |
+| `require_review` | bool | `false` | A change that lands on the branch must have a review of it, on that branch, approved by the approval rules of `[graft.review]`. |
+| `require_approvals` | int | `0` | The number of current approvals the review must carry, on top of the approvals the approval rules ask for. |
+| `allow_stale_base` | bool | `false` | Accept a review whose base is not the current tip of the branch. Without it a change that is based on an older tip of the branch does not land. |
+| `allow_direct_update` | bool | `false` | Accept an update of the branch that is not a land, such as a push. Without it only a land may update the branch. |
+| `require_verified` | bool | `false` | The verification checkpoint of the branch must cover it: the checkpoint (`refs/graft/green/<branch>`, moved by graft-verify) must point at the tip the land builds on. |
+| `require_verified_result` | bool | `false` | The checkpoint must point at the commit the update produces, not at the tip it builds on: the branch takes a land only after the result of that very land was tested, which is the rule of a merge queue. It implies `require_verified`. A caller that does not name the result is refused with `result_unknown`; the hook always names it, and `graft gate check` names it with `--result`. A result the branch would no longer take, because the branch moved after it was computed, is refused with `stale_result`. |
+| `require_full_tree` | bool | `false` | The checkpoint must certify the whole tree of the commit it names: the tree the suite ran on (`refs/graft/green-tree/<branch>`) is the tree of that commit. A checkpoint that certifies no tree, or only part of one, is refused with `not_full_tree`. A suite that ran on a sparse checkout says nothing about the files it could not see, so a branch that asks this rule takes no land whose tree was not tested whole. |
+| `require_suites` | list of strings | empty | The suites the checkpoint must certify: the publisher names them with `graft green set --suite`, each in a reference of its own (`refs/graft/green-suite/<suite>/<branch>`), and a checkpoint that certifies only some of them is refused with `suites_missing`. A suite name is a reference component without a slash, such as `unit` or `integration`. It is the rule of a project whose change needs its unit suite and its integration suite. |
+
+The gate binds the callers that authenticated with a per-agent token, like the
+access policy does. The operator credential and the server's own operations are
+trusted, so a CI that lands with the shared token asks the same question with
+`graft gate check --branch B`, which the server answers with these rules and
+with the state of the branch (exit 0 when the change may land, 1 when the
+policy refuses it, 2 when the command line is wrong). `graft gate rules` prints
+the rules the server enforces.
+
+### `[graft.mirror]`
+
+The mirror policy: a repository is published to a mirror before it takes a
+push, and a mirror that falls behind holds the pushes back. The policy is
+decided by the reference-transaction hook, in its prepared phase, with the
+state the `MirrorService` holds: the targets of the repository, and the commit
+every mirror holds for every branch, recorded by `graft mirror push
+--mirror-target NAME` and by every `graft mirror queue run`. See
+[MIRROR.md](MIRROR.md).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `required` | bool | `false` | A repository that declares no mirror target, or whose mirrors never published successfully, takes no push. A push to a branch that no target publishes is a warning, not a refusal. |
+| `warn_lag` | int | `10` | A mirror this many commits behind the pushed branch warns the pusher, and the push goes through. A negative value turns the warning off; the warning is written to the stderr of the push. |
+| `deny_lag` | int | `0` (never) | A mirror this many commits behind refuses the push. It must be greater than `warn_lag`, so that a push is warned about before it is refused, and a server whose configuration refuses that at load time does not start. |
+
+The policy is off unless one of the three keys is set: a server that sets
+none of them takes every push. The refusals are the codes of
+`graft mirror status`, which asks the same question the hook decides and exits
+1 when a push would be refused.
 
 ### `[[graft.agent]]`
 

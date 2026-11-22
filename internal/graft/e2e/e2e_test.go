@@ -62,6 +62,11 @@ type exampleKey struct {
 // and the clients sign with these private keys, as a deployed agent would.
 var exampleKeys = map[string]exampleKey{}
 
+// exampleTokens is the compatibility view of exampleKeys used by tests that
+// grew out of the old bearer-token fixtures: its values are the agents'
+// private key paths, passed to WithAgentKey exactly like the new names.
+var exampleTokens = map[string]string{}
+
 // exampleKeysDir is the directory of the generated private keys.
 var exampleKeysDir string
 
@@ -84,6 +89,7 @@ func setupExampleKeys() error {
 			return err
 		}
 		exampleKeys[name] = exampleKey{privateKeyPath: path, publicKey: publicKey}
+		exampleTokens[name] = path
 	}
 
 	return nil
@@ -234,8 +240,8 @@ func startGitalyInMode(t *testing.T, graft config.Graft, sharedToken string, sta
 	}
 }
 
-// repoAs returns a handle to the repository whose requests carry token as a
-// plain agent bearer token. An empty token sends no authorization.
+// repoAs returns a handle to the repository whose requests carry token as an
+// agent private key path. An empty token sends no authorization.
 func (s gitalyStack) repoAs(t *testing.T, token string) *sdk.Repo {
 	t.Helper()
 
@@ -316,7 +322,7 @@ func landAs(ctx context.Context, repo *sdk.Repo, who, branch, commit string) (*s
 }
 
 // allChangesets pages through the changeset log with a small page size.
-func allChangesets(ctx context.Context, t *testing.T, repo *sdk.Repo) []*sdk.Changeset {
+func allChangesets(t *testing.T, ctx context.Context, repo *sdk.Repo) []*sdk.Changeset {
 	t.Helper()
 
 	var all []*sdk.Changeset
@@ -371,7 +377,7 @@ func startTier(t *testing.T, upstream string, cfg cachetier.Config) (string, *ca
 	server, err := cachetier.NewServer(conn, cfg)
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	grpcServer := cachetier.NewGRPCServer(server)
 	go func() { _ = grpcServer.Serve(listener) }()
@@ -500,7 +506,7 @@ func TestAgentIdentitiesAndDefaults(t *testing.T) {
 	_, err = landAs(s.ctx, builder, "builder", "feature/builder", feature)
 	require.NoError(t, err, "the builder may create and land on feature branches")
 
-	changesets := allChangesets(s.ctx, t, planner)
+	changesets := allChangesets(t, s.ctx, planner)
 	requireDense(t, changesets)
 
 	lands := landsOn(changesets, "refs/heads/main")
@@ -662,7 +668,7 @@ func TestTwentyConcurrentLands(t *testing.T) {
 	require.Empty(t, s.git(t, "rev-list", "--merges", "main"), "history must be linear")
 	require.Equal(t, fmt.Sprint(workers+1), s.git(t, "rev-list", "--count", "main"))
 
-	lands := landsOn(allChangesets(s.ctx, t, repos[0]), "refs/heads/main")
+	lands := landsOn(allChangesets(t, s.ctx, repos[0]), "refs/heads/main")
 	require.Len(t, lands, workers)
 	actors := make([]string, 0, len(lands))
 	for _, c := range lands {
@@ -800,7 +806,7 @@ func gitBlameCommits(t *testing.T, s gitalyStack, rev, path string) []string {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 3 || len(fields[0]) != 40 {
+		if len(fields) < 3 || len(fields[0]) != gittest.DefaultObjectHash.EncodedLen() {
 			continue
 		}
 		var final int
@@ -844,7 +850,7 @@ func TestChangesetLogHasAllLands(t *testing.T) {
 		tip = res.LandedCommitID
 	}
 
-	changesets := allChangesets(s.ctx, t, planner)
+	changesets := allChangesets(t, s.ctx, planner)
 	requireDense(t, changesets)
 
 	mainLands := landsOn(changesets, "refs/heads/main")
@@ -874,7 +880,7 @@ func TestWatchReceivesLiveUpdate(t *testing.T) {
 	commit, err := commitFile(s.ctx, planner, "planner", "watch/topic", base, "watched.txt", "live\n")
 	require.NoError(t, err)
 
-	existing := allChangesets(s.ctx, t, planner)
+	existing := allChangesets(t, s.ctx, planner)
 	cursor := existing[len(existing)-1].GetSequence()
 
 	watchCtx, cancel := context.WithCancel(s.ctx)
@@ -968,7 +974,7 @@ func TestPolicyDeniesProtectedBranch(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.BranchCreated)
 
-	for _, c := range landsOn(allChangesets(s.ctx, t, planner), "refs/heads/main") {
+	for _, c := range landsOn(allChangesets(t, s.ctx, planner), "refs/heads/main") {
 		require.NotEqual(t, "builder", c.GetActor(), "the denied land must not be recorded")
 	}
 }
@@ -1038,7 +1044,7 @@ func TestChangesetActorUsesTokenIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.BranchCreated)
 
-	changesets := allChangesets(s.ctx, t, builder)
+	changesets := allChangesets(t, s.ctx, builder)
 	requireDense(t, changesets)
 
 	var writes int
@@ -1090,7 +1096,7 @@ func TestWritesThroughTiers(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, res.BranchCreated)
 
-	lands := landsOn(allChangesets(s.ctx, t, planner), "refs/heads/main")
+	lands := landsOn(allChangesets(t, s.ctx, planner), "refs/heads/main")
 	require.Len(t, lands, 1)
 	require.Equal(t, "planner", lands[0].GetActor())
 }

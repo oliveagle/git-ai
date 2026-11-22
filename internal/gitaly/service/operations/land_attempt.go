@@ -111,23 +111,27 @@ func (s *Server) newLandingAttempt(ctx context.Context, repository *gitalypb.Rep
 	// One rebase engine serves the whole attempt, and the attempt ends with it.
 	rebaser := newBatchRebaser(quarantineRepo, mode)
 
+	// The closure ends the attempt: it releases the ancestry checker, closes the rebaser, and
+	// removes the quarantine.
+	end := func() {
+		releaseChecker()
+		if err := rebaser.Close(); err != nil {
+			s.logger.WithError(err).Error("graft: closing the rebaser of a landing attempt")
+		}
+		cleanup()
+	}
+
 	return &landingAttempt{
-			server:        s,
-			repository:    repository,
-			quarantineDir: quarantineDir,
-			repo:          quarantineRepo,
-			objectHash:    objectHash,
-			rebaser:       rebaser,
-			ancestry:      checker,
-			observe:       observe,
-			mode:          mode,
-		}, func() {
-			releaseChecker()
-			if err := rebaser.Close(); err != nil {
-				s.logger.WithError(err).Error("graft: closing the rebaser of a landing attempt")
-			}
-			cleanup()
-		}, nil
+		server:        s,
+		repository:    repository,
+		quarantineDir: quarantineDir,
+		repo:          quarantineRepo,
+		objectHash:    objectHash,
+		rebaser:       rebaser,
+		ancestry:      checker,
+		observe:       observe,
+		mode:          mode,
+	}, end, nil
 }
 
 // Tip returns the tip of the reference, read by its exact name (landBranchTip). A missing reference
@@ -239,7 +243,7 @@ func (a *landingAttempt) decide(ctx context.Context, tip git.ObjectID, req *land
 		// the merge conflict it would have got without resolution, with the conflict package as a
 		// second detail when the server listed the conflicts.
 		res, resolveErr := a.server.landApplyVerdicts(withLandInlineBudget(ctx, &a.inline), in, a.repo, tip, commitID, req.committer, req.preResolution)
-		var need *landNeedsResolution
+		var need *landNeedsResolutionError
 		if errors.As(resolveErr, &need) {
 			return landStep{}, need
 		}
@@ -322,7 +326,7 @@ func (a *landingAttempt) computeTip(ctx context.Context, in *gitalypb.UserLandRe
 	case gitalypb.UserLandRequest_STRATEGY_MERGE:
 		mergeMessage := string(in.GetMergeMessage())
 		if mergeMessage == "" {
-			mergeMessage = fmt.Sprintf("Merge commit '%s' into %s", commitID, string(in.GetBranch()))
+			mergeMessage = fmt.Sprintf("Merge commit %q into %s", commitID, string(in.GetBranch()))
 		}
 
 		mergeCommitID, err := a.server.merge(ctx, a.repo,

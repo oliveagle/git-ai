@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/feder-cr/git-ai/internal/grpc/metadata"
-	"github.com/feder-cr/git-ai/internal/log"
 	"google.golang.org/grpc"
 	grpcMetadata "google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/grpc/metadata"
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 // NewUnaryProxy creates a gRPC client middleware that proxies sidechannels.

@@ -109,7 +109,7 @@ func TestSeedPastItsDeadline(t *testing.T) {
 	close(f.release)
 
 	err := <-result
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "seed deadline passed")
 	_, ok, appliedErr := f.b.sy.Applied(f.b.ctx, f.b.pbRepo(localRelPath))
 	require.NoError(t, appliedErr)
@@ -134,7 +134,7 @@ func TestSeedOfARepositoryRemovedAndCreatedAgain(t *testing.T) {
 	close(f.release)
 
 	err = <-result
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "the repository was removed during the seed")
 
 	require.NoError(t, f.b.sy.EnsureFresh(f.b.ctx, f.b.pbRepo(localRelPath)))
@@ -238,7 +238,7 @@ func TestStopSeedsEndsTheSeedJobs(t *testing.T) {
 	<-stopped
 
 	err := <-result
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	tmpDir, tmpErr := f.b.locator.TempDir(f.b.storageName)
 	require.NoError(t, tmpErr)
 	builds, globErr := filepath.Glob(filepath.Join(tmpDir, "hydrate-*"))
@@ -246,7 +246,7 @@ func TestStopSeedsEndsTheSeedJobs(t *testing.T) {
 	require.Empty(t, builds, "the build directory is removed")
 
 	err = f.b.sy.EnsureFresh(f.b.ctx, f.b.pbRepo(localRelPath))
-	require.Equal(t, codes.Unavailable, status.Code(err), "%v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "%v", err)
 	require.ErrorContains(t, err, "the server is stopping")
 }
 

@@ -3,10 +3,11 @@ package refdb
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTree(t *testing.T) {

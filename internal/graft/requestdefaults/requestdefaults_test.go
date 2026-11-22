@@ -8,9 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/graft/identity"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -20,11 +17,11 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 	"google.golang.org/protobuf/types/known/structpb"
-)
 
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
+	"github.com/feder-cr/git-ai/internal/graft/identity"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+)
 
 func agentContext(t *testing.T, name string) context.Context {
 	t.Helper()

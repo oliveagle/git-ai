@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
-	"github.com/stretchr/testify/require"
 )
 
 // TestEngineRecoversFromBrokenMergeTreeStream merges a commit whose tree references a blob that was

@@ -42,22 +42,20 @@ func (s *Store) GCSnapshot(ctx context.Context, repoID int64) (corestore.GCState
 		if err != nil {
 			return fmt.Errorf("read changeset packs: %w", err)
 		}
+		defer rows.Close()
 		for rows.Next() {
 			var (
 				key string
 				seq int64
 			)
 			if err := rows.Scan(&key, &seq); err != nil {
-				rows.Close()
 				return fmt.Errorf("scan changeset pack: %w", err)
 			}
 			st.Packs[key] = uint64(seq)
 		}
 		if err := rows.Err(); err != nil {
-			rows.Close()
 			return fmt.Errorf("read changeset packs: %w", err)
 		}
-		rows.Close()
 
 		if st.Checkpoints, err = s.listCheckpoints(ctx, tx, repoID); err != nil {
 			return err

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-enry/go-enry/v2"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
@@ -15,7 +17,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/go-enry/go-enry/v2"
 )
 
 // ByteCountPerLanguage represents a counter value (bytes) per language.

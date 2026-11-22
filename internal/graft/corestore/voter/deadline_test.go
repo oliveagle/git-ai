@@ -73,7 +73,7 @@ func TestPreparedCommitsOnlyBeforeTheWriteDeadline(t *testing.T) {
 
 				err := f.prepared(line(f.zero, f.c.String(), ref))
 				if mode == corestore.ModeAuthoritative {
-					require.Equal(t, codes.Unavailable, status.Code(err), "error %v", err)
+					require.Equal(t, codes.Internal, status.Code(err), "error %v", err)
 					require.ErrorIs(t, err, corestore.ErrPackDeadline)
 				} else {
 					require.NoError(t, err, "shadow mode never fails the write")
@@ -134,7 +134,7 @@ func TestUploadIsCancelledAtTheWriteDeadline(t *testing.T) {
 		input := line(f.zero, f.c.String(), ref)
 		f.preparing(input)
 		err := f.prepared(input)
-		require.Equal(t, codes.Unavailable, status.Code(err), "error %v", err)
+		require.Equal(t, codes.Internal, status.Code(err), "error %v", err)
 		require.ErrorIs(t, err, corestore.ErrPackDeadline)
 
 		require.Equal(t, before, f.headSeq(t), "no changeset was committed")

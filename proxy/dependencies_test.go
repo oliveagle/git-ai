@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // The proxy package is imported by external modules, which must list every module in its dependency closure in their

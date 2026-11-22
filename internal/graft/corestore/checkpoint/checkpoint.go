@@ -104,7 +104,7 @@ func (c *Checkpointer) Create(ctx context.Context, repo *gitalypb.Repository) (c
 	}
 	backfill, _, err := reviewroots.DefaultSweeper.Housekeep(ctx, c.core, c.fresh, c.repoFactory.Build(repo), repo)
 	if err != nil {
-		return corestore.Checkpoint{}, false, structerr.NewUnavailable("storage core: backfill the review roots before the checkpoint: %w", err)
+		return corestore.Checkpoint{}, false, structerr.NewInternal("storage core: backfill the review roots before the checkpoint: %w", err)
 	}
 	for _, missing := range backfill.Missing {
 		logger.WithFields(log.Fields{"review_id": missing.ReviewID, "commit_id": missing.Commit}).
@@ -181,7 +181,7 @@ func (c *Checkpointer) Create(ctx context.Context, repo *gitalypb.Repository) (c
 		err = closeErr
 	}
 	if err != nil {
-		return corestore.Checkpoint{}, false, structerr.NewUnavailable("storage core: upload the checkpoint pack: %w", err)
+		return corestore.Checkpoint{}, false, structerr.NewInternal("storage core: upload the checkpoint pack: %w", err)
 	}
 	if err := c.fault(PointAfterUpload); err != nil {
 		return corestore.Checkpoint{}, false, err
@@ -190,7 +190,7 @@ func (c *Checkpointer) Create(ctx context.Context, repo *gitalypb.Repository) (c
 	// Step 5.
 	commitCtx, cancel, err := upload.CommitContext(ctx)
 	if err != nil {
-		return corestore.Checkpoint{}, false, structerr.NewUnavailable("%w", err)
+		return corestore.Checkpoint{}, false, structerr.NewInternal("%w", err)
 	}
 	defer cancel()
 
@@ -288,7 +288,7 @@ func errRepository(err error) error {
 	if errors.Is(err, corestore.ErrRepositoryNotFound) {
 		return structerr.NewNotFound("the repository is not tracked by the storage core")
 	}
-	return structerr.NewUnavailable("storage core: %w", err)
+	return structerr.NewInternal("storage core: %w", err)
 }
 
 // errRemoved is the error of a build whose repository was removed (and

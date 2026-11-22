@@ -9,10 +9,11 @@ import (
 	"io"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ReceivePackStatsPrefixSize is the number of leading bytes of a

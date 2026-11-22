@@ -65,7 +65,9 @@ func TestPolicyReloadOnSignal(t *testing.T) {
 func metricOrZero(t *testing.T, n *realNode, name string) float64 {
 	t.Helper()
 
-	resp, err := http.Get("http://" + n.cfg.PrometheusListenAddr + "/metrics")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+n.cfg.PrometheusListenAddr+"/metrics", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)

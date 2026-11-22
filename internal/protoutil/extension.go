@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/runtime/protoimpl"
 	"google.golang.org/protobuf/types/descriptorpb"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // GetOpExtension gets the OperationMsg from a method descriptor

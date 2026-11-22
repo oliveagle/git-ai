@@ -8,10 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/internal/transaction/voting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/internal/transaction/voting"
 )
 
 func TestSubtransaction_cancel(t *testing.T) {

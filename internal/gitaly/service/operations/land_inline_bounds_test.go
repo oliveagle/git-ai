@@ -47,7 +47,7 @@ func newInlineProbe(t *testing.T, mode string, tune func(*config.GraftResolver))
 	return inlineProbe{fx: fx, s: s, dir: dir, l: l}
 }
 
-func (p inlineProbe) resolve(ctx context.Context, t *testing.T, pre *landPreResolution) landInlineResult {
+func (p inlineProbe) resolve(t *testing.T, ctx context.Context, pre *landPreResolution) landInlineResult {
 	t.Helper()
 	return p.s.landResolveInline(ctx, p.fx.request("Land"), p.fx.tip, p.fx.commit, p.l, pre)
 }
@@ -77,7 +77,7 @@ func TestLandResolveInline_aReplyThatIsNotTheRulesIsRejected(t *testing.T) {
 
 			p := newInlineProbe(t, mode, nil)
 			pre := newLandPreResolution()
-			require.Equal(t, landInlineRulesCannot, p.resolve(p.fx.ctx, t, pre))
+			require.Equal(t, landInlineRulesCannot, p.resolve(t, p.fx.ctx, pre))
 			require.Empty(t, pre.verdicts, "nothing of the reply is kept")
 			require.False(t, p.s.landInlineOff.Load(), "the resolver did honour the request")
 			require.Equal(t, 1, inlineCalls(t, p.dir))
@@ -92,7 +92,7 @@ func TestLandResolveInline_announcesOnlyTheOrigin(t *testing.T) {
 	t.Parallel()
 
 	p := newInlineProbe(t, "", nil)
-	require.Equal(t, landInlineResolved, p.resolve(p.fx.ctx, t, newLandPreResolution()))
+	require.Equal(t, landInlineResolved, p.resolve(t, p.fx.ctx, newLandPreResolution()))
 
 	reqs, err := filepath.Glob(filepath.Join(p.dir, "req-*.json"))
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestLandResolveInline_aResolverThatRefusesIsRulesCannot(t *testing.T) {
 
 	p := newInlineProbe(t, "refuse", nil)
 	pre := newLandPreResolution()
-	require.Equal(t, landInlineRulesCannot, p.resolve(p.fx.ctx, t, pre))
+	require.Equal(t, landInlineRulesCannot, p.resolve(t, p.fx.ctx, pre))
 	require.Empty(t, pre.verdicts)
 	require.False(t, p.s.landInlineOff.Load())
 }
@@ -135,7 +135,7 @@ func TestLandResolveInline_aBatchLosesAtMostItsBudget(t *testing.T) {
 	calls := countInlineCalls(p.s)
 
 	for i := 0; i < members; i++ {
-		require.Equal(t, landInlineSlow, p.resolve(ctx, t, newLandPreResolution()), "member %d", i+1)
+		require.Equal(t, landInlineSlow, p.resolve(t, ctx, newLandPreResolution()), "member %d", i+1)
 	}
 
 	// One call, so the lane stalled once for it, not once per member (six at 300 ms would be 1.8 s).
@@ -143,7 +143,7 @@ func TestLandResolveInline_aBatchLosesAtMostItsBudget(t *testing.T) {
 	require.GreaterOrEqual(t, budget.lost, 250*time.Millisecond)
 
 	// The next batch attempt has a budget of its own.
-	require.Equal(t, landInlineSlow, p.resolve(withLandInlineBudget(p.fx.ctx, &landInlineBudget{}), t, newLandPreResolution()))
+	require.Equal(t, landInlineSlow, p.resolve(t, withLandInlineBudget(p.fx.ctx, &landInlineBudget{}), newLandPreResolution()))
 	require.EqualValues(t, 2, calls.Load())
 }
 
@@ -157,7 +157,7 @@ func TestLandResolveInline_aBatchOfFastRulesIsNotCutShort(t *testing.T) {
 	budget := &landInlineBudget{}
 	ctx := withLandInlineBudget(p.fx.ctx, budget)
 	for i := 0; i < 4; i++ {
-		require.Equal(t, landInlineResolved, p.resolve(ctx, t, newLandPreResolution()), "member %d", i+1)
+		require.Equal(t, landInlineResolved, p.resolve(t, ctx, newLandPreResolution()), "member %d", i+1)
 	}
 	require.Positive(t, budget.lost, "the time of the calls is charged")
 	require.Less(t, budget.lost, 30*time.Second)
@@ -178,7 +178,7 @@ func TestLandResolveInline_neverWaitsForASlot(t *testing.T) {
 		require.NoError(t, err)
 		held = append(held, slot)
 	}
-	require.Equal(t, landInlineResolved, p.resolve(p.fx.ctx, t, newLandPreResolution()), "the resolve pool is not the lane's")
+	require.Equal(t, landInlineResolved, p.resolve(t, p.fx.ctx, newLandPreResolution()), "the resolve pool is not the lane's")
 	for _, slot := range held {
 		slot.Release()
 	}
@@ -195,7 +195,7 @@ func TestLandResolveInline_neverWaitsForASlot(t *testing.T) {
 	}
 	require.NotEmpty(t, own)
 	done := make(chan landInlineResult, 1)
-	go func() { done <- p.resolve(p.fx.ctx, t, newLandPreResolution()) }()
+	go func() { done <- p.resolve(t, p.fx.ctx, newLandPreResolution()) }()
 	select {
 	case res := <-done:
 		require.Equal(t, landInlineSlow, res)
@@ -206,7 +206,7 @@ func TestLandResolveInline_neverWaitsForASlot(t *testing.T) {
 	for _, slot := range own {
 		slot.Release()
 	}
-	require.Equal(t, landInlineResolved, p.resolve(p.fx.ctx, t, newLandPreResolution()), "the slots were given back")
+	require.Equal(t, landInlineResolved, p.resolve(t, p.fx.ctx, newLandPreResolution()), "the slots were given back")
 }
 
 // TestUserLand_aLandNeedingAModelDoesNotHoldBackTheUnionLands: one land on a hot file needs a model (the
@@ -543,16 +543,16 @@ func TestLandResolveInline_aSlowRuleThatSucceedsIsChargedToTheBudget(t *testing.
 	}
 
 	// The first member is given the whole timeout, its rule ends, and the time of the call is charged.
-	require.Equal(t, landInlineResolved, p.resolve(ctx, t, newLandPreResolution()), "a rule that ends in time is taken")
+	require.Equal(t, landInlineResolved, p.resolve(t, ctx, newLandPreResolution()), "a rule that ends in time is taken")
 	require.Positive(t, budget.lost, "the time of a call that succeeds is charged")
 	// A slow call would have charged 29 s: the next member is given what is left, 1 s.
 	budget.lost = 29 * time.Second
-	require.Equal(t, landInlineResolved, p.resolve(ctx, t, newLandPreResolution()))
+	require.Equal(t, landInlineResolved, p.resolve(t, ctx, newLandPreResolution()))
 	require.Equal(t, []time.Duration{timeout, timeout - 29*time.Second}, given, "each member is given the rest of the budget")
 	// And that one spent it: the other members go out of the lane without a call.
 	budget.lost = timeout
 	for i := 2; i < members; i++ {
-		require.Equal(t, landInlineSlow, p.resolve(ctx, t, newLandPreResolution()), "member %d", i+1)
+		require.Equal(t, landInlineSlow, p.resolve(t, ctx, newLandPreResolution()), "member %d", i+1)
 	}
 	require.EqualValues(t, 2, calls.Load(), "the members that found the budget spent did not call")
 }
@@ -565,7 +565,44 @@ func TestUserLand_aRuleSlowerThanTheTimeoutLandsOnAHotFile(t *testing.T) {
 	t.Parallel()
 
 	const stream = 60
-	q := newQueueFixtureMode(t, stream, "slowrule", func(c *config.GraftResolver) { c.InlineTimeout = "500ms" })
+	var s *Server
+	operationServerHooks.Store(t.Name(), func(served *Server) { s = served })
+	// No clock cuts a call, and nothing here waits for a duration: the slow rule is cut by the test, each time the
+	// resolver has started it in the lane (it has logged it in inline-slow.log), and the test waits for the lands
+	// to end, a hang being the test binary's own timeout to report. (With a real 500 ms a loaded machine cut the
+	// fast calls too, and 60 lands then took longer than any bound written here.)
+	q := newQueueFixtureMode(t, stream, "slowrule", func(c *config.GraftResolver) { c.InlineTimeout = "30s" })
+	require.NotNil(t, s)
+	var mu sync.Mutex
+	var inflight []context.CancelFunc
+	s.landInlineCallContext = func(ctx context.Context, allowed time.Duration) (context.Context, context.CancelFunc) {
+		callCtx, cancel := context.WithTimeout(ctx, allowed)
+		mu.Lock()
+		defer mu.Unlock()
+		inflight = append(inflight, cancel)
+		return callCtx, cancel
+	}
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() {
+		cut := 0
+		for {
+			raw, _ := os.ReadFile(filepath.Join(q.dir, "inline-slow.log"))
+			if started := len(raw) / 2; started > cut {
+				cut = started
+				mu.Lock()
+				for _, cancel := range inflight {
+					cancel()
+				}
+				mu.Unlock()
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
 	slow := gittest.WriteCommit(t, q.cfg, q.repoPath, gittest.WithParents(q.base),
 		gittest.WithTreeEntries(
 			gittest.TreeEntry{Mode: "100644", Path: "a", Content: "slowrule-1\n"},
@@ -576,8 +613,14 @@ func TestUserLand_aRuleSlowerThanTheTimeoutLandsOnAHotFile(t *testing.T) {
 		_, err := q.land(slow)
 		slowDone <- err
 	}()
-	// The slow land is resolving out of the lane (the lane gave up its rule at the timeout).
-	require.Eventually(t, func() bool { return unionCalls(t, q.dir)-inlineCalls(t, q.dir) >= 1 }, 60*time.Second, 5*time.Millisecond)
+	// The slow land is resolving out of the lane (the lane gave up its rule when the test cut it).
+	for unionCalls(t, q.dir)-inlineCalls(t, q.dir) < 1 {
+		select {
+		case err := <-slowDone:
+			t.Fatalf("the slow land ended before it was seen resolving out of the lane: %v", err)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 
 	var landed atomic.Int32
 	streamDone := make(chan error, 1)
@@ -592,20 +635,10 @@ func TestUserLand_aRuleSlowerThanTheTimeoutLandsOnAHotFile(t *testing.T) {
 		streamDone <- nil
 	}()
 
-	select {
-	case err := <-slowDone:
-		require.NoError(t, err, "the slow rule's land")
-	case <-time.After(120 * time.Second):
-		t.Fatal("the land with the slow rule did not end")
-	}
+	require.NoError(t, <-slowDone, "the slow rule's land")
 	require.Less(t, int(landed.Load()), stream, "the slow land landed while the stream of the others was going: they gave way")
 
-	select {
-	case err := <-streamDone:
-		require.NoError(t, err)
-	case <-time.After(120 * time.Second):
-		t.Fatal("the others did not end")
-	}
+	require.NoError(t, <-streamDone)
 	got := q.branchBlob(t, "a")
 	require.Contains(t, got, "slowrule-1")
 	require.Len(t, strings.Split(got, "\n"), stream+2, "ours, the slow rule's line and every other land's")
@@ -698,7 +731,7 @@ func TestLandApplyVerdicts_theHolderWithPriorityDoesNotAskTheRulesInTheLane(t *t
 	ticket.setPriority()
 	held := newLandPreResolution()
 	held.ticket = ticket
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, apply(held), &need)
 	require.NotEmpty(t, need.paths)
 	require.False(t, need.queued)

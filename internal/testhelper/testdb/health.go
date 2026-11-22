@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 )
 
 // SetHealthyNodes sets the healthy nodes in the database as determined by the passed in map. The healthyNodes map is keyed by

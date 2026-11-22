@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestMain(m *testing.M) {

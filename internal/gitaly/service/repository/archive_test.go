@@ -16,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
@@ -35,9 +39,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"github.com/stretchr/testify/require"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/grpc"
 )
 
 func TestGetArchive(t *testing.T) {

@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // collectPathHistory returns the IDs of the commits PathHistory reports.
-func collectPathHistory(ctx context.Context, tb testing.TB, deriver *Deriver, start git.ObjectID, path string, limit int) []string {
+func collectPathHistory(tb testing.TB, ctx context.Context, deriver *Deriver, start git.ObjectID, path string, limit int) []string {
 	tb.Helper()
 
 	var ids []string
@@ -41,7 +42,7 @@ func requireMatchesGitPathHistory(
 	for _, name := range names {
 		for _, path := range paths {
 			want := gitFirstParentPathHistory(tb, cfg, repoPath, ids[name], path)
-			got := collectPathHistory(ctx, tb, deriver, ids[name], path, 1000)
+			got := collectPathHistory(tb, ctx, deriver, ids[name], path, 1000)
 			require.Equal(tb, want, got, "path history of %q at %s", path, name)
 		}
 	}
@@ -83,11 +84,11 @@ func TestPathHistory_LimitAndMissingPath(t *testing.T) {
 	ids := writeHistory(t, cfg, repoPath, commits)
 	deriver := newTestDeriver(t, ctx, cfg, repo, true)
 
-	all := collectPathHistory(ctx, t, deriver, ids["c9"], "a", 100)
+	all := collectPathHistory(t, ctx, deriver, ids["c9"], "a", 100)
 	require.Equal(t, []string{ids["c8"].String(), ids["c6"].String(), ids["c4"].String(), ids["c2"].String(), ids["c0"].String()}, all)
 
-	require.Equal(t, all[:2], collectPathHistory(ctx, t, deriver, ids["c9"], "a", 2))
-	require.Empty(t, collectPathHistory(ctx, t, deriver, ids["c9"], "missing", 100))
+	require.Equal(t, all[:2], collectPathHistory(t, ctx, deriver, ids["c9"], "a", 2))
+	require.Empty(t, collectPathHistory(t, ctx, deriver, ids["c9"], "missing", 100))
 }
 
 func TestPathHistory_LongLinearHistory(t *testing.T) {
@@ -107,7 +108,7 @@ func TestPathHistory_LongLinearHistory(t *testing.T) {
 	}))
 
 	deriver := newTestDeriver(t, ctx, cfg, repo, true)
-	got := collectPathHistory(ctx, t, deriver, ids[fmt.Sprintf("c%d", length-1)], "a", 1000)
+	got := collectPathHistory(t, ctx, deriver, ids[fmt.Sprintf("c%d", length-1)], "a", 1000)
 	require.Len(t, got, 20)
 	require.Equal(t, ids["c1900"].String(), got[0])
 	require.Equal(t, ids["c0"].String(), got[19])

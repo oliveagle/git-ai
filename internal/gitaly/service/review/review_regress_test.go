@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 // tree writes a commit with the given tree entries, which may carry any file
@@ -28,9 +29,9 @@ func (h *harness) tree(parents []git.ObjectID, branch string, entries ...gittest
 }
 
 // verdictCurrent returns whether the first verdict of the review is current.
-func verdictCurrent(t testing.TB, r *gitalypb.Review) bool {
-	t.Helper()
-	require.NotEmpty(t, r.GetVerdicts())
+func verdictCurrent(tb testing.TB, r *gitalypb.Review) bool {
+	tb.Helper()
+	require.NotEmpty(tb, r.GetVerdicts())
 	return r.GetVerdicts()[0].GetCurrent()
 }
 
@@ -229,24 +230,24 @@ func TestSpecRegressSameCommitVerdictsAgree(t *testing.T) {
 	}
 }
 
-func classOf(t testing.TB, r *gitalypb.Review, path string) gitalypb.ReviewFile_ChangeClass {
-	t.Helper()
+func classOf(tb testing.TB, r *gitalypb.Review, path string) gitalypb.ReviewFile_ChangeClass {
+	tb.Helper()
 	for _, f := range r.GetFiles() {
 		if string(f.GetPath()) == path {
 			return f.GetClass()
 		}
 	}
-	t.Fatalf("file %q is not a file of the review", path)
+	tb.Fatalf("file %q is not a file of the review", path)
 	return gitalypb.ReviewFile_CHANGE_CLASS_CODE_UNSPECIFIED
 }
 
-func classReason(t testing.TB, r *gitalypb.Review, path string) string {
-	t.Helper()
+func classReason(tb testing.TB, r *gitalypb.Review, path string) string {
+	tb.Helper()
 	for _, f := range r.GetFiles() {
 		if string(f.GetPath()) == path {
 			return f.GetReason()
 		}
 	}
-	t.Fatalf("file %q is not a file of the review", path)
+	tb.Fatalf("file %q is not a file of the review", path)
 	return ""
 }

@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -25,7 +26,7 @@ func buildGraftCacheSpec(t *testing.T) string {
 	}
 	bin := filepath.Join(t.TempDir(), name)
 
-	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin, ".")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-buildvcs=false", "-o", bin, ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("building graft-cache failed: %v\n%s", err, out)
 	}
@@ -49,7 +50,8 @@ func runGraftCacheSpec(t *testing.T, bin string, args ...string) (string, int) {
 	if err == nil {
 		return buf.String(), 0
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
+	ee := &exec.ExitError{}
+	if errors.As(err, &ee) {
 		return buf.String(), ee.ExitCode()
 	}
 	t.Fatalf("running graft-cache %v: %v", args, err)

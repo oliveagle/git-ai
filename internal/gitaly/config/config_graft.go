@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
 )
 
 // Graft configures the Graft extensions: the changes that turn Gitaly into a
@@ -25,6 +27,10 @@ type Graft struct {
 	// first rule whose Actor and Refs both match decides. When Policy is
 	// empty every authenticated actor may update every reference.
 	Policy []GraftPolicyRule `json:"policy" toml:"policy,omitempty"`
+	// Branches are the branch management rules: what may update a branch, and
+	// what a change must carry to land on it. A branch without a rule is not
+	// managed: it is updated as any other reference.
+	Branches []GraftBranchRule `json:"branches" toml:"branch,omitempty"`
 	// Agents are the per-agent credentials accepted by the gRPC server. Every
 	// agent is an SSH key pair: the server holds the public key and verifies
 	// the signature of every request of the agent, and the agent name
@@ -60,6 +66,10 @@ type Graft struct {
 	AdminToken string `json:"admin_token" toml:"admin_token,omitempty"`
 	// AdminTokenFile is a file containing the super admin's secret.
 	AdminTokenFile string `json:"admin_token_file" toml:"admin_token_file,omitempty"`
+	// Mirror is the mirror policy: every repository is published to a
+	// mirror, and a mirror that falls behind holds the pushes back
+	// (doc/graft/MIRROR.md).
+	Mirror GraftMirror `json:"mirror" toml:"mirror,omitempty"`
 }
 
 // GraftSearch configures code search.
@@ -568,6 +578,9 @@ func (g Graft) Validate() error {
 		}
 	}
 
+	if err := g.ValidateBranches(); err != nil {
+		return err
+	}
 	if err := g.Land.Batch.validate(); err != nil {
 		return err
 	}
@@ -581,6 +594,9 @@ func (g Graft) Validate() error {
 		return fmt.Errorf("graft derived: workers and queue_size must not be negative")
 	}
 	if err := g.Storage.validate(g.Standalone); err != nil {
+		return err
+	}
+	if err := g.Mirror.validate(); err != nil {
 		return err
 	}
 
@@ -648,6 +664,82 @@ func (g Graft) validateAdminToken() error {
 		}
 	}
 	return nil
+}
+
+// ValidateBranches reports malformed branch rules: a rule without a name, a
+// name that is not a branch name, a negative number of approvals, or two rules
+// for one branch (the first one would decide and the second one would never be
+// read). It is what Validate runs, and what a reload of the rules checks before
+// it puts them in force.
+func (g Graft) ValidateBranches() error {
+	seen := make(map[string]bool, len(g.Branches))
+	for i, rule := range g.Branches {
+		if rule.Name == "" {
+			return fmt.Errorf("graft branch rule %d: name is required", i+1)
+		}
+		if strings.HasPrefix(rule.Name, "refs/") {
+			return fmt.Errorf("graft branch rule %d: name %q is a reference name, a branch name is expected", i+1, rule.Name)
+		}
+		if !validBranchName(rule.Name) {
+			return fmt.Errorf("graft branch rule %d: name %q is not a valid branch name", i+1, rule.Name)
+		}
+		if rule.RequireApprovals < 0 {
+			return fmt.Errorf("graft branch rule %d: require_approvals must not be negative", i+1)
+		}
+		suites := make(map[string]bool, len(rule.RequireSuites))
+		for _, suite := range rule.RequireSuites {
+			if !greenref.ValidSuiteName(suite) {
+				return fmt.Errorf("graft branch rule %d: suite %q is not a valid suite name", i+1, suite)
+			}
+			if suites[suite] {
+				return fmt.Errorf("graft branch rule %d: suite %q is required twice", i+1, suite)
+			}
+			suites[suite] = true
+		}
+
+		// Tree and suite evidence means nothing unless it is tied to the branch
+		// or to the result of the update. Requiring it alone would let a land
+		// through on an old checkpoint, or deny every update for a reason that
+		// no CI can repair by verifying the change.
+		if (rule.RequireFullTree || len(rule.RequireSuites) > 0) &&
+			!rule.RequireVerified && !rule.RequireVerifiedResult {
+			return fmt.Errorf("graft branch rule %d: require_full_tree and require_suites need require_verified_result or require_verified", i+1)
+		}
+
+		// A suite certified on a tree the checkpoint does not certify whole is
+		// exactly the sparse evidence a branch must not take.
+		if len(rule.RequireSuites) > 0 && !rule.RequireFullTree {
+			return fmt.Errorf("graft branch rule %d: require_suites needs require_full_tree", i+1)
+		}
+
+		if seen[rule.Name] {
+			return fmt.Errorf("graft branch rule %d: branch %q has more than one rule", i+1, rule.Name)
+		}
+		seen[rule.Name] = true
+	}
+
+	return nil
+}
+
+// validBranchName reports whether name is usable as a branch name: a
+// slash-separated path of valid reference components.
+func validBranchName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") ||
+		strings.Contains(name, "//") || strings.Contains(name, "..") ||
+		strings.HasSuffix(name, ".") || strings.Contains(name, "@{") {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(" ~^:?*[\\", r) {
+			return false
+		}
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || part == "." || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	return true
 }
 
 func (r GraftResolver) validate() error {
@@ -863,6 +955,57 @@ type GraftPolicyRule struct {
 	Refs []string `json:"refs" toml:"refs,omitempty"`
 	// Allow decides whether matching updates are allowed or denied.
 	Allow bool `json:"allow" toml:"allow,omitempty"`
+}
+
+// GraftBranchRule is the management policy of one branch: what may update it,
+// and what a change must carry to land on it. The reference-transaction hook
+// decides every update of the branch with it (doc/graft/BRANCHES.md).
+type GraftBranchRule struct {
+	// Name is the branch the rule governs, without the refs/heads/ prefix,
+	// such as "main".
+	Name string `json:"name" toml:"name,omitempty"`
+	// RequireReview demands a review of the change that lands on the branch,
+	// approved by the approval rules of [graft.review].
+	RequireReview bool `json:"require_review" toml:"require_review,omitempty"`
+	// RequireApprovals is the number of current approvals the review of the
+	// change must carry, on top of the approvals the approval rules ask for.
+	// Zero asks for none.
+	RequireApprovals int32 `json:"require_approvals" toml:"require_approvals,omitempty"`
+	// AllowStaleBase accepts a review whose base is not the current tip of the
+	// branch. Without it a change that is based on an older tip of the branch
+	// does not land, so that a review always covers what the branch holds.
+	AllowStaleBase bool `json:"allow_stale_base" toml:"allow_stale_base,omitempty"`
+	// AllowDirectUpdate accepts an update of the branch that is not a land,
+	// such as a push. Without it only a land may update the branch.
+	AllowDirectUpdate bool `json:"allow_direct_update" toml:"allow_direct_update,omitempty"`
+	// RequireVerified demands that the verification checkpoint of the branch
+	// covers the branch: the checkpoint (refs/graft/green/<branch>, moved by
+	// graft-verify) must point at the tip the land builds on. Without it a
+	// change may land on a branch whose last verification failed.
+	RequireVerified bool `json:"require_verified" toml:"require_verified,omitempty"`
+	// RequireVerifiedResult demands more than RequireVerified: the
+	// checkpoint must cover the commit the update produces, not only the
+	// tip it builds on, so a change lands only after the result of that very
+	// land was tested. It is the rule of a merge queue, and it implies
+	// RequireVerified. An update whose result the caller does not name (a
+	// dry-run land, and the hook, name it) is refused.
+	RequireVerifiedResult bool `json:"require_verified_result" toml:"require_verified_result,omitempty"`
+	// RequireFullTree demands that the verification checkpoint certify the
+	// whole tree of the commit it names: the publisher has to say which tree
+	// the suite ran on, and that tree has to be the tree of the checkpoint
+	// commit. A suite that ran on part of the tree says nothing about the
+	// rest, so a checkpoint that certifies no tree, or only part of one, is
+	// refused. It is the rule of a project whose tests must see everything,
+	// and it goes with RequireVerifiedResult in a merge queue.
+	RequireFullTree bool `json:"require_full_tree" toml:"require_full_tree,omitempty"`
+	// RequireSuites demands that the verification checkpoint certify every
+	// named suite: the publisher says which suites ran on the tree it
+	// certifies (graft green set --suite), and a rule that names suites
+	// refuses a land whose checkpoint certifies only some of them. It is the
+	// rule of a project whose change needs its unit suite and its integration
+	// suite, and it goes with RequireVerifiedResult in a merge queue: the
+	// suites are the ones that ran on the commit the land writes.
+	RequireSuites []string `json:"require_suites" toml:"require_suites,omitempty"`
 }
 
 // GraftAgent is one agent credential.

@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package gitaly;
+
+import "lint.proto";
+import "shared.proto";
+
+option go_package = "github.com/feder-cr/git-ai/proto/go/gitalypb";
+
+// MirrorService administers the mirrors of a repository: the targets it is
+// published to, and the state of their last publication. The mirror policy of
+// the server refuses a push to a repository that has no mirror, or whose
+// mirror is too far behind (doc/graft/MIRROR.md). Its RPCs are for operators;
+// agents may not call them.
+service MirrorService {
+
+  // RegisterTarget records a mirror target of a repository, or replaces the
+  // target that has that name. The state of the last publication of the
+  // target is kept.
+  rpc RegisterTarget(RegisterMirrorTargetRequest) returns (RegisterMirrorTargetResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // UnregisterTarget removes a mirror target of a repository. The state of
+  // its last publication is kept: it says what the repository published.
+  rpc UnregisterTarget(UnregisterMirrorTargetRequest) returns (UnregisterMirrorTargetResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // ListTargets lists the mirror targets of a repository and the state of
+  // their last publication, with how far every mirror is behind.
+  rpc ListTargets(ListMirrorTargetsRequest) returns (ListMirrorTargetsResponse) {
+    option (op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+}
+
+// MirrorTarget is one mirror of a repository, with the state of its last
+// publication.
+message MirrorTarget {
+  // name identifies the target in the repository.
+  string name = 1;
+  // url is the Git URL of the mirror, without the user information of the
+  // URL.
+  string url = 2;
+  // branches are the branch patterns the mirror may publish, without a
+  // refs/heads/ prefix. "*" is a wildcard.
+  repeated string branches = 3;
+  // enabled tells whether the target is published.
+  bool enabled = 4;
+  // status is the outcome of the last publication: "ok", "diverged" or
+  // "failed". It is empty when the target never published.
+  string status = 5;
+  // error is the reason of the last failure.
+  string error = 6;
+  // published_at is when the mirror was published last, as RFC 3339. It is
+  // empty when the target never published.
+  string published_at = 7;
+  // published is the commit the mirror holds for every branch it published.
+  map<string, string> published = 8;
+  // lag is the number of commits of the branch the mirror does not hold.
+  int32 lag = 9;
+  // diverged tells whether the mirror holds the branch at a commit the
+  // repository does not have: it was published elsewhere, or the branch was
+  // rewritten.
+  bool diverged = 10;
+}
+
+// MirrorPolicy is the mirror policy the server enforces, as the client reads
+// it to explain what a push meets.
+message MirrorPolicy {
+  // required refuses a push to a repository that has no mirror target, or
+  // whose mirrors never published successfully.
+  bool required = 1;
+  // warn_lag is the number of commits a mirror may be behind before a push
+  // is warned about.
+  int32 warn_lag = 2;
+  // deny_lag is the number of commits a mirror may be behind before a push
+  // is refused. Zero turns the refusal off.
+  int32 deny_lag = 3;
+}
+
+// RegisterMirrorTargetRequest is a request for RegisterTarget.
+message RegisterMirrorTargetRequest {
+  // repository is the repository the mirror publishes.
+  Repository repository = 1 [(target_repository)=true];
+  // name identifies the target in the repository.
+  string name = 2;
+  // url is the Git URL of the mirror.
+  string url = 3;
+  // branches are the branch patterns the mirror may publish.
+  repeated string branches = 4;
+  // enabled tells whether the target is published. A disabled target is
+  // ignored by the mirror policy.
+  bool enabled = 5;
+}
+
+// RegisterMirrorTargetResponse is a response for RegisterTarget.
+message RegisterMirrorTargetResponse {
+  // target is the target as it was recorded.
+  MirrorTarget target = 1;
+}
+
+// UnregisterMirrorTargetRequest is a request for UnregisterTarget.
+message UnregisterMirrorTargetRequest {
+  // repository is the repository the mirror publishes.
+  Repository repository = 1 [(target_repository)=true];
+  // name identifies the target in the repository.
+  string name = 2;
+}
+
+// UnregisterMirrorTargetResponse is a response for UnregisterTarget.
+message UnregisterMirrorTargetResponse {
+}
+
+// ListMirrorTargetsRequest is a request for ListTargets.
+message ListMirrorTargetsRequest {
+  // repository is the repository whose mirrors are asked for.
+  Repository repository = 1 [(target_repository)=true];
+  // branch is the branch the lag is measured for, without the refs/heads/
+  // prefix. Empty measures it for the default branch of the repository.
+  string branch = 2;
+}
+
+// ListMirrorTargetsResponse is a response for ListTargets.
+message ListMirrorTargetsResponse {
+  // targets are the mirror targets of the repository, by name.
+  repeated MirrorTarget targets = 1;
+  // policy is the mirror policy the server enforces.
+  MirrorPolicy policy = 2;
+  // branch is the branch the lag was measured for, without the refs/heads/
+  // prefix: the one the request named, or the default branch of the
+  // repository.
+  string branch = 3;
+}

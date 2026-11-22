@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -20,8 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 // harness runs a ReviewService and a repository to review.
@@ -116,10 +117,10 @@ func (h *harness) create(head git.ObjectID) *gitalypb.Review {
 	return resp.GetReview()
 }
 
-func requireCode(t testing.TB, err error, code string) {
-	t.Helper()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), code)
+func requireCode(tb testing.TB, err error, code string) {
+	tb.Helper()
+	require.Error(tb, err)
+	require.Contains(tb, err.Error(), code)
 }
 
 func TestSpecCreateReviewClassifiesAndEvaluates(t *testing.T) {

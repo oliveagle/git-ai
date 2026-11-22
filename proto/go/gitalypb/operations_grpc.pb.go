@@ -51,7 +51,7 @@ type OperationServiceClient interface {
 	// hooks and contacts Rails to verify that the user is allowed to create the branch. The
 	// following known error conditions may happen:
 	//
-	//   - `FailedPrecondition` if the Git revision provided in start_point can't be found or updated.
+	//   - `FailedPrecondition` if start_point can't be resolved to a commit or the branch can't be updated.
 	//   - `InvalidArgument` if the commit ID resolved from the start_point can't be parsed.
 	//   - `PermissionDenied` with an embedded `UserCreateBranchError` if any custom hooks return a
 	//     non-zero exit code.
@@ -198,6 +198,11 @@ type OperationServiceClient interface {
 	//     exhausted (reference_update).
 	//   - `PermissionDenied` with a detailed UserLandError if hooks reject the
 	//     update (custom_hook or access_check).
+	//
+	// With dry_run set, the server does none of that: it computes the commit the
+	// request would produce, makes it readable, and returns it without updating
+	// the branch. It is what a merge queue needs to verify the result of a land
+	// before it lands (doc/graft/BRANCHES.md, "Verifying the result of a land").
 	UserLand(ctx context.Context, in *UserLandRequest, opts ...grpc.CallOption) (*UserLandResponse, error)
 }
 
@@ -404,7 +409,7 @@ type OperationServiceServer interface {
 	// hooks and contacts Rails to verify that the user is allowed to create the branch. The
 	// following known error conditions may happen:
 	//
-	//   - `FailedPrecondition` if the Git revision provided in start_point can't be found or updated.
+	//   - `FailedPrecondition` if start_point can't be resolved to a commit or the branch can't be updated.
 	//   - `InvalidArgument` if the commit ID resolved from the start_point can't be parsed.
 	//   - `PermissionDenied` with an embedded `UserCreateBranchError` if any custom hooks return a
 	//     non-zero exit code.
@@ -551,6 +556,11 @@ type OperationServiceServer interface {
 	//     exhausted (reference_update).
 	//   - `PermissionDenied` with a detailed UserLandError if hooks reject the
 	//     update (custom_hook or access_check).
+	//
+	// With dry_run set, the server does none of that: it computes the commit the
+	// request would produce, makes it readable, and returns it without updating
+	// the branch. It is what a merge queue needs to verify the result of a land
+	// before it lands (doc/graft/BRANCHES.md, "Verifying the result of a land").
 	UserLand(context.Context, *UserLandRequest) (*UserLandResponse, error)
 	mustEmbedUnimplementedOperationServiceServer()
 }

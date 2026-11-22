@@ -545,7 +545,7 @@ func TestUserLand_reland(t *testing.T) {
 		loose := filepath.Join(fx.repoPath, "objects", theirsB[:2], theirsB[2:])
 		require.FileExists(t, loose)
 
-		dir, argv := resolverScript(t, fmt.Sprintf(`[ "$N" = 1 ] && rm -f '%s'; [ -s "$DIR/answer-$N.json" ] || exit 1; cp "$DIR/answer-$N.json" "$DIR/answer.json"`, loose))
+		dir, argv := resolverScript(t, fmt.Sprintf(`[ "$N" = 1 ] && rm -f %q; [ -s "$DIR/answer-$N.json" ] || exit 1; cp "$DIR/answer-$N.json" "$DIR/answer.json"`, loose))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "answer-1.json"), []byte(checkAnswer("graft-resolve", "a", false, "a is wrong")), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "answer-2.json"), []byte(checkAnswer("graft-resolve", "b", true, "")), 0o600))
 		s := fx.server(t, enabledResolver(argv))
@@ -856,14 +856,14 @@ func TestUserLand_reland(t *testing.T) {
 		t.Parallel()
 
 		for name, mutate := range map[string]func(*gitalypb.LandResolution){
-			"a path missing":         func(r *gitalypb.LandResolution) { r.Files = r.Files[:1] },
+			"a path missing":         func(r *gitalypb.LandResolution) { r.Files = r.GetFiles()[:1] },
 			"a path twice":           func(r *gitalypb.LandResolution) { r.Files[1].Path = []byte("a") },
 			"a path not in conflict": func(r *gitalypb.LandResolution) { r.Files[1].Path = []byte("c") },
 		} {
 			fx := newResolveFixture(t, config.GraftResolver{})
 			req := fx.request("Land")
 			req.Resolution = resolutionOf(fx, "agent-a\n", "agent-b\n")
-			mutate(req.Resolution)
+			mutate(req.GetResolution())
 
 			_, err := fx.client.UserLand(fx.ctx, req)
 			pkg := landConflictDetail(err)

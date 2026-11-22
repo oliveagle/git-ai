@@ -1,6 +1,7 @@
 package updateref
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -29,6 +30,8 @@ type durabilityVoter struct {
 	ended    *int
 }
 
+func (durabilityVoter) TransactionStarts(context.Context, gitcmd.HooksPayload) {}
+
 func (durabilityVoter) Preparing(context.Context, gitcmd.HooksPayload, []byte) {}
 
 func (durabilityVoter) Prepared(context.Context, gitcmd.HooksPayload, []byte, changelog.Meta) error {
@@ -40,6 +43,10 @@ func (durabilityVoter) Committed(context.Context, gitcmd.HooksPayload, []byte) {
 func (durabilityVoter) Aborted(context.Context, gitcmd.HooksPayload, []byte) {}
 
 func (durabilityVoter) Authoritative() bool { return true }
+
+func (v durabilityVoter) CreatedRefConflict(context.Context, *gitalypb.Repository, string) (string, error) {
+	return "", nil
+}
 
 func (v durabilityVoter) DeferReferenceWrites(context.Context, *gitalypb.Repository) (func(), bool) {
 	if !v.deferred {
@@ -67,7 +74,7 @@ func liveUpdateRefs(t *testing.T) []int {
 		}
 		// pid (comm) state ppid ...; comm may contain spaces, so the fields are
 		// read after its closing parenthesis.
-		fields := strings.Fields(string(stat[strings.LastIndexByte(string(stat), ')')+1:]))
+		fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, 0x29)+1:]))
 		if len(fields) < 2 || fields[0] == "Z" || fields[1] != strconv.Itoa(os.Getpid()) {
 			continue
 		}
@@ -89,6 +96,10 @@ type endingVoter struct {
 	t      *testing.T
 	ends   *int
 	failed *string
+}
+
+func (v endingVoter) CreatedRefConflict(context.Context, *gitalypb.Repository, string) (string, error) {
+	return "", nil
 }
 
 func (v endingVoter) DeferReferenceWrites(context.Context, *gitalypb.Repository) (func(), bool) {

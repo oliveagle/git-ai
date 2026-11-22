@@ -2,19 +2,21 @@ package cachetier
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 type tierFixture struct {
@@ -79,7 +81,7 @@ func objectsErr(ctx context.Context, client gitalypb.ObjectServiceClient, req *g
 	}
 	for {
 		if _, err := stream.Recv(); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -294,7 +296,7 @@ func TestGetObjects_CoalescesConcurrentMisses(t *testing.T) {
 		var data []byte
 		for {
 			msg, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
@@ -523,7 +525,7 @@ func TestGetTree_CachesTreeOIDListings(t *testing.T) {
 		var messages []*gitalypb.GetTreeResponse
 		for {
 			msg, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			require.NoError(t, err)

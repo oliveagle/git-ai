@@ -3,7 +3,6 @@ package operations
 import (
 	"errors"
 	"fmt"
-	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"os"
 	"strconv"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	gitalycfg "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
+	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/graft/proposals"
 	"github.com/feder-cr/git-ai/internal/graft/resolver"
 	"github.com/feder-cr/git-ai/internal/helper/text"

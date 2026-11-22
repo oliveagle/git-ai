@@ -1,7 +1,6 @@
 package operations
 
 import (
-	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +9,7 @@ import (
 
 	gitalycfg "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
+	"github.com/feder-cr/git-ai/internal/graft/policystore"
 )
 
 // TestLandPrecheckResolution_policyFirst: an agent the policy does not let update the branch gets

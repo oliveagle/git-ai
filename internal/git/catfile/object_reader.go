@@ -7,11 +7,12 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ObjectReader returns information about an object referenced by a given revision.

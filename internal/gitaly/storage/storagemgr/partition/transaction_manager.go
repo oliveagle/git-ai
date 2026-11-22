@@ -20,6 +20,12 @@ import (
 	"sync"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	housekeepingcfg "github.com/feder-cr/git-ai/internal/git/housekeeping/config"
@@ -40,11 +46,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 )
 
 var (

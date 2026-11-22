@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/feder-cr/git-ai/internal/cgroups"
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
@@ -16,7 +18,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/helper/env"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"golang.org/x/sys/unix"
 )
 
 // customHooksExecutor executes all custom hooks for a given repository and hook name

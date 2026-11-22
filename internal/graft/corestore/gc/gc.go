@@ -496,12 +496,12 @@ func errDatabase(err error) error {
 	if errors.Is(err, corestore.ErrRepositoryNotFound) {
 		return structerr.NewNotFound("the repository is not tracked by the storage core")
 	}
-	return structerr.NewUnavailable("storage core: %w", err)
+	return structerr.NewInternal("storage core: %w", err)
 }
 
 // errBucket maps a bucket error of a collection.
 func errBucket(err error) error {
-	return structerr.NewUnavailable("storage core: bucket: %w", err)
+	return structerr.NewInternal("storage core: bucket: %w", err)
 }
 
 // maxDuration returns the later of two non-negative durations.

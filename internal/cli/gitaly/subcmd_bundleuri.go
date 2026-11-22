@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/urfave/cli/v3"
 )
 
 func newBundleURICommand() *cli.Command {

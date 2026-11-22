@@ -389,7 +389,7 @@ func (g *Gate) checkHistory(ctx context.Context, repo *gitalypb.Repository) erro
 			// decides, and the check is not remembered.
 			return nil
 		case err != nil:
-			return structerr.NewUnavailable("storage core: get repository: %w", err)
+			return structerr.NewInternal("storage core: get repository: %w", err)
 		case last > r.LogSeq:
 			return errShadowHistory().
 				WithMetadata("file_changelog_sequence", last).
@@ -417,7 +417,7 @@ func (g *Gate) checkReviews(ctx context.Context, repoID int64, fileReviews []*gi
 
 	dbReviews, err := g.core.Meta.ListReviews(ctx, repoID, "", true, 0)
 	if err != nil {
-		return structerr.NewUnavailable("storage core: list reviews: %w", err)
+		return structerr.NewInternal("storage core: list reviews: %w", err)
 	}
 
 	byID := make(map[string]*gitalypb.Review, len(dbReviews))
@@ -498,7 +498,7 @@ func (g *Gate) dropStaleLocked(ctx context.Context, repo *gitalypb.Repository, p
 		}
 		return localTracked, nil
 	case !errors.Is(err, corestore.ErrRepositoryNotFound):
-		return localUntracked, structerr.NewUnavailable("storage core: get repository: %w", err)
+		return localUntracked, structerr.NewInternal("storage core: get repository: %w", err)
 	case !exists:
 		return localGone, nil
 	case !hasWatermark:
@@ -608,7 +608,7 @@ func (g *Gate) register(ctx context.Context, repo *gitalypb.Repository) (coresto
 	case errors.Is(err, corestore.ErrRepositoryExists):
 		return corestore.Repository{}, structerr.NewAlreadyExists("repository exists already")
 	case err != nil:
-		return corestore.Repository{}, structerr.NewUnavailable("storage core: register repository: %w", err)
+		return corestore.Repository{}, structerr.NewInternal("storage core: register repository: %w", err)
 	}
 	return registered, nil
 }

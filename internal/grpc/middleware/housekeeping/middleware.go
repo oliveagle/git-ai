@@ -5,6 +5,11 @@ import (
 	"slices"
 	"sync"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/git/housekeeping"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping/config"
 	"github.com/feder-cr/git-ai/internal/git/housekeeping/manager"
@@ -16,10 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/middleware"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // OperationThreshold defines when a specific operation should be triggered.
@@ -227,7 +228,13 @@ func (m *Middleware) StreamServerInterceptor() grpc.StreamServerInterceptor {
 
 		req := methodInfo.NewRequest()
 		if err := ss.RecvMsg(req); err != nil {
-			m.logger.WithError(err).ErrorContext(ss.Context(), "lookup target repository for housekeeping")
+			// A client can send an invalid request at will, which is not an error of the server.
+			logger := m.logger.WithError(err)
+			if status.Code(err) == codes.InvalidArgument {
+				logger.InfoContext(ss.Context(), "lookup target repository for housekeeping")
+			} else {
+				logger.ErrorContext(ss.Context(), "lookup target repository for housekeeping")
+			}
 			return handler(srv, middleware.NewPeekedStream(ss.Context(), nil, err, ss))
 		}
 

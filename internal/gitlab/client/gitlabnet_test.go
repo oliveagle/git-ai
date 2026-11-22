@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	"gitlab.com/gitlab-org/labkit/correlation"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 const secret = "it's a secret"

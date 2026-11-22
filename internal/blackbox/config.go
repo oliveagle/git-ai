@@ -5,9 +5,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/feder-cr/git-ai/internal/helper/duration"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // Config is the configuration for gitaly-blackbox.

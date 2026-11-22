@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/containerd/cgroups/v3/cgroup1"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	cgroupscfg "github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/log"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type cgroupV1Handler struct {

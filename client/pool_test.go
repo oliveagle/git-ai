@@ -8,11 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
-	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +17,12 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
+	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestPoolDial(t *testing.T) {

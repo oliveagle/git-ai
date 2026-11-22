@@ -46,7 +46,7 @@ func (s *server) GetStorageState(ctx context.Context, req *gitalypb.GetStorageSt
 		// Untracked: there is no head and no watermark of this repository.
 		return resp, nil
 	default:
-		return nil, structerr.NewUnavailable("storage core: %w", err)
+		return nil, structerr.NewInternal("storage core: %w", err)
 	}
 
 	// The applied sequence is informative: the syncer reports a watermark only
@@ -57,7 +57,7 @@ func (s *server) GetStorageState(ctx context.Context, req *gitalypb.GetStorageSt
 	switch {
 	case err != nil:
 		s.deps.GetLogger().WithError(err).Warn("storage core: reading the local watermark")
-	case ok && w.RepoID == resp.RepositoryId:
+	case ok && w.RepoID == resp.GetRepositoryId():
 		resp.AppliedSequence = w.Seq
 	}
 

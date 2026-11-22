@@ -83,11 +83,11 @@ func (s *server) checkStoredObjects(ctx context.Context, core *corestore.Core, r
 
 	cp, seeded, err := core.Meta.NewestCheckpoint(ctx, record.ID)
 	if err != nil {
-		return false, "", deadlineOr(ctx, deadline, structerr.NewUnavailable("storage core: newest checkpoint: %w", err))
+		return false, "", deadlineOr(ctx, deadline, structerr.NewInternal("storage core: newest checkpoint: %w", err))
 	}
 	dbRefs, headSeq, err := core.Meta.Refs(ctx, record.ID)
 	if err != nil {
-		return false, "", deadlineOr(ctx, deadline, structerr.NewUnavailable("storage core: references: %w", err))
+		return false, "", deadlineOr(ctx, deadline, structerr.NewInternal("storage core: references: %w", err))
 	}
 
 	after := uint64(0)
@@ -106,7 +106,7 @@ func (s *server) checkStoredObjects(ctx context.Context, core *corestore.Core, r
 		upTo := min(after+verifyChangesetBatch, headSeq)
 		changesets, err := core.Meta.ListChangesets(ctx, record.ID, after, upTo)
 		if err != nil {
-			return false, "", deadlineOr(ctx, deadline, structerr.NewUnavailable("storage core: list changesets: %w", err))
+			return false, "", deadlineOr(ctx, deadline, structerr.NewInternal("storage core: list changesets: %w", err))
 		}
 		if len(changesets) == 0 {
 			return false, fmt.Sprintf("the database has no changesets after %d up to %d", after, upTo), nil
@@ -153,7 +153,7 @@ func (s *server) checkStoredObjects(ctx context.Context, core *corestore.Core, r
 		return true, "", nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return false, "", deadlineOr(ctx, deadline, structerr.NewUnavailable("stored objects check: %w", ctxErr))
+		return false, "", deadlineOr(ctx, deadline, structerr.NewInternal("stored objects check: %w", ctxErr))
 	}
 	if _, exited := command.ExitStatus(err); !exited {
 		return false, "", structerr.NewInternal("stored objects check: %w", err)
@@ -176,13 +176,13 @@ func indexStoredPack(ctx context.Context, core *corestore.Core, repo *localrepo.
 		return fmt.Sprintf("the pack %q of %s is missing from the object storage", key, owner), nil
 	}
 	if err != nil {
-		return "", structerr.NewUnavailable("storage core: download pack: %w", err)
+		return "", structerr.NewInternal("storage core: download pack: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
 	if err := gitops.IndexPack(ctx, repo, rc); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", structerr.NewUnavailable("stored objects check: %w", ctxErr)
+			return "", structerr.NewInternal("stored objects check: %w", ctxErr)
 		}
 		return fmt.Sprintf("the pack %q of %s cannot be indexed: %v", key, owner, err), nil
 	}
@@ -193,7 +193,7 @@ func indexStoredPack(ctx context.Context, core *corestore.Core, repo *localrepo.
 // ctx's deadline has passed, and err otherwise.
 func deadlineOr(ctx context.Context, deadline time.Duration, err error) error {
 	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return structerr.NewUnavailable("storage core: the stored objects check did not finish within the write deadline %s: %w", deadline, err)
+		return structerr.NewInternal("storage core: the stored objects check did not finish within the write deadline %s: %w", deadline, err)
 	}
 	return err
 }

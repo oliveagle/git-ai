@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"google.golang.org/grpc"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
 )
 
 type poolConfig struct {

@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // rawTreeEntry is an entry of a tree written byte for byte by writeRawTree.
@@ -201,7 +202,7 @@ func TestPathHistory_EmptyTreesMatchGit(t *testing.T) {
 					gitPath = "."
 				}
 				want := gitFirstParentPathHistory(t, cfg, repoPath, ids[name], gitPath)
-				got := collectPathHistory(ctx, t, deriver, ids[name], path, 1000)
+				got := collectPathHistory(t, ctx, deriver, ids[name], path, 1000)
 				require.Equal(t, want, got, "path history of %q at %s (cache %v)", path, name, cache)
 			}
 		}

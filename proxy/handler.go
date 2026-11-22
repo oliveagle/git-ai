@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryskip"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryskip"
 )
 
 var clientStreamDescForProxying = &grpc.StreamDesc{

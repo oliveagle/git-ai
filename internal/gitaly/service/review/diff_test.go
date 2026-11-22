@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
 )
 
 func TestSpecParseDiffTree(t *testing.T) {

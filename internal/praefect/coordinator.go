@@ -7,6 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	grpc_metadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/grpc/metadata"
@@ -21,13 +29,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/transaction/txinfo"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/proxy"
-	"github.com/prometheus/client_golang/prometheus"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
-	grpc_metadata "google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -121,6 +122,9 @@ var transactionRPCs = map[string]transactionsCondition{
 	"/gitaly.StorageCoreService/ArchiveRepository":   transactionsDisabled,
 	"/gitaly.StorageCoreService/UnarchiveRepository": transactionsDisabled,
 	"/gitaly.StorageCoreService/PurgeRepository":     transactionsDisabled,
+	// DeleteConflictingReference writes a changeset to the database (authoritative mode only,
+	// which is refused behind Praefect).
+	"/gitaly.StorageCoreService/DeleteConflictingReference": transactionsDisabled,
 }
 
 // forcePrimaryRoutingRPCs tracks RPCs which need to always get routed to the primary. This should

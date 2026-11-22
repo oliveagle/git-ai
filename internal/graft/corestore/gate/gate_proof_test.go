@@ -31,6 +31,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gate"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gitops"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorstate"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
@@ -692,6 +693,58 @@ func proofCases() map[string]func(t *testing.T, n node, s seed) {
 			require.NoError(t, err)
 			require.Equal(t, gitalypb.Review_STATE_CLOSED, stored.GetState())
 		},
+		"/gitaly.MirrorService/RegisterTarget": func(t *testing.T, n node, s seed) {
+			_, err := gitalypb.NewMirrorServiceClient(n.conn).RegisterTarget(n.ctx, &gitalypb.RegisterMirrorTargetRequest{
+				Repository: s.repo,
+				Name:       "github",
+				Url:        "git@github.com:example/shop.git",
+				Branches:   []string{"main", "release/*"},
+				Enabled:    true,
+			})
+			require.NoError(t, err)
+
+			// The target is a row of the database: the other node reads it, and
+			// the hook that decides a push reads the same row.
+			targets, err := n.core.Mirrors.ListTargets(n.ctx, mirrorKeyOf(s.repo))
+			require.NoError(t, err)
+			require.Len(t, targets, 1)
+			require.Equal(t, "github", targets[0].Name)
+			require.Equal(t, "git@github.com:example/shop.git", targets[0].URL)
+			require.Equal(t, []string{"main", "release/*"}, targets[0].Branches)
+			require.True(t, targets[0].Enabled)
+		},
+		"/gitaly.MirrorService/UnregisterTarget": func(t *testing.T, n node, s seed) {
+			client := gitalypb.NewMirrorServiceClient(n.conn)
+			_, err := client.RegisterTarget(n.ctx, &gitalypb.RegisterMirrorTargetRequest{
+				Repository: s.repo,
+				Name:       "github",
+				Url:        "git@github.com:example/shop.git",
+				Branches:   []string{"*"},
+				Enabled:    true,
+			})
+			require.NoError(t, err)
+
+			_, err = client.UnregisterTarget(n.ctx, &gitalypb.UnregisterMirrorTargetRequest{
+				Repository: s.repo,
+				Name:       "github",
+			})
+			require.NoError(t, err)
+
+			// The target is gone from the database; the publications it
+			// recorded stay, because they are the history of the repository.
+			targets, err := n.core.Mirrors.ListTargets(n.ctx, mirrorKeyOf(s.repo))
+			require.NoError(t, err)
+			require.Empty(t, targets)
+		},
+	}
+}
+
+// mirrorKeyOf is the database key of the mirror state of a repository: the
+// storage and the relative path, which no node's file system takes part in.
+func mirrorKeyOf(repo *gitalypb.Repository) mirrorstate.Key {
+	return mirrorstate.Key{
+		Storage:      repo.GetStorageName(),
+		RelativePath: repo.GetRelativePath(),
 	}
 }
 

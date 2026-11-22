@@ -9,9 +9,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/signature"
-	"github.com/urfave/cli/v3"
 )
 
 func gpgApp() *cli.Command {

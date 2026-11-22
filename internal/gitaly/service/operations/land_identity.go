@@ -196,12 +196,12 @@ func (s *Server) lookupLand(ctx context.Context, repository *gitalypb.Repository
 			if errors.Is(err, corestore.ErrRepositoryNotFound) {
 				return nil, nil
 			}
-			return nil, structerr.NewUnavailable("storage core: %w", err)
+			return nil, structerr.NewInternal("storage core: %w", err)
 		}
 
 		record, found, err := s.graftStorage.Meta.LookupLand(ctx, repo.ID, reference.String(), original.String())
 		if err != nil {
-			return nil, structerr.NewUnavailable("storage core: %w", err)
+			return nil, structerr.NewInternal("storage core: %w", err)
 		}
 		if !found {
 			return nil, nil

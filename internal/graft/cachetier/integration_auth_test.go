@@ -9,6 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/client"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -21,10 +26,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 // dialUpstreamWithToken dials a real Gitaly for typed calls. The token, if any,
@@ -69,7 +70,7 @@ func startRealTier(t *testing.T, ctx context.Context, upstreamAddr string, cfg C
 	server, err := NewServer(upstreamConn, cfg)
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	grpcServer := NewGRPCServer(server)
 	go func() { _ = grpcServer.Serve(listener) }()

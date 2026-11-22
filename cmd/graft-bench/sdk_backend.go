@@ -14,13 +14,16 @@ import (
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/client"
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
 // zeroOID is the object ID that means "no object", used to require that a
 // branch does not exist yet.
-const zeroOID = "0000000000000000000000000000000000000000"
+// It follows the object hash the test run uses, so that the bench works on
+// SHA-256 repositories too.
+var zeroOID = gittest.DefaultObjectHash.ZeroOID
 
 // createRepository creates the repository relPath on storage through the
 // RepositoryService of the server, so that the server creates it inside its
@@ -38,7 +41,8 @@ func createRepository(ctx context.Context, address, token, storage, relPath stri
 	defer func() { _ = conn.Close() }()
 
 	_, err = gitalypb.NewRepositoryServiceClient(conn).CreateRepository(ctx, &gitalypb.CreateRepositoryRequest{
-		Repository: &gitalypb.Repository{StorageName: storage, RelativePath: relPath},
+		Repository:   &gitalypb.Repository{StorageName: storage, RelativePath: relPath},
+		ObjectFormat: gittest.DefaultObjectHash.ProtoFormat,
 	})
 	return err
 }
@@ -89,7 +93,7 @@ func (b *SDKBackend) Prepare(ctx context.Context, cfg Config) (string, error) {
 
 	res, err := b.repo.CommitFiles(ctx, sdk.CommitOptions{
 		Branch:         cfg.Branch,
-		ExpectedOldOID: zeroOID,
+		ExpectedOldOID: zeroOID.String(),
 		Message:        "graft-bench: initial commit",
 		Author:         sdk.Signature{Name: "graft-bench", Email: "bench@graft-bench.invalid"},
 		User:           sdk.User{ID: "graft-bench", Name: "graft-bench", Email: "bench@graft-bench.invalid", Username: "graft-bench"},

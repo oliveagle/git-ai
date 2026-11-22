@@ -165,7 +165,10 @@ GIT_VERSION ?=
 # should be updated to the timestamp of the commit.
 # renovate: 1789663697000
 GIT_VERSION_MASTER ?= 3bbf43483e3954291b9fb4caa228eedb9dd528c2
-GIT_VERSION_PREV ?= 1ea786d14a1bb47399ce7b5f1e5885d65139b35f
+#
+# GIT_VERSION_PREV is the default bundled Git: the one that serves every repository except MVCC
+# ones unless the git_master feature flag selects the master build. It is the release v2.56.0.
+GIT_VERSION_PREV ?= a018953688f1b10bddf91bff8747068f5f4746a4
 #
 # GIT_VERSION_MVCC is a commit hash from Git's MVCC reference backend development branch. This branch
 # diverges from upstream Git and is rebased against Git's master branch regularly. The resulting
@@ -236,6 +239,12 @@ GIT_FILTER_REPO_SOURCE_DIR           ?= ${DEPENDENCY_DIR}/git-filter-repo
 TEST_PACKAGES     ?= ./...
 ## Test options passed to `go test`.
 TEST_OPTIONS      ?= -count=1 -p=4
+## Timeout of `go test` for the conformance harness (internal/graft/conformance), which CI runs in a
+## step of its own, alone on the runner. It runs about 1350 subtests against real gitai servers in six
+## modes, git http-backend and stock git clients: about 330 s on 4 CPUs and 530 s on 2 (measured with
+## taskset on a development machine), CPU-bound, so it grows as the CPUs it gets shrink; 30m leaves about
+## 3x the slower figure for a slower runner. Go's default of 10m stays the bound of every other package.
+CONFORMANCE_TEST_TIMEOUT ?= 30m
 ## Specify the output format used to print tests ["standard-verbose", "standard-quiet", "short"]
 TEST_FORMAT       ?= short
 ## Specify the location where the JUnit-style format shall be written to.
@@ -443,6 +452,20 @@ test-mod-validator: ${GOTESTSUM}
 ## Run Go tests.
 test-go: prepare-tests ${GOCOVER_COBERTURA}
 	${Q}$(call run_go_tests)
+
+.PHONY: test-conformance
+## Run the conformance harness: stock git clients against git http-backend and gitai in each mode,
+## and the RPC tables, with the decoy tests of the operations service that it reuses.
+test-conformance: TEST_PACKAGES := ./internal/graft/conformance ./internal/gitaly/service/operations
+test-conformance: TEST_OPTIONS := -count=1 -timeout=${CONFORMANCE_TEST_TIMEOUT} -run '^(TestConformance.*|Test.*ResolvesBranchesExactly|Test.*ResolvesStartRepositoryBranchesExactly|TestStartBranchResolvesTheBranchFirst|TestStartBranchLocalAndRemoteAgree)$$'
+test-conformance: prepare-tests
+	${Q}$(call run_go_tests)
+
+.PHONY: test-conformance-replay
+## Run the conformance harness against the pre-fix commits of past bugs, in copies under
+## CONFORMANCE_REPLAY_DIR, to prove that it catches them. Takes several minutes per commit.
+test-conformance-replay:
+	${Q}${SOURCE_DIR}/_support/conformance-replay.sh ${CONFORMANCE_REPLAY_DIR}
 
 .PHONY: debug-test-go
 ## Run Go tests in delve debugger.

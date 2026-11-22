@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/feder-cr/git-ai/internal/praefect/config"
-	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
 	migrate "github.com/rubenv/sql-migrate"
+
+	"github.com/feder-cr/git-ai/internal/praefect/config"
+	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
 )
 
 // OpenDB returns connection pool to the database.

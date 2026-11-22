@@ -8,8 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 func newReview(branch, title string) *gitalypb.Review {

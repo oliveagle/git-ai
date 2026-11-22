@@ -4,6 +4,9 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	gconfig "github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
@@ -21,8 +24,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 func TestInfoService_RepositoryReplicas(t *testing.T) {

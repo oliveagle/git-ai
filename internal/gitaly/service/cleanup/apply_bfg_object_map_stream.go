@@ -5,12 +5,13 @@ import (
 	"errors"
 	"io"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/helper/chunk"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"google.golang.org/protobuf/proto"
 )
 
 type bfgStreamReader struct {

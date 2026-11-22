@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/git"
-	"github.com/feder-cr/git-ai/internal/gitaly/storage"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git"
+	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // fakeRepository is a storage.Repository for tests that never looks at the

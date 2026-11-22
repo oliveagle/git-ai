@@ -45,7 +45,13 @@ type UpdateRemoteMirrorRequest struct {
 	// remote contains parameters required to connect to the remote repository.
 	// This allows Gitaly to use an in-memory remote and does not require any
 	// on-disk remote configuration.
-	Remote        *UpdateRemoteMirrorRequest_Remote `protobuf:"bytes,7,opt,name=remote,proto3" json:"remote,omitempty"`
+	Remote *UpdateRemoteMirrorRequest_Remote `protobuf:"bytes,7,opt,name=remote,proto3" json:"remote,omitempty"`
+	// target is the name of the mirror target the publication is for, as it is
+	// registered with the MirrorService. When it is set, the server records
+	// what the mirror holds, and the mirror policy of the server decides the
+	// next push with it (doc/graft/MIRROR.md). Empty publishes the mirror
+	// without recording it, as a one-off copy.
+	Target        string `protobuf:"bytes,8,opt,name=target,proto3" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -120,6 +126,13 @@ func (x *UpdateRemoteMirrorRequest) GetRemote() *UpdateRemoteMirrorRequest_Remot
 		return x.Remote
 	}
 	return nil
+}
+
+func (x *UpdateRemoteMirrorRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
 }
 
 // UpdateRemoteMirrorResponse is a response for the UpdateRemoteMirror RPC.
@@ -491,7 +504,7 @@ var File_remote_proto protoreflect.FileDescriptor
 const file_remote_proto_rawDesc = "" +
 	"\n" +
 	"\fremote.proto\x12\x06gitaly\x1a\n" +
-	"lint.proto\x1a\fshared.proto\"\xdc\x03\n" +
+	"lint.proto\x1a\fshared.proto\"\xf4\x03\n" +
 	"\x19UpdateRemoteMirrorRequest\x128\n" +
 	"\n" +
 	"repository\x18\x01 \x01(\v2\x12.gitaly.RepositoryB\x04\x98\xc6,\x01R\n" +
@@ -501,7 +514,8 @@ const file_remote_proto_rawDesc = "" +
 	"\vknown_hosts\x18\x05 \x01(\tR\n" +
 	"knownHosts\x12.\n" +
 	"\x13keep_divergent_refs\x18\x06 \x01(\bR\x11keepDivergentRefs\x12@\n" +
-	"\x06remote\x18\a \x01(\v2(.gitaly.UpdateRemoteMirrorRequest.RemoteR\x06remote\x1a\x92\x01\n" +
+	"\x06remote\x18\a \x01(\v2(.gitaly.UpdateRemoteMirrorRequest.RemoteR\x06remote\x12\x16\n" +
+	"\x06target\x18\b \x01(\tR\x06target\x1a\x92\x01\n" +
 	"\x06Remote\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12:\n" +
 	"\x19http_authorization_header\x18\x02 \x01(\tR\x17httpAuthorizationHeader\x12)\n" +

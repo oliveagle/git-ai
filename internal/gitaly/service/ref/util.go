@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/catfile"
@@ -21,7 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/helper/lines"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var localBranchFormatFields = []string{

@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	migrate "github.com/rubenv/sql-migrate"
+	"github.com/urfave/cli/v3"
+
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/glsql"
 	"github.com/feder-cr/git-ai/internal/praefect/datastore/migrations"
-	migrate "github.com/rubenv/sql-migrate"
-	"github.com/urfave/cli/v3"
 )
 
 const (

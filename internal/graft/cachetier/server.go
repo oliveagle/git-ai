@@ -56,14 +56,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 const (
@@ -553,9 +554,9 @@ func (s *Server) GetTree(req *gitalypb.GetTreeRequest, stream gitalypb.ObjectSer
 	case <-f.done:
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return structerr.NewDeadlineExceeded("waiting for tree %s: %v", req.GetTreeOid(), ctx.Err())
+			return structerr.NewDeadlineExceeded("waiting for tree %s: %w", req.GetTreeOid(), ctx.Err())
 		}
-		return structerr.NewCanceled("waiting for tree %s: %v", req.GetTreeOid(), ctx.Err())
+		return structerr.NewCanceled("waiting for tree %s: %w", req.GetTreeOid(), ctx.Err())
 	}
 	if f.cached {
 		return s.sendTree(stream, req.GetTreeOid(), f.entries)

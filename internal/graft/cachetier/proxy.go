@@ -4,6 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	grpcclient "github.com/feder-cr/git-ai/internal/grpc/client"
@@ -14,11 +20,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/proxy"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 )
@@ -76,7 +77,7 @@ func NewGRPCServer(s *Server) *grpc.Server {
 func (s *Server) director(ctx context.Context, _ string, peeker proxy.StreamPeeker) (*proxy.StreamParameters, error) {
 	frame, err := peeker.Peek()
 	if err != nil {
-		return nil, structerr.NewInternal("peek first request frame: %v", err)
+		return nil, structerr.NewInternal("peek first request frame: %w", err)
 	}
 
 	outCtx, err := s.outgoingContext(ctx)
@@ -173,7 +174,7 @@ var errNoTierCredential = errors.New("the cache tier needs its own token to serv
 func (s *Server) tokenMetadata(ctx context.Context) (map[string]string, error) {
 	md, err := gitalyauth.RPCCredentialsV2(s.token).GetRequestMetadata(ctx)
 	if err != nil {
-		return nil, structerr.NewInternal("sign upstream request: %v", err)
+		return nil, structerr.NewInternal("sign upstream request: %w", err)
 	}
 	return md, nil
 }

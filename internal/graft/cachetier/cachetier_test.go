@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,15 +13,15 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/feder-cr/git-ai/proxy"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/log"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"github.com/feder-cr/git-ai/proxy"
 )
 
 // testChunk is the message size used by the fake upstream, small enough that
@@ -229,7 +230,7 @@ type fakeOperationService struct {
 func (f *fakeOperationService) UserCommitFiles(stream gitalypb.OperationService_UserCommitFilesServer) error {
 	for {
 		_, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -245,7 +246,7 @@ func (f *fakeOperationService) UserCommitFiles(stream gitalypb.OperationService_
 func startGRPC(t *testing.T, register func(*grpc.Server)) string {
 	t.Helper()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	srv := grpc.NewServer()
@@ -288,7 +289,7 @@ func startCacheTier(t *testing.T, upstreamAddr string, cfg Config) (string, *Ser
 	server, err := NewServer(dialUpstream(t, upstreamAddr), cfg)
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	grpcServer := NewGRPCServer(server)
 	go func() { _ = grpcServer.Serve(listener) }()
@@ -300,15 +301,6 @@ func startCacheTier(t *testing.T, upstreamAddr string, cfg Config) (string, *Ser
 // testLog is configured once in TestMain. log.Configure replaces grpc's global
 // logger, so calling it from parallel tests would race with running servers.
 var testLog log.Logger
-
-func TestMain(m *testing.M) {
-	logger, err := log.Configure(io.Discard, "text", "error")
-	if err != nil {
-		panic(err)
-	}
-	testLog = logger
-	testhelper.Run(m)
-}
 
 func testLogger(t *testing.T) log.Logger {
 	t.Helper()
@@ -335,7 +327,7 @@ func readObjects(t *testing.T, stream grpc.ServerStreamingClient[gitalypb.GetObj
 	var order []string
 	for {
 		msg, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# mirror-queue-seed.sh — declare the mirror of every repository of a lane.
+#
+# Runs ON the node host, as the user the mirror worker runs as:
+#
+#   mirror-queue-seed.sh [--dry-run]
+#
+# The table below is the operator's statement of where each repository is
+# published: one line per destination, named by the remote it lives on. The
+# script turns every line into a target of the mirror queue, and adding a
+# target is also what registers it with the server — the mirror policy reads
+# the registered targets, so a repository whose mirror was never declared
+# counts as having none.
+#
+# It is idempotent and it is authoritative: a target the queue already holds is
+# restated from its line — the URL, the branches and the interval — while the
+# history of the target stays, so a schedule that changed is applied where the
+# target is and the outcome the policy reads is not reset. Publish what the
+# table declares with `graft mirror queue run`.
+#
+# A destination whose credential is missing fails when it is published, with
+# the name of the variable or the path of the key, not here: the queue stores
+# the name of the variable and the path of the key, never their content.
+set -euo pipefail
+
+ROOT="${GITAI_ROOT:-$HOME/opt/git-ai}"
+QUEUE="${GRAFT_MIRROR_QUEUE:-$ROOT/mirror/mirror-queue.json}"
+GITHUB_OWNER="${MIRROR_GITHUB_OWNER:-oliveagle}"
+WORKSTATION="${MIRROR_WORKSTATION:-oliveagle@192.168.2.106}"
+WORKSTATION_ROOT="${MIRROR_WORKSTATION_ROOT:-/home/oliveagle/git-ai-backup}"
+SSH_KEY="${MIRROR_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+KNOWN_HOSTS="${MIRROR_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}"
+
+export GRAFT_MIRROR_QUEUE="$QUEUE"
+export GRAFT_ADDRESS="${GRAFT_ADDRESS:-unix:$ROOT/run/cache.sock}"
+export GRAFT_STORAGE="${GRAFT_STORAGE:-default}"
+export GRAFT_TOKEN="${GRAFT_TOKEN:-$(cat "$ROOT/tokens/shared")}"
+export GRAFT_USER="${GRAFT_USER:-oliveagle}"
+
+graft="$ROOT/bin/graft"
+dry_run=0
+[ "${1:-}" = "--dry-run" ] && dry_run=1
+
+say() { printf '  %s\n' "$*"; }
+
+# remote | repository | interval | branches
+#
+# The interval is how often a mirror is published, and it is what makes the
+# lag policy livable: a mirror published once an hour is an hour behind
+# whatever the repository accepted meanwhile, while warn_lag counts commits.
+# Keep the interval well under the lag a repository reaches in one interval,
+# or a warning — and from deny_lag, a refusal — is the normal answer to a
+# push. Re-running this script restates the targets the table holds, so a line
+# whose interval changed is applied where the target is.
+#
+# `github` publishes over SSH to port 443 of ssh.github.com: this network drops
+# the connection to github.com:443 often enough that an HTTPS push fails more
+# often than it succeeds, while ssh.github.com:443 answers. A network where
+# HTTPS works can name the mirror as https://github.com/OWNER/REPO.git instead
+# and let GITHUB_TOKEN carry the credential; the queue stores the name of the
+# variable, never its value.
+#
+# `workstation` is the machine that keeps the second copy, reached over SSH.
+#
+# Both are mirrors in the sense of the policy: a place the repository is
+# published to, and a place the policy can see.
+#
+# A line is absent only when the destination cannot take the repository at all.
+# `dot_agents.git` has no `github` line: its history holds a 166 MB file
+# (cache/llama_cpp_prism/llama-prism.tgz) and GitHub refuses any push above
+# 100 MB before it reads the refs, so the target could never publish. The
+# repository is still mirrored — to the workstation — and the policy counts
+# that. Publishing it to GitHub needs the history rewritten or the file moved to
+# LFS first, and then a line here.
+targets() {
+  cat <<'TABLE'
+github      laya-workflow.git    5m   main release/* feat/* feature/* merge/* opt/*
+github      ole-utils-ci.git     5m   main release/* feat/* feature/* merge/* opt/*
+github      fastapi_mojo.git     5m   *
+github      ole-eval.git         5m   *
+github      maxllm.git           5m   *
+github      assistant-demo.git   5m   *
+github      demo.git             5m   *
+github      smoke2.git           5m   *
+github      imp-test.git         5m   *
+workstation laya-workflow.git    5m   main release/* feat/* feature/* merge/* opt/*
+workstation ole-utils-ci.git     5m   main release/* feat/* feature/* merge/* opt/*
+workstation fastapi_mojo.git     5m   *
+workstation ole-eval.git         5m   *
+workstation maxllm.git           5m   *
+workstation dot_agents.git       5m   *
+workstation assistant-demo.git   5m   *
+workstation demo.git             5m   *
+workstation smoke2.git           5m   *
+workstation imp-test.git         5m   *
+TABLE
+}
+
+name_of() {
+  local remote="$1" repo="$2"
+  printf '%s-%s\n' "$remote" "${repo%.git}"
+}
+
+url_of() {
+  local remote="$1" repo="$2"
+  case "$remote" in
+    github)      printf 'ssh://git@ssh.github.com:443/%s/%s\n' "$GITHUB_OWNER" "$repo" ;;
+    workstation) printf 'ssh://%s%s/%s\n' "$WORKSTATION" "$WORKSTATION_ROOT" "$repo" ;;
+    *) return 1 ;;
+  esac
+}
+
+added=0
+restated=0
+while read -r remote repo interval branches; do
+  [ -n "${remote:-}" ] || continue
+  name="$(name_of "$remote" "$repo")"
+  url="$(url_of "$remote" "$repo")"
+
+  # Both remotes are reached with the key above: github over its SSH port and
+  # the workstation directly. --ssh-key and --known-hosts name files that the
+  # server reads on every run, so a rotated key needs no new target.
+  verb=add
+  args=(mirror queue add "$name" --repo "$repo" --url "$url" --interval "$interval"
+        --ssh-key "$SSH_KEY" --known-hosts "$KNOWN_HOSTS")
+  if "$graft" mirror queue show "$name" >/dev/null 2>&1; then
+    # The table is the declaration of the operator, so a line that changed is
+    # applied where the target is: the schedule, the URL and the branches of an
+    # existing target are restated, and its history — when it was added, what
+    # its last publication did — is what the queue keeps.
+    verb=update
+    args[2]=update
+  fi
+  # The patterns are patterns: a shell that expanded them would add the files
+  # of the current directory as branches.
+  set -f
+  for branch in $branches; do
+    args+=(--branch "$branch")
+  done
+  set +f
+
+  if [ "$dry_run" = "1" ]; then
+    say "would $verb $name -> $url"
+    continue
+  fi
+  if ! "$graft" "${args[@]}" >/dev/null; then
+    say "FAILED  $name -> $url"
+    exit 1
+  fi
+  if [ "$verb" = "add" ]; then
+    say "added   $name -> $url"
+    added=$((added + 1))
+  else
+    say "restated $name -> $url"
+    restated=$((restated + 1))
+  fi
+done < <(targets | sed '/^[[:space:]]*$/d')
+
+printf '%s added, %s restated (queue %s)\n' "$added" "$restated" "$QUEUE"
+[ "$dry_run" = "1" ] || printf 'publish them with: graft mirror queue run --all\n'

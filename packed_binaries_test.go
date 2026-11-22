@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 )
 
 func TestUnpackAuxiliaryBinaries_success(t *testing.T) {

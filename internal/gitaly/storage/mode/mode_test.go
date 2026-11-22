@@ -7,8 +7,9 @@ package mode_test
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 )
 
 func TestDirectory(t *testing.T) {

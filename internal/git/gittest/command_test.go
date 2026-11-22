@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/helper/text"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/helper/text"
 )
 
 func TestExecOpts(t *testing.T) {

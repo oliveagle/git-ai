@@ -540,12 +540,12 @@ func TestSyncerUntrackedAndNotFound(t *testing.T) {
 	})
 }
 
-func TestSyncerDatabaseUnavailable(t *testing.T) {
+func TestSyncerDatabaseInternal(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	require.NoError(t, e.core.Meta.Close())
 
 	err := e.sy.EnsureFresh(e.ctx, e.pbRepo(localRelPath))
-	require.Equal(t, codes.Unavailable, status.Code(err), "error: %v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "error: %v", err)
 }
 
 func TestSyncerNoopUnlessAuthoritative(t *testing.T) {
@@ -790,7 +790,7 @@ func TestSyncerLockContentionTimesOut(t *testing.T) {
 
 	u := lockMain(t, e, c1)
 	err := e.sy.EnsureFresh(e.ctx, e.pbRepo(localRelPath))
-	require.Equal(t, codes.Unavailable, status.Code(err), "error: %v", err)
+	require.Equal(t, codes.Internal, status.Code(err), "error: %v", err)
 
 	// The watermark did not move.
 	wm, ok, err := gitops.ReadWatermark(e.localPath())

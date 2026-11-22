@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/golang-jwt/jwt/v5"
 	"gitlab.com/gitlab-org/labkit/correlation"
 	"gitlab.com/gitlab-org/labkit/fields"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 const (

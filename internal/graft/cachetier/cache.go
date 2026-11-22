@@ -181,9 +181,9 @@ func (s *Server) loadPass(ctx context.Context, repo *gitalypb.Repository, oids [
 			// Unavailable. Clients that retry Unavailable would otherwise retry a
 			// request the caller already abandoned.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, structerr.NewDeadlineExceeded("waiting for object %s: %v", w.oid, ctx.Err())
+				return nil, structerr.NewDeadlineExceeded("waiting for object %s: %w", w.oid, ctx.Err())
 			}
-			return nil, structerr.NewCanceled("waiting for object %s: %v", w.oid, ctx.Err())
+			return nil, structerr.NewCanceled("waiting for object %s: %w", w.oid, ctx.Err())
 		}
 		if w.flight.err != nil {
 			retry = append(retry, w.oid)
@@ -352,7 +352,7 @@ func (s *Server) fetchFromUpstream(ctx context.Context, repo *gitalypb.Repositor
 		}
 		if err := verifyObject(p.oid, p.obj); err != nil {
 			s.verifyFailures.Add(1)
-			return structerr.NewDataLoss("upstream object %s: %v", p.oid, err)
+			return structerr.NewDataLoss("upstream object %s: %w", p.oid, err)
 		}
 		result[p.oid] = p.obj
 		return nil

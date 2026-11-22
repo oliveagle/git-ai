@@ -59,21 +59,17 @@ func (s *Store) ObserveAllocator(ctx context.Context, minAge time.Duration, dryR
 		if err != nil {
 			return fmt.Errorf("read the allocator marks: %w", err)
 		}
+		defer rows.Close()
 		var marks []mark
 		for rows.Next() {
 			var m mark
 			if err := rows.Scan(&m.key, &m.position); err != nil {
-				_ = rows.Close()
 				return fmt.Errorf("scan an allocator mark: %w", err)
 			}
 			if m.observedAt, err = scanTime(m.key); err != nil {
-				_ = rows.Close()
 				return err
 			}
 			marks = append(marks, m)
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("read the allocator marks: %w", err)
 		}
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("read the allocator marks: %w", err)
@@ -141,16 +137,13 @@ func (s *Store) UnrecordedIDs(ctx context.Context, after, upTo int64) ([]int64, 
 			if err != nil {
 				return fmt.Errorf("read the recorded repository IDs: %w", err)
 			}
+			defer rows.Close()
 			for rows.Next() {
 				var id int64
 				if err := rows.Scan(&id); err != nil {
-					_ = rows.Close()
 					return fmt.Errorf("scan a repository ID: %w", err)
 				}
 				recorded[id] = struct{}{}
-			}
-			if err := rows.Close(); err != nil {
-				return fmt.Errorf("read the recorded repository IDs: %w", err)
 			}
 			if err := rows.Err(); err != nil {
 				return fmt.Errorf("read the recorded repository IDs: %w", err)

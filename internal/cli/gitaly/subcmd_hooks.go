@@ -7,13 +7,14 @@ import (
 	"io"
 	"time"
 
+	"github.com/urfave/cli/v3"
+	"google.golang.org/grpc"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"github.com/urfave/cli/v3"
-	"google.golang.org/grpc"
 )
 
 const (

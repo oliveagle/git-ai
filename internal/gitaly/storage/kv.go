@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"google.golang.org/protobuf/encoding/protodelim"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/keyvalue"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 const (

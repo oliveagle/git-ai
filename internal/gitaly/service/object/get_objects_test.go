@@ -8,13 +8,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 )
 
 // fetchedObject is the reassembled result of all messages belonging to one object.
@@ -31,13 +32,13 @@ type fetchedObject struct {
 // foldObjects groups the streamed messages by object. It asserts the invariants of the protocol:
 // chunks never exceed maxChunk, offsets are contiguous, and type and size are only set on the
 // first message of an object.
-func foldObjects(t testing.TB, maxChunk int64, responses []*gitalypb.GetObjectsResponse) []fetchedObject {
-	t.Helper()
+func foldObjects(tb testing.TB, maxChunk int64, responses []*gitalypb.GetObjectsResponse) []fetchedObject {
+	tb.Helper()
 
 	var objects []fetchedObject
 	for _, response := range responses {
 		if len(objects) == 0 || objects[len(objects)-1].oid != response.GetOid() {
-			require.True(t, response.GetMissing() || response.GetType() != gitalypb.ObjectType_UNKNOWN,
+			require.True(tb, response.GetMissing() || response.GetType() != gitalypb.ObjectType_UNKNOWN,
 				"first message of object %s must carry its type", response.GetOid())
 
 			objects = append(objects, fetchedObject{
@@ -48,15 +49,15 @@ func foldObjects(t testing.TB, maxChunk int64, responses []*gitalypb.GetObjectsR
 				firstOffset: response.GetOffset(),
 			})
 		} else {
-			require.Equal(t, gitalypb.ObjectType_UNKNOWN, response.GetType(), "type is only set on the first message")
-			require.Zero(t, response.GetSize(), "size is only set on the first message")
+			require.Equal(tb, gitalypb.ObjectType_UNKNOWN, response.GetType(), "type is only set on the first message")
+			require.Zero(tb, response.GetSize(), "size is only set on the first message")
 		}
 
 		object := &objects[len(objects)-1]
 		object.messages++
 
-		require.LessOrEqual(t, int64(len(response.GetData())), maxChunk, "chunk exceeds the configured size")
-		require.Equal(t, object.firstOffset+int64(len(object.data)), response.GetOffset(), "offsets must be contiguous")
+		require.LessOrEqual(tb, int64(len(response.GetData())), maxChunk, "chunk exceeds the configured size")
+		require.Equal(tb, object.firstOffset+int64(len(object.data)), response.GetOffset(), "offsets must be contiguous")
 
 		object.data = append(object.data, response.GetData()...)
 	}
@@ -65,16 +66,16 @@ func foldObjects(t testing.TB, maxChunk int64, responses []*gitalypb.GetObjectsR
 }
 
 // rawObject returns the raw contents of an object as reported by git-cat-file(1).
-func rawObject(t testing.TB, cfg config.Cfg, repoPath, objectType string, oid git.ObjectID) []byte {
-	t.Helper()
-	return gittest.Exec(t, cfg, "-C", repoPath, "cat-file", objectType, oid.String())
+func rawObject(tb testing.TB, cfg config.Cfg, repoPath, objectType string, oid git.ObjectID) []byte {
+	tb.Helper()
+	return gittest.Exec(tb, cfg, "-C", repoPath, "cat-file", objectType, oid.String())
 }
 
-func getObjects(t testing.TB, ctx context.Context, client gitalypb.ObjectServiceClient, req *gitalypb.GetObjectsRequest) ([]*gitalypb.GetObjectsResponse, error) {
-	t.Helper()
+func getObjects(tb testing.TB, ctx context.Context, client gitalypb.ObjectServiceClient, req *gitalypb.GetObjectsRequest) ([]*gitalypb.GetObjectsResponse, error) {
+	tb.Helper()
 
 	stream, err := client.GetObjects(ctx, req)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	return testhelper.Receive(stream.Recv)
 }

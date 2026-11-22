@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/helper/duration"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/pelletier/go-toml/v2"
-	"github.com/stretchr/testify/require"
 )
 
 // UnconfiguredSocketPath is used to bypass config validation errors

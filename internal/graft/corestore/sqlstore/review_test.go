@@ -7,10 +7,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 // insertReview inserts a review of the repository and returns its ID.
@@ -167,7 +168,7 @@ func TestCommitsOnOneReferenceAreDense(t *testing.T) {
 						}
 
 						_, err = commit(ctx, store, repo.ID, update("refs/heads/main", refs["refs/heads/main"], newValue))
-						var conflict *corestore.ErrRefConflict
+						var conflict *corestore.RefConflictError
 						if errors.As(err, &conflict) {
 							continue
 						}
@@ -254,7 +255,7 @@ func TestTwoStoresBehaveLikeOne(t *testing.T) {
 
 		// A stale write from the other node conflicts, as it would on one node.
 		_, err = commit(ctx, other, repo.ID, update("refs/heads/main", oid(9), oid(2)))
-		var conflict *corestore.ErrRefConflict
+		var conflict *corestore.RefConflictError
 		require.True(t, errors.As(err, &conflict))
 
 		res, err := commit(ctx, other, repo.ID, update("refs/heads/main", oid(1), oid(2)))

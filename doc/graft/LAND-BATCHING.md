@@ -175,13 +175,21 @@ email `graft@localhost`), with a context that carries no request identity. The
 hooks judge the update as that user, and the changeset records the update with
 the actor `graft-batch`. The members carry the real actors.
 
-Policy is therefore checked per request, in process, before the request joins
-the running tip. For a combined update that carries members, both the access
-check of the pre-receive hook (in standalone mode, the policy) and the policy
-check of the reference-transaction hook are skipped, because the members were
-checked already. Only an update with `operation = land_batch` and members is
-skipped. Any other update is still checked, and custom server hooks still run
-for the combined update.
+The **access policy** is therefore checked per request, in process, before the
+request joins the running tip. For a combined update that carries members, both
+the access check of the pre-receive hook (in standalone mode, the policy) and
+the access check of the reference-transaction hook are skipped, because the
+members were checked already. Only an update with `operation = land_batch` and
+members is skipped. Any other update is still checked, and custom server hooks
+still run for the combined update.
+
+The **branch management policy** (`[[graft.branch]]`) is not skipped: reviews
+and the verification checkpoint are what the members were not checked against
+before the batch, and a batch writes a commit no queue named, so the gate
+decides the combined update with the members' changes and with that commit
+([BRANCHES.md](BRANCHES.md#who-the-gate-binds)). A batch of two or more cannot
+carry a checkpoint that covers the commit it writes: such a branch refuses the
+batch, and its changes land alone, each judged on its own.
 
 A `[[graft.policy]]` rule whose `actor` matches `graft-batch` therefore has no
 effect on batches with two or more members (a batch of one is judged as its

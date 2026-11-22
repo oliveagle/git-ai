@@ -9,6 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+
 	"github.com/feder-cr/git-ai/internal/archive"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/repoutil"
@@ -24,9 +28,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/transaction/voting"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 )
 
 func TestSetCustomHooksRequest_success(t *testing.T) {

@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/helper/text"
-	"github.com/stretchr/testify/require"
 )
 
 func TestWriteCommit(t *testing.T) {

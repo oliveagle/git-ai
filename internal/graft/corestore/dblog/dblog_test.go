@@ -6,17 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/graft/changelog"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/dblog"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	testhelper.Run(m)
-}
 
 // oid returns a 40 hex character object ID for n.
 func oid(n int) string { return fmt.Sprintf("%040x", n+1) }

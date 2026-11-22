@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 )
 
 var (

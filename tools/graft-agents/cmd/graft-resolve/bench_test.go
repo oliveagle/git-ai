@@ -17,8 +17,10 @@ import (
 // gitIn runs git in dir with a fixed identity, given on the command line.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=Bench", "-c", "user.email=bench@example.com",
-		"-c", "commit.gpgsign=false"}, args...)...)
+	cmd := exec.Command("git", append([]string{
+		"-C", dir, "-c", "user.name=Bench", "-c", "user.email=bench@example.com",
+		"-c", "commit.gpgsign=false",
+	}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	out, err := cmd.CombinedOutput()
 	if err != nil && !(len(args) > 0 && args[0] == "merge") {

@@ -12,9 +12,11 @@ Code: `internal/gitaly/service/review` (server), `internal/graft/review/store`
 `internal/graft/review/rules` (rules engine), `sdk/review.go` (SDK),
 `cmd/graft/review.go` (CLI). Protocol: `proto/review.proto`.
 
-Phase 5a stops at review state: **landing does not check reviews yet.** The
-"approved review required to land" gate and per-directory write permissions
-are phase 5b.
+The "approved review required to land" gate exists as the branch management
+policy of the server (`[[graft.branch]]`): a managed branch is only updated by
+a land that carries an approved review of every change it lands. See
+[BRANCHES.md](BRANCHES.md). Per-directory write permissions are still phase
+5b.
 
 ## Concepts
 

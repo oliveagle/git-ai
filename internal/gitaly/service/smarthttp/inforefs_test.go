@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/bundleuri"
 	"github.com/feder-cr/git-ai/internal/cache"
 	"github.com/feder-cr/git-ai/internal/featureflag"
@@ -29,9 +33,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/streamio"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestInfoRefsUploadPack_successful(t *testing.T) {

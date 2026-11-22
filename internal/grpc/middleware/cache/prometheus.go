@@ -1,9 +1,10 @@
 package cache
 
 import (
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 )
 
 var (

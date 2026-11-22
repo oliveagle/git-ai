@@ -12,15 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // explicitlyAllowedAgentRPCs are the built-in agent RPCs that are not covered
@@ -75,6 +76,7 @@ func expectedAgentRPC(fullMethod string) bool {
 		gitalypb.DerivedDataService_ServiceDesc.ServiceName,
 		gitalypb.SearchService_ServiceDesc.ServiceName,
 		gitalypb.ReviewService_ServiceDesc.ServiceName,
+		gitalypb.BranchPolicyService_ServiceDesc.ServiceName,
 	} {
 		if strings.HasPrefix(fullMethod, "/"+service+"/") {
 			return true
@@ -472,6 +474,24 @@ var operatorOnlySources = map[string][]string{
 		"gitaly.RepositoryService/ObjectFormat",
 		"gitaly.RefService/RefExists",
 	},
+	// The verification checkpoint of a branch is the trust anchor of the branch
+	// management policy: only an operator may move it (`graft green set`,
+	// doc/graft/BRANCHES.md).
+	"sdk/refs.go": {"gitaly.RefService/UpdateReferences"},
+	// The CLI of that checkpoint (`graft green set`) reaches the same RPC through
+	// sdk/refs.go; it is the operator's command, not an agent's.
+	"cmd/graft/green.go": {"gitaly.RefService/UpdateReferences"},
+	// Publishing a mirror is an operator action too: it pushes the server's
+	// history to another host with a credential only the operator holds, so an
+	// agent may not run it (doc/graft/MIRROR.md).
+	"sdk/mirror.go": {"gitaly.RemoteService/UpdateRemoteMirror"},
+	// Declaring, removing and reading the mirror targets of a repository is the
+	// operator's side of the mirror policy: an agent that could remove a target
+	// would open the repository the policy holds (doc/graft/MIRROR.md). The CLI
+	// reaches these RPCs through the SDK methods that carry the name of the
+	// target (graft mirror queue add|remove|register, graft mirror status), so
+	// this file is the one the scan sees.
+	"sdk/mirror_target.go": {"gitaly.MirrorService"},
 }
 
 // operatorScopeCovers reports whether fullMethod is the method, or a method of the

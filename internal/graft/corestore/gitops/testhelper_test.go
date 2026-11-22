@@ -1,4 +1,4 @@
-package gitops_test
+package gitops
 
 import (
 	"testing"

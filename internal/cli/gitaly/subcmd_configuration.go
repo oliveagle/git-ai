@@ -3,10 +3,11 @@ package gitaly
 import (
 	"context"
 
+	"github.com/urfave/cli/v3"
+
 	gitalycmd "github.com/feder-cr/git-ai/cmd"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/urfave/cli/v3"
 )
 
 const validationErrorCode = 2

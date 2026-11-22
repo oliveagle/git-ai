@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	gitalyauth "github.com/feder-cr/git-ai/auth"
-	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	grpcmwauth "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/auth"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -14,6 +12,9 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	gitalyauth "github.com/feder-cr/git-ai/auth"
+	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 )
 
 var authCount = promauto.NewCounterVec(

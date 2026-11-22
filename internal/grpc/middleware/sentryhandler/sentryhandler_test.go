@@ -7,9 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryskip"
-	"github.com/feder-cr/git-ai/internal/structerr"
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	sentry "github.com/getsentry/sentry-go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -18,6 +15,10 @@ import (
 	"google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/sentryskip"
+	"github.com/feder-cr/git-ai/internal/structerr"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 func TestGenerateSentryEvent(t *testing.T) {

@@ -38,7 +38,7 @@ func countingVerify(t *testing.T, body string) (string, []string) {
 
 	dir := t.TempDir()
 	script := fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 echo x >> "$DIR/vlines"
 N=$(wc -l < "$DIR/vlines" | tr -d ' ')
 %s
@@ -524,7 +524,7 @@ func TestLandApplyVerdicts_neverVerifiesAModelsResolution(t *testing.T) {
 	// and hands the land back to be verified; it does not verify either.
 	unverified := &landPreResolution{verdicts: pre.verdicts, verified: map[git.ObjectID]bool{}}
 	_, err = s.landApplyVerdicts(fx.ctx, in, fx.repo, fx.tip, fx.commit, fx.committer(), unverified)
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, err, &need)
 	require.NotEmpty(t, need.unverified, "the tree to verify")
 	require.Equal(t, 1, verifyRuns(t, vdir), "the lane did not run the command")
@@ -611,16 +611,18 @@ func TestUserLand_verifiedModelResolution_aBusyRepositoryEndsInProposals(t *test
 	rdir, rargv := resolverScript(t, "")
 	writeAnswer(t, rdir, modelAnswer())
 	vdir, vargv := countingVerify(t, "exit 0")
-	rcfg := withVerify(enabledResolver(rargv), vargv, "1s")
-	rcfg.Timeout = "1s"
+	rcfg := withVerify(enabledResolver(rargv), vargv, "1m")
+	rcfg.Timeout = "1m"
 	fx := newResolveFixture(t, rcfg)
 	s := fx.server(t, rcfg)
 	s.locator = config.NewLocator(fx.cfg) // the land quarantines the objects it makes
+	arm := armTheLandDeadline(t, s, landVerifyRepoKey(fx.repoProto))
 
 	// Another land of the repository is being verified: its slot is the repository's.
 	busy, err := s.verifyPool.Acquire(fx.ctx, landVerifyRepoKey(fx.repoProto))
 	require.NoError(t, err)
 
+	arm()
 	_, err = s.landResolving(fx.ctx, fx.request("Land"), fx.committer())
 	requireMergeConflict(t, err)
 	pkg := landConflictDetail(err)
@@ -629,7 +631,7 @@ func TestUserLand_verifiedModelResolution_aBusyRepositoryEndsInProposals(t *test
 	for _, p := range []string{"a", "b"} {
 		f := packageFile(t, pkg, p)
 		require.Equal(t, gitalypb.LandConflictFile_OUTCOME_PROPOSED, f.GetOutcome(), p)
-		require.Contains(t, f.GetReason(), "could not verify before the deadline of 2s", p)
+		require.Contains(t, f.GetReason(), "could not verify before the deadline of "+busyDeadline, p)
 		require.NotNil(t, f.GetProposal(), p)
 	}
 	require.Equal(t, 0, verifyRuns(t, vdir), "the command did not run for the land that waited")

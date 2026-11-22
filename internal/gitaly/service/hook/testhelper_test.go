@@ -3,6 +3,8 @@ package hook
 import (
 	"testing"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/repository"
@@ -13,7 +15,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/internal/transaction/voting"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/grpc"
 )
 
 func TestMain(m *testing.M) {

@@ -5,7 +5,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/log"
 	grpcmw "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/logrus/ctxlogrus"
 	"github.com/sirupsen/logrus"
@@ -14,6 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
+
+	"github.com/feder-cr/git-ai/internal/log"
 )
 
 func TestMessageProducer(t *testing.T) {

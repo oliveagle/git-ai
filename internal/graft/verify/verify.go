@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/feder-cr/git-ai/internal/graft/greenref"
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
 )
 
@@ -136,6 +137,12 @@ func newVerifier(ctx context.Context, cfg Config, backend workspace.Backend, gre
 	}
 	if err := prepareWorkDir(workDir); err != nil {
 		return nil, err
+	}
+	if len(cfg.Sparse) > 0 {
+		// The operator asked for it, and the checkpoint still says the commit
+		// passed: whoever reads the checkpoint has to know what it covers.
+		logger.Warn("graft-verify: the test command runs on part of the tree; a checkpoint this verifier publishes covers only the materialized paths",
+			"sparse", cfg.Sparse, "green_ref", cfg.GreenRef)
 	}
 	st, err := loadState(cfg.StateFile)
 	if err != nil {
@@ -317,22 +324,92 @@ func (v *Verifier) cycle(ctx context.Context, seq uint64) (Outcome, error) {
 	return out, nil
 }
 
-// advanceGreen moves the green ref to tip, when it is not there already. It
-// reports whether the ref moved.
+// advanceGreen moves the green ref to tip, when it is not there already, and
+// the tree the checkpoint certifies with it. It reports whether the green ref
+// moved.
+//
+// The tree the checkpoint certifies is the tree of the tip, when the
+// verification covered the whole tree. A verification that materialized only
+// part of it certifies no tree: the files it left out are files the command
+// could not see, so the checkpoint it publishes says nothing about them.
 func (v *Verifier) advanceGreen(ctx context.Context, tip string) (bool, error) {
 	current, err := v.greens.Current(ctx, v.cfg.GreenRef)
 	if err != nil {
 		return false, fmt.Errorf("read green ref: %w", err)
 	}
-	if current == tip {
+
+	tree, err := v.certifiedTree(ctx, tip)
+	if err != nil {
+		return false, err
+	}
+	treeRef := greenref.TreeNameFor(v.cfg.GreenRef)
+	currentTree, err := v.greens.Current(ctx, treeRef)
+	if err != nil {
+		return false, fmt.Errorf("read the tree the checkpoint certifies: %w", err)
+	}
+
+	if current == tip && (tree == "" || currentTree == tree) && v.suitesPublished(ctx, tip) {
 		v.green = tip
 		return false, nil
 	}
-	if err := v.greens.Move(ctx, v.cfg.GreenRef, current, tip); err != nil {
+
+	// The tree moves first, then the suites, so that the checkpoint is the
+	// last reference to move: a reader that sees the new checkpoint also sees
+	// the tree it certifies and the suites that ran on it.
+	var moves []Move
+	if tree != "" && currentTree != tree {
+		moves = append(moves, Move{Ref: treeRef, Old: currentTree, New: tree})
+	}
+	for _, suite := range v.cfg.Test.Suites {
+		ref := greenref.SuitesName(suite, v.cfg.Branch)
+		old, err := v.greens.Current(ctx, ref)
+		if err != nil {
+			return false, fmt.Errorf("read the commit the suite %q certified: %w", suite, err)
+		}
+		if old != tip {
+			moves = append(moves, Move{Ref: ref, Old: old, New: tip})
+		}
+	}
+	if current != tip {
+		moves = append(moves, Move{Ref: v.cfg.GreenRef, Old: current, New: tip})
+	}
+	if err := v.greens.MoveAll(ctx, moves); err != nil {
 		return false, fmt.Errorf("move green ref: %w", err)
 	}
 	v.green = tip
-	return true, nil
+	return current != tip, nil
+}
+
+// suitesPublished reports whether every suite the configuration names already
+// certifies the tip: the verifier publishes them with the checkpoint, and a
+// checkpoint that certifies no suite carries no land of a branch that names
+// them.
+func (v *Verifier) suitesPublished(ctx context.Context, tip string) bool {
+	for _, suite := range v.cfg.Test.Suites {
+		ref := greenref.SuitesName(suite, v.cfg.Branch)
+		current, err := v.greens.Current(ctx, ref)
+		if err != nil || current != tip {
+			return false
+		}
+	}
+	return true
+}
+
+// certifiedTree returns the tree the verification of the tip covered, empty
+// when it covered only part of the tree.
+func (v *Verifier) certifiedTree(ctx context.Context, tip string) (string, error) {
+	if len(v.cfg.Sparse) > 0 {
+		// The command ran on the materialized paths only. The files it left
+		// out are files the command could not see, so a checkpoint that
+		// claims the whole tree would be a claim the verifier cannot make.
+		return "", nil
+	}
+
+	tree, err := v.greens.Tree(ctx, tip)
+	if err != nil {
+		return "", fmt.Errorf("reading the tree of %s: %w", tip, err)
+	}
+	return tree, nil
 }
 
 // commit persists seq as the cursor.

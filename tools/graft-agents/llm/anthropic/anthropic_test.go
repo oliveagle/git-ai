@@ -124,8 +124,10 @@ func sse(parts []string, stopReason string) string {
 			"id": "msg_02", "type": "message", "role": "assistant",
 			"model": "claude-opus-5-5", "content": []any{}, "stop_reason": nil,
 			"stop_sequence": nil, "stop_details": nil,
-			"usage": map[string]any{"input_tokens": 20, "output_tokens": 1,
-				"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+			"usage": map[string]any{
+				"input_tokens": 20, "output_tokens": 1,
+				"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+			},
 		},
 	})
 	event("content_block_start", map[string]any{

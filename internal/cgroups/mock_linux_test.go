@@ -29,11 +29,12 @@ import (
 
 	cgrps "github.com/containerd/cgroups/v3"
 	"github.com/containerd/cgroups/v3/cgroup1"
+	"github.com/stretchr/testify/require"
+
 	cgroupscfg "github.com/feder-cr/git-ai/internal/gitaly/config/cgroups"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/stretchr/testify/require"
 )
 
 type mockCgroup interface {

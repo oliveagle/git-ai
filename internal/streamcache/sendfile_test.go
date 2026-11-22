@@ -12,8 +12,9 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 type wrappedFile struct{ f *os.File }

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/errors/cfgerror"
 	"github.com/feder-cr/git-ai/internal/helper/duration"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_Validate(t *testing.T) {

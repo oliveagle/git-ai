@@ -8,16 +8,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
-	"github.com/feder-cr/git-ai/internal/cache"
-	gitmvcc "github.com/feder-cr/git-ai/internal/git/mvcc"
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
-	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
-	"github.com/feder-cr/git-ai/internal/grpc/middleware/mvcc"
-	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
-	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,6 +19,17 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
+	"github.com/feder-cr/git-ai/internal/cache"
+	gitmvcc "github.com/feder-cr/git-ai/internal/git/mvcc"
+	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
+	"github.com/feder-cr/git-ai/internal/grpc/client"
+	"github.com/feder-cr/git-ai/internal/grpc/middleware/mvcc"
+	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
+	"github.com/feder-cr/git-ai/internal/testhelper"
+	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 )
 
 func TestGitalyServerFactory(t *testing.T) {

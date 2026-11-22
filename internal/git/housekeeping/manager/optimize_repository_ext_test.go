@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	housekeepingmgr "github.com/feder-cr/git-ai/internal/git/housekeeping/manager"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -16,7 +18,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPruneIfNeeded(t *testing.T) {

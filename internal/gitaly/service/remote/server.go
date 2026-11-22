@@ -7,6 +7,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -21,6 +22,9 @@ type server struct {
 	txManager        transaction.Manager
 	localRepoFactory localrepo.Factory
 	conns            *client.Pool
+	// core is the storage core, nil when it is off: it holds the mirror state
+	// that a publication records (doc/graft/MIRROR.md).
+	core *corestore.Core
 }
 
 // NewServer creates a new instance of a grpc RemoteServiceServer
@@ -33,5 +37,6 @@ func NewServer(deps *service.Dependencies) gitalypb.RemoteServiceServer {
 		txManager:        deps.GetTxManager(),
 		conns:            deps.GetConnsPool(),
 		localRepoFactory: deps.GetRepositoryFactory(),
+		core:             deps.GetGraftStorage(),
 	}
 }

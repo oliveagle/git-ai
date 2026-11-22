@@ -7,13 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/revrange"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 // TestRebaseTodoUnderSkewedDates checks the todo list of Rebase on a random history in which runs
@@ -202,8 +203,10 @@ func TestRebaseTodoKeepsAReappliedCommitUnderSkewedDates(t *testing.T) {
 	}
 	m50 := 50
 	for j := 0; j < 10; j++ {
-		prev = add(spec{name: fmt.Sprintf("old%d", j), parents: []int{prev}, date: 1735689600 + int64(j),
-			ops: []string{fmt.Sprintf("M 100644 inline old%d\ndata 2\no\n", j)}})
+		prev = add(spec{
+			name: fmt.Sprintf("old%d", j), parents: []int{prev}, date: 1735689600 + int64(j),
+			ops: []string{fmt.Sprintf("M 100644 inline old%d\ndata 2\no\n", j)},
+		})
 	}
 	now := base + 60*60 + 1000
 	m := add(spec{name: "M", parents: []int{prev}, date: now, ops: []string{"M 100644 inline M\ndata 2\nM\n"}})

@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/graft/ancestry"
-	"github.com/stretchr/testify/require"
 )
 
 // countingChecker counts the questions that a plan asks, each a git process for the git checker.

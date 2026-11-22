@@ -7,14 +7,14 @@ import (
 	"io"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/structerr"
 	"gocloud.dev/blob"
-
 	_ "gocloud.dev/blob/azureblob" // register Azure driver
 	_ "gocloud.dev/blob/fileblob"  // register file driver
 	_ "gocloud.dev/blob/gcsblob"   // register Google Cloud driver
 	_ "gocloud.dev/blob/memblob"   // register in-memory driver
 	_ "gocloud.dev/blob/s3blob"    // register Amazon S3 driver
+
+	"github.com/feder-cr/git-ai/internal/structerr"
 )
 
 const (

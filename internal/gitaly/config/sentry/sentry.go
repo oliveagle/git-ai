@@ -3,9 +3,10 @@ package sentry
 import (
 	"fmt"
 
+	sentry "github.com/getsentry/sentry-go"
+
 	"github.com/feder-cr/git-ai/internal/grpc/middleware/panichandler"
 	"github.com/feder-cr/git-ai/internal/log"
-	sentry "github.com/getsentry/sentry-go"
 )
 
 // Config contains configuration for sentry

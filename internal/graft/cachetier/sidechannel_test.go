@@ -6,6 +6,9 @@ import (
 	"net"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -19,8 +22,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 // TestSidechannelRPCsPassThroughTheTier checks that a client which dials with
@@ -60,7 +61,7 @@ func testSidechannelRPCsPassThroughTheTier(t *testing.T, ctx context.Context) {
 	})
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	grpcServer := NewGRPCServer(server)
 	go func() { _ = grpcServer.Serve(listener) }()

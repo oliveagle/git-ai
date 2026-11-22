@@ -60,8 +60,9 @@ func writeMoves(t *testing.T, dir string, fx resolveFixture, moves ...git.Object
 func answerOf(paths ...string) resolver.Response {
 	resp := resolver.Response{Version: resolver.ProtocolVersion, Resolver: "graft-resolve/fake"}
 	for _, p := range paths {
-		resp.Files = append(resp.Files, resolver.ResponseFile{Origin: resolver.OriginRule,
-			Path: p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
+		resp.Files = append(resp.Files, resolver.ResponseFile{
+			Origin: resolver.OriginRule,
+			Path:   p, Action: resolver.ActionWrite, Mode: resolver.ModeRegular, Content: []byte("merged-" + p + "\n"),
 		})
 	}
 	return resp
@@ -187,7 +188,7 @@ func newHeldLane(t *testing.T, verify bool) heldLane {
 	// asks for a failure after the first. The lane is held by the land of a: the first land that
 	// applies its verdicts in it waits for the release, at most a minute so that a failed test never
 	// hangs.
-	verifyArgv := verifyScript(t, fmt.Sprintf(`V='%s'
+	verifyArgv := verifyScript(t, fmt.Sprintf(`V=%q
 N=$(cat "$V/calls" 2>/dev/null || echo 0)
 N=$((N+1))
 echo "$N" > "$V/calls"
@@ -598,7 +599,7 @@ func TestLandApplyVerdicts_neverCallsTheResolver(t *testing.T) {
 	writer := gittest.WriteCommit(t, fx.cfg, fx.repoPath, gittest.WithParents(fx.tip),
 		gittest.WithTreeEntries(entries("a", "ours-again\n", "b", "ours\n", "c", "c\n")...))
 	_, err = s.landApplyVerdicts(fx.ctx, in, fx.repo, writer, fx.commit, fx.committer(), pre)
-	var need *landNeedsResolution
+	var need *landNeedsResolutionError
 	require.ErrorAs(t, err, &need)
 	require.Equal(t, []string{"a"}, need.paths)
 	require.Equal(t, writer, need.tip)

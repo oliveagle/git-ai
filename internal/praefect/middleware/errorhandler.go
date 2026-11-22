@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 
+	"google.golang.org/grpc"
+
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	"github.com/feder-cr/git-ai/internal/praefect/nodes/tracker"
-	"google.golang.org/grpc"
 )
 
 // StreamErrorHandler returns a client interceptor that will track accessor/mutator errors from internal gitaly nodes

@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/feder-cr/git-ai/internal/git/updateref"
 	"github.com/feder-cr/git-ai/internal/gitaly/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
@@ -45,12 +49,53 @@ func (s *server) ReferenceTransactionHook(stream gitalypb.HookService_ReferenceT
 		return req.GetStdin(), err
 	})
 
+	// The hook has no side band: the messages it wants the pusher to read come
+	// back in this response, after a warning that did not refuse anything.
+	messages := &hook.TransactionMessages{}
+	ctx := hook.WithTransactionMessages(stream.Context(), messages)
+
 	if err := s.manager.ReferenceTransactionHook(
-		stream.Context(),
+		ctx,
 		state,
 		request.GetEnvironmentVariables(),
 		stdin,
 	); err != nil {
+		// The storage core refused a reference git cannot hold next to another one, after
+		// git's transaction began, so git refuses the whole transaction. git gives this hook
+		// no side band: on SSH its stderr reaches the client as is, over HTTP it does not.
+		var nameConflict updateref.FileDirectoryConflictError
+		if errors.As(err, &nameConflict) {
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				Stderr: []byte(hook.RefNameConflictMessage(nameConflict) + "\n"),
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				ExitStatus: &gitalypb.ExitStatus{Value: 1},
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			return nil
+		}
+
+		// A policy refusal is the pusher's to read, and git gives this hook no
+		// side band: the reason goes to stderr and the hook exits 1, which aborts
+		// the update. A failure stays a gRPC error, so that a client cannot read
+		// it as a decision.
+		if status.Code(err) == codes.PermissionDenied {
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				Stderr: []byte(err.Error() + "\n"),
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+				ExitStatus: &gitalypb.ExitStatus{Value: 1},
+			}); err != nil {
+				return structerr.NewInternal("sending response: %w", err)
+			}
+			return nil
+		}
+
 		switch {
 		case errors.Is(err, transaction.ErrTransactionAborted):
 			return structerr.NewAborted("reference-transaction hook: %w", err)
@@ -58,6 +103,14 @@ func (s *server) ReferenceTransactionHook(stream gitalypb.HookService_ReferenceT
 			return structerr.NewFailedPrecondition("reference-transaction hook: %w", err)
 		default:
 			return structerr.NewInternal("reference-transaction hook: %w", err)
+		}
+	}
+
+	for _, message := range messages.All() {
+		if err := stream.Send(&gitalypb.ReferenceTransactionHookResponse{
+			Stderr: []byte("warning: " + message + "\n"),
+		}); err != nil {
+			return structerr.NewInternal("sending response: %w", err)
 		}
 	}
 

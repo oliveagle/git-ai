@@ -8,6 +8,9 @@ import (
 	"regexp"
 	"strings"
 
+	"gitlab.com/gitlab-org/labkit/correlation"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/feder-cr/git-ai/internal/command"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
@@ -16,8 +19,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/x509"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"gitlab.com/gitlab-org/labkit/correlation"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -136,6 +137,8 @@ type cmdCfg struct {
 	commandOpts     []command.Option
 	hooksConfigured bool
 	worktreePath    string
+	// invocation is the ChangelogMeta.Invocation of the command, see BeginInvocation.
+	invocation string
 }
 
 // CmdOpt is an option for running a command

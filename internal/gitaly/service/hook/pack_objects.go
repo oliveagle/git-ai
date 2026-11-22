@@ -15,6 +15,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"github.com/feder-cr/git-ai/internal/git/gitcmd"
 	"github.com/feder-cr/git-ai/internal/git/pktline"
 	gitalyhook "github.com/feder-cr/git-ai/internal/gitaly/hook"
@@ -24,9 +28,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/stream"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 var (

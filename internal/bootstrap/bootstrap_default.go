@@ -7,9 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/feder-cr/git-ai/internal/helper"
 	"github.com/feder-cr/git-ai/internal/log"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // defaultBootstrap is a Bootstrap that does no additional configurations.

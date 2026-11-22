@@ -5,8 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/structerr"
 )
 
 func TestIsAtLeast(t *testing.T) {

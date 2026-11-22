@@ -3,9 +3,10 @@ package gitaly
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCheckAPI_Standalone(t *testing.T) {

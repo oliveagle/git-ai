@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,7 +34,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // resolverScript writes a resolver command into a new temporary directory and returns the
@@ -46,7 +46,7 @@ func resolverScript(t *testing.T, body string) (string, []string) {
 
 	dir := t.TempDir()
 	script := fmt.Sprintf(`#!/bin/sh
-DIR='%s'
+DIR=%q
 N=$(cat "$DIR/calls" 2>/dev/null || echo 0)
 N=$((N+1))
 echo "$N" > "$DIR/calls"
@@ -285,6 +285,7 @@ func (fx resolveFixture) server(t *testing.T, rcfg config.GraftResolver) *Server
 		locator:          locator,
 		localRepoFactory: localrepo.NewFactory(testhelper.NewLogger(t), locator, gittest.NewCommandFactory(t, fx.cfg), cache),
 		graftPolicy:      policystore.New(nil),
+		proposalSweeper:  unboundedSweeper(),
 	}
 }
 
@@ -906,7 +907,7 @@ func TestUserLand_resolveConflicts(t *testing.T) {
 		commit, err := fx.repo.ReadCommit(fx.ctx, landed.Revision())
 		require.NoError(t, err)
 		require.Equal(t, []string{fx.tip.String(), fx.commit.String()}, commit.GetParentIds())
-		require.Equal(t, string(gittest.TestUser.Name), string(commit.GetAuthor().GetName()))
+		require.Equal(t, string(gittest.TestUser.GetName()), string(commit.GetAuthor().GetName()))
 		require.Contains(t, string(commit.GetBody()), "Graft-Resolved-By: graft-resolve/fake\n")
 
 		require.Equal(t, "merged-a\n", fx.blobAt(t, landed, "a"))

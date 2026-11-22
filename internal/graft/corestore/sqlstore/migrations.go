@@ -195,11 +195,6 @@ var sqliteMigrations = []*migrate.Migration{
 		},
 	},
 	{
-		// The lifecycle of a repository (doc/graft/PLAN13.md): archive freezes
-		// writes; cleanup closes reads and starts its observation period; purge
-		// is the only delete. The state is on the row of the repository: it is
-		// read with every read of the repository, and the write path refuses a
-		// change of an archived one.
 		Id: "20261117000000_graft_storage_archive",
 		Up: []string{
 			`ALTER TABLE graft_repositories ADD COLUMN archived_at TEXT`,
@@ -214,6 +209,40 @@ var sqliteMigrations = []*migrate.Migration{
 			`ALTER TABLE graft_repositories DROP COLUMN read_closed_at`,
 			`ALTER TABLE graft_repositories DROP COLUMN archived_by`,
 			`ALTER TABLE graft_repositories DROP COLUMN archived_at`,
+		},
+	},
+	{
+		// The mirror targets of a repository and the state of their last
+		// publication (doc/graft/MIRROR.md). The state is keyed by the
+		// repository, not by its ID: a repository that the storage core does
+		// not track yet still has mirrors.
+		Id: "20261117100000_graft_mirror_state",
+		Up: []string{
+			`CREATE TABLE graft_mirror_targets (
+				storage       TEXT    NOT NULL,
+				relative_path TEXT    NOT NULL,
+				name          TEXT    NOT NULL,
+				url           TEXT    NOT NULL,
+				branches      TEXT    NOT NULL,
+				enabled       INTEGER NOT NULL DEFAULT 1,
+				created_at    TEXT    NOT NULL,
+				updated_at    TEXT    NOT NULL,
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+			`CREATE TABLE graft_mirror_syncs (
+				storage       TEXT    NOT NULL,
+				relative_path TEXT    NOT NULL,
+				name          TEXT    NOT NULL,
+				status        TEXT    NOT NULL,
+				branches      TEXT    NOT NULL,
+				published_at  TEXT    NOT NULL,
+				error         TEXT    NOT NULL DEFAULT '',
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+		},
+		Down: []string{
+			`DROP TABLE graft_mirror_syncs`,
+			`DROP TABLE graft_mirror_targets`,
 		},
 	},
 }
@@ -428,6 +457,37 @@ var postgresMigrations = []*migrate.Migration{
 			`ALTER TABLE graft_repositories DROP COLUMN read_closed_at`,
 			`ALTER TABLE graft_repositories DROP COLUMN archived_by`,
 			`ALTER TABLE graft_repositories DROP COLUMN archived_at`,
+		},
+	},
+	{
+		// See the SQLite migration of the same ID.
+		Id: "20261117100000_graft_mirror_state",
+		Up: []string{
+			`CREATE TABLE graft_mirror_targets (
+				storage       TEXT        NOT NULL,
+				relative_path TEXT        NOT NULL,
+				name          TEXT        NOT NULL,
+				url           TEXT        NOT NULL,
+				branches      TEXT        NOT NULL,
+				enabled       BOOLEAN     NOT NULL DEFAULT TRUE,
+				created_at    TIMESTAMPTZ NOT NULL,
+				updated_at    TIMESTAMPTZ NOT NULL,
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+			`CREATE TABLE graft_mirror_syncs (
+				storage       TEXT        NOT NULL,
+				relative_path TEXT        NOT NULL,
+				name          TEXT        NOT NULL,
+				status        TEXT        NOT NULL,
+				branches      TEXT        NOT NULL,
+				published_at  TIMESTAMPTZ NOT NULL,
+				error         TEXT        NOT NULL DEFAULT '',
+				PRIMARY KEY (storage, relative_path, name)
+			)`,
+		},
+		Down: []string{
+			`DROP TABLE graft_mirror_syncs`,
+			`DROP TABLE graft_mirror_targets`,
 		},
 	},
 }

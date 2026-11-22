@@ -8,7 +8,16 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/feder-cr/git-ai"
+	"github.com/go-enry/go-license-detector/v4/licensedb"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/urfave/cli/v3"
+	"gitlab.com/gitlab-org/labkit/fips"
+	"gitlab.com/gitlab-org/labkit/monitoring"
+	"go.uber.org/automaxprocs/maxprocs"
+	"google.golang.org/grpc"
+
+	gitaly "github.com/feder-cr/git-ai"
 	gitalyclient "github.com/feder-cr/git-ai/client"
 	"github.com/feder-cr/git-ai/internal/backup"
 	"github.com/feder-cr/git-ai/internal/bootstrap"
@@ -36,6 +45,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/relational"
 	"github.com/feder-cr/git-ai/internal/gitaly/transaction"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/branchgate"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/checkpoint"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gate"
@@ -69,17 +79,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/tempdir"
 	"github.com/feder-cr/git-ai/internal/tracing"
 	"github.com/feder-cr/git-ai/internal/version"
-	"github.com/go-enry/go-license-detector/v4/licensedb"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/urfave/cli/v3"
-	"gitlab.com/gitlab-org/labkit/fips"
-	"gitlab.com/gitlab-org/labkit/monitoring"
-	"go.uber.org/automaxprocs/maxprocs"
-	"google.golang.org/grpc"
-
-	// Import to register the proxy codec with gRPC.
-	_ "github.com/feder-cr/git-ai/proxy"
+	_ "github.com/feder-cr/git-ai/proxy" // Import to register the proxy codec with gRPC.
 )
 
 func newServeCommand() *cli.Command {
@@ -600,7 +600,11 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	// SIGUSR1 reloads from the configuration file (doc/graft/PLAN12.md).
 	graftPolicy := policystore.New(cfg.Graft.Policy)
 	prometheus.MustRegister(graftPolicy)
-	stopPolicyReload := reloadPolicyOnSignal(logger, appCtx.Args().First(), loaded, graftPolicy, policySignals)
+	// The branch management policy is held the same way: the hook enforces it and the
+	// BranchPolicyService answers a CI with it, so a reload of the rules is one store too.
+	branchPolicy := branchgate.NewStore(cfg.Graft)
+	prometheus.MustRegister(branchPolicy)
+	stopPolicyReload := reloadPolicyOnSignal(logger, appCtx.Args().First(), loaded, graftPolicy, branchPolicy, policySignals)
 	defer stopPolicyReload()
 
 	gitlabClient, err := newGitlabAPIClient(logger, cfg, graftPolicy)
@@ -641,6 +645,19 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	prometheus.MustRegister(reviewroots.DefaultSweeper)
 
 	hookManagerOpts := []hook.ManagerOption{hook.WithEagerObserver(eagerObserver), hook.WithPolicyStore(graftPolicy)}
+	// One store of the branch management policy serves the hook manager, which enforces it,
+	// and the BranchPolicyService, which answers the CI: the refusal an agent meets and the
+	// answer a CI reads are made with one policy, also across a reload of the rules.
+	// The branch management policy decides the updates of a managed branch with
+	// the reviews of the repository and the verification checkpoint of the
+	// branch.
+	hookManagerOpts = append(hookManagerOpts,
+		hook.WithBranchPolicy(branchPolicy),
+		hook.WithBranchGate(hook.NewBranchGateSource(storageCore, localrepoFactory)),
+		// The mirror policy refuses a push to a repository that has no mirror,
+		// or whose mirror is too far behind (doc/graft/MIRROR.md). The state
+		// it reads is the one the MirrorService writes.
+		hook.WithMirrorGate(hook.NewMirrorGateSource(storageCore, localrepoFactory)))
 	var (
 		storageSyncer corestore.Freshener
 		storageGate   *gate.Gate
@@ -871,6 +888,7 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 			GraftLandLanes:         landLanes,
 			GraftResolver:          graftResolver,
 			GraftStorage:           storageCore,
+			GraftBranchPolicy:      branchPolicy,
 			GraftStorageSyncer:     storageSyncer,
 			ShutdownContext:        shutdownCtx,
 		})

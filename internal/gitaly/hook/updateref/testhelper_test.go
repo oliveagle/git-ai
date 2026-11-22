@@ -1,4 +1,4 @@
-package updateref_test
+package updateref
 
 import (
 	"testing"

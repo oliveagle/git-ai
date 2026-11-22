@@ -206,3 +206,61 @@ same tip is a typical example.
 - [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces interact.
 - [CONFIGURATION.md](CONFIGURATION.md) lists the `[graft]` keys and the CLI settings.
 - [LIMITATIONS.md](LIMITATIONS.md) lists what is not done yet.
+
+## Testing a project
+
+Graft runs none of a project's tests. A project keeps its own suites and tells
+Graft two things: the command that runs them, and the commit that command was
+run on (the checkpoint). A suite attaches to the place whose question it
+answers:
+
+| Suite | Where it runs | What it decides |
+|---|---|---|
+| unit (seconds, no service) | the workspace of the agent before it asks for a land; again in the CI, on the result | the change is right |
+| integration (a database, containers, minutes) | the CI, on the commit the dry run named | the change is right once it is on the branch |
+| end to end, slow or flaky | `graft-verify` after the land, or a nightly job | a broken tip is found and reverted, rather than blocking every queue entry |
+
+The queue of one change is six commands, and the checkpoint is the only trust
+anchor of the policy:
+
+```
+make test-unit                          # 1. cheap, local
+graft land --dry-run --timestamp "$T"   # 2. the commit the land would produce
+graft clone ADDR REPO DIR --at "$M"     # 3. its whole tree, no branch
+(cd DIR && make test)                   # 4. both suites, on that tree
+(cd DIR && graft green set --branch main --commit "$M" \
+      --suite unit --suite integration)                    # 5. the checkpoint
+graft gate check --branch main --result "$M"  #    the status check
+graft land --timestamp "$T" --expect "$M"   # 6. land exactly the commit that was tested
+```
+
+The checkpoint is published in the workspace the suites ran on, because it
+certifies the tree that was tested: a sparse or changed workspace certifies a
+tree the suites never saw, and a branch that asks for the whole tree
+(`require_full_tree`) refuses the land.
+
+`--suite` says which suites ran on that tree, and a branch whose rule names
+the suites a change needs (`require_suites = ["unit", "integration"]`) refuses
+a land whose checkpoint certifies only some of them: the unit suite alone
+never carries the land.
+
+`--expect` holds the land to the commit the suites ran on: the server refuses
+to write another one, so a branch that moved while the suites ran takes
+nothing, and the queue computes the result again on the tip the branch holds.
+
+A refusal carries a code, so that the queue branches on it and not on the
+message: `graft gate check --json` prints it, and `graft land` prints the
+code of a refusal it got. `stale_result` means the result is computed again,
+`not_verified` means the checkpoint has to be published first, `no_review`
+means the change waits for a reviewer.
+
+[BRANCHES.md](BRANCHES.md#where-a-projects-tests-belong) says what each suite
+decides, [VERIFY.md](VERIFY.md) says how the post-merge verifier runs one, and
+[MIRROR.md](MIRROR.md) says how to publish the landed branches to another Git
+host — one command, any HTTPS or SSH URL — while git-ai remains the authority,
+and [UPGRADE.md](UPGRADE.md) says how a client moves itself to a release with
+one command.
+[`examples/graft/standard-project`](../../examples/graft/standard-project) is a
+project with a unit suite and an integration suite, the queue that lands it and
+the rules that keep `main` the ref of the CI. `run.sh` there runs the whole
+loop against a real server in a temporary directory.

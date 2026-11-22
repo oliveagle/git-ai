@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"gocloud.dev/blob"
+
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	housekeepingcfg "github.com/feder-cr/git-ai/internal/git/housekeeping/config"
@@ -16,9 +20,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/mode"
 	"github.com/feder-cr/git-ai/internal/offloading"
 	"github.com/feder-cr/git-ai/internal/testhelper"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-	"gocloud.dev/blob"
 )
 
 func generateRehydratingTests(t *testing.T, ctx context.Context, testPartitionID storage.PartitionID, relativePath string) []transactionTestCase {

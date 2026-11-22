@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
 // diskBytes returns the total size of the files below root.

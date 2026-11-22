@@ -9,6 +9,11 @@ import (
 	"sync"
 	"time"
 
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/datastructure"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
@@ -22,10 +27,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/praefect/nodes/tracker"
 	prommetrics "github.com/feder-cr/git-ai/internal/prometheus/metrics"
 	"github.com/feder-cr/git-ai/proxy"
-	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // Shard is a primary with a set of secondaries

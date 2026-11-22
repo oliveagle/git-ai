@@ -11,8 +11,10 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/refchange"
 )
 
-const fuzzZeroOID = "0000000000000000000000000000000000000000"
-const fuzzOID = "1111111111111111111111111111111111111111"
+const (
+	fuzzZeroOID = "0000000000000000000000000000000000000000"
+	fuzzOID     = "1111111111111111111111111111111111111111"
+)
 
 // FuzzParseUpdates fuzzes the parser of the hook input, which holds one line per
 // reference update. Only branches and tags are returned, and no update is a

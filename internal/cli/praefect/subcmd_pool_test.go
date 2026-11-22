@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	glcli "github.com/feder-cr/git-ai/internal/cli"
 	"github.com/feder-cr/git-ai/internal/cli/common"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -21,7 +23,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/testhelper/testdb"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetPrimaries(t *testing.T) {

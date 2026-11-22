@@ -1,10 +1,11 @@
 package info
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"github.com/feder-cr/git-ai/internal/helper/chunk"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
-	"google.golang.org/protobuf/proto"
 )
 
 type repoSender struct {

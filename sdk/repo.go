@@ -168,3 +168,26 @@ func (r *Repo) ListTree(ctx context.Context, rev, path string, recursive bool) (
 		}
 	}
 }
+
+// TreeID returns the object ID of the tree of the commit the revision names.
+// It is the tree a suite has to test to say that the commit passed: the tree
+// of the commit, with every file of it. A suite that ran on part of the tree
+// tested another tree, and says nothing about this one.
+func (r *Repo) TreeID(ctx context.Context, rev string) (string, error) {
+	if rev == "" {
+		return "", status.Error(codes.InvalidArgument, "revision is required")
+	}
+
+	resp, err := r.client.commits.FindCommit(ctx, &gitalypb.FindCommitRequest{
+		Repository: r.repository(),
+		Revision:   []byte(rev),
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp.GetCommit() == nil {
+		return "", status.Errorf(codes.NotFound, "revision %q not found", rev)
+	}
+
+	return resp.GetCommit().GetTreeId(), nil
+}

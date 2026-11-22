@@ -267,6 +267,9 @@ func TestRunOnceReclonesDamagedWorkTree(t *testing.T) {
 func TestWorkTreeIsSparse(t *testing.T) {
 	fx := newFixture(t, func(c *Config) {
 		c.Sparse = []string{"cmd"}
+		// The operator asked for a partial tree, and a test that needs only
+		// cmd/ is what the fixture runs.
+		c.Test.AllowSparse = true
 	})
 	fx.commit("cmd/main.txt", "main")
 	fx.commit("docs/readme.txt", "docs")

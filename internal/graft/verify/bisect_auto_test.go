@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/feder-cr/git-ai/internal/testhelper"
 )
 
 // fakeVerdicts is a Tester whose verdict per commit comes from bad. Calls are
