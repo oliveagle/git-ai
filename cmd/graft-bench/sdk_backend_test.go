@@ -188,7 +188,9 @@ func buildGraftResolve(t *testing.T) string {
 	bin := filepath.Join(t.TempDir(), "graft-resolve")
 	// GOPROXY=off keeps the build from the network. See buildAgentsTool of the
 	// e2e tests for the reason.
-	cmd := exec.Command("go", "-C", "../../tools/graft-agents", "build", "-o", bin, "./cmd/graft-resolve")
+	// -buildvcs=false: the test environment sets GIT_DIR, which makes the VCS
+	// stamping of the build fail.
+	cmd := exec.Command("go", "-C", "../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, "./cmd/graft-resolve")
 	cmd.Env = append(os.Environ(), "GOPROXY=off")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build graft-resolve (run go -C tools/graft-agents mod download first if the module cache is cold): %s", out)

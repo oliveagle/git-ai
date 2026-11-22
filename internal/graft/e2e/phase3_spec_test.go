@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
@@ -42,10 +43,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// specCfg returns a standalone config with the given land batch settings.
+// specCfg returns a standalone config with the given land batch settings. The
+// server refuses anonymous callers, so the config carries the shared token and
+// specClient sends it.
 func specCfg(t *testing.T, standalone bool, batch config.GraftLandBatch) config.Cfg {
 	t.Helper()
 	cfg := testcfg.Build(t)
+	cfg.Auth.Token = sharedTestToken
 	cfg.Graft.Standalone = standalone
 	cfg.Graft.Land.Batch = batch
 	testcfg.BuildGitalySSH(t, cfg)
@@ -56,7 +60,10 @@ func specCfg(t *testing.T, standalone bool, batch config.GraftLandBatch) config.
 
 func specClient(t *testing.T, cfg config.Cfg) gitalypb.OperationServiceClient {
 	t.Helper()
-	conn, err := grpc.NewClient(cfg.SocketPath, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.SocketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(cfg.Auth.Token)),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	return gitalypb.NewOperationServiceClient(conn)

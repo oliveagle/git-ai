@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"net"
+	"os"
 	"testing"
 
 	"github.com/feder-cr/git-ai/internal/bootstrap/starter"
 	"github.com/feder-cr/git-ai/internal/cache"
 	gitmvcc "github.com/feder-cr/git-ai/internal/git/mvcc"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"github.com/feder-cr/git-ai/internal/grpc/middleware/mvcc"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
@@ -19,23 +21,22 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 const (
 	agentRPCsTestRepositorySize = "/gitaly.RepositoryService/RepositorySize"
-	agentRPCsTestAgentToken     = "builder-secret-for-server-test"
 )
 
 // newAgentRPCsFactory returns a server factory whose [graft] configuration has
 // one agent and the given agent_rpcs.
-func newAgentRPCsFactory(t *testing.T, agentRPCs ...string) *GitalyServerFactory {
+func newAgentRPCsFactory(t *testing.T, agentRPCs ...string) (*GitalyServerFactory, string) {
 	t.Helper()
 
+	keyPath, publicKey := testhelper.AgentKeyFiles(t)
 	cfg := testcfg.Build(t)
 	cfg.Auth.Token = ""
-	cfg.Graft.Agents = []config.GraftAgent{{Name: "builder", Token: agentRPCsTestAgentToken}}
+	cfg.Graft.Agents = []config.GraftAgent{{Name: "builder", PublicKey: publicKey}}
 	cfg.Graft.AgentRPCs = agentRPCs
 
 	logger := testhelper.SharedLogger(t)
@@ -53,7 +54,7 @@ func newAgentRPCsFactory(t *testing.T, agentRPCs ...string) *GitalyServerFactory
 	)
 	t.Cleanup(sf.Stop)
 
-	return sf
+	return sf, keyPath
 }
 
 // serveRepositorySize starts an external server of sf with a stand-in for
@@ -96,17 +97,25 @@ func serveRepositorySize(t *testing.T, sf *GitalyServerFactory) string {
 	return listener.Addr().String()
 }
 
-// callRepositorySize calls RepositorySize as the agent of the test server.
-func callRepositorySize(t *testing.T, addr string) (*gitalypb.RepositorySizeResponse, error) {
+// callRepositorySize calls RepositorySize signed with the key of the agent of
+// the test server.
+func callRepositorySize(t *testing.T, addr, keyPath string) (*gitalypb.RepositorySizeResponse, error) {
 	t.Helper()
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	raw, err := os.ReadFile(keyPath)
+	require.NoError(t, err)
+	signer, err := agentkey.ParsePrivateKey(raw)
+	require.NoError(t, err)
+
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(agentkey.NewSigner(signer).UnaryInterceptor()),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer "+agentRPCsTestAgentToken)
 	resp := &gitalypb.RepositorySizeResponse{}
-	err = conn.Invoke(ctx, agentRPCsTestRepositorySize, &gitalypb.RepositorySizeRequest{}, resp)
+	err = conn.Invoke(testhelper.Context(t), agentRPCsTestRepositorySize, &gitalypb.RepositorySizeRequest{}, resp)
 	return resp, err
 }
 
@@ -120,9 +129,10 @@ func TestGitalyServerFactory_AgentRPCs(t *testing.T) {
 	t.Run("listed RPC is callable by an agent", func(t *testing.T) {
 		t.Parallel()
 
-		addr := serveRepositorySize(t, newAgentRPCsFactory(t, agentRPCsTestRepositorySize))
+		sf, keyPath := newAgentRPCsFactory(t, agentRPCsTestRepositorySize)
+		addr := serveRepositorySize(t, sf)
 
-		resp, err := callRepositorySize(t, addr)
+		resp, err := callRepositorySize(t, addr, keyPath)
 		require.NoError(t, err)
 		require.EqualValues(t, 42, resp.GetSize())
 	})
@@ -130,9 +140,10 @@ func TestGitalyServerFactory_AgentRPCs(t *testing.T) {
 	t.Run("RPC is denied to an agent without the entry", func(t *testing.T) {
 		t.Parallel()
 
-		addr := serveRepositorySize(t, newAgentRPCsFactory(t))
+		sf, keyPath := newAgentRPCsFactory(t)
+		addr := serveRepositorySize(t, sf)
 
-		_, err := callRepositorySize(t, addr)
+		_, err := callRepositorySize(t, addr, keyPath)
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 		require.ErrorContains(t, err, "may not call "+agentRPCsTestRepositorySize)
 	})
@@ -148,7 +159,7 @@ func TestGitalyServerFactory_AgentRPCs(t *testing.T) {
 			"/gitaly.RepositoryService/NoSuchMethod",
 			"RepositorySize",
 		} {
-			sf := newAgentRPCsFactory(t, entry)
+			sf, _ := newAgentRPCsFactory(t, entry)
 
 			_, err := sf.CreateExternal(false)
 			require.Error(t, err, "entry %q", entry)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,11 +19,22 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// A Graft server refuses anonymous callers, so the CLI tests present the
+	// shared token of the test server (doc/graft/PLAN14.md). A call with -token
+	// or -agent-key names another credential and takes precedence.
+	if err := os.Setenv("GRAFT_TOKEN", sharedTestToken); err != nil {
+		panic(err)
+	}
 	testhelper.Run(m)
 }
 
 // missingOID is a well-formed object ID that does not exist in test repositories.
 const missingOID = "0123456789abcdef0123456789abcdef01234567"
+
+// sharedTestToken is the auth.token of the test server. A Graft server refuses
+// anonymous callers, so the CLI runs with it through GRAFT_TOKEN
+// (doc/graft/PLAN14.md).
+const sharedTestToken = testcfg.SharedToken
 
 // serverEnv is a real Gitaly server with every service registered and one
 // empty repository on it.
@@ -48,6 +60,7 @@ func startServer(t *testing.T, configure ...func(*config.Cfg)) serverEnv {
 	for _, c := range configure {
 		c(&cfg)
 	}
+	testcfg.RequireCredential(&cfg)
 	testcfg.BuildGitalySSH(t, cfg)
 	testcfg.BuildGitalyHooks(t, cfg)
 
@@ -73,7 +86,7 @@ func startServer(t *testing.T, configure ...func(*config.Cfg)) serverEnv {
 func (e serverEnv) backend(t *testing.T) *sdkBackend {
 	t.Helper()
 
-	b, err := openSDKBackend(e.ctx, target{Address: e.addr, Storage: e.storage, Repo: e.relPath})
+	b, err := openSDKBackend(e.ctx, target{Address: e.addr, Token: sharedTestToken, Storage: e.storage, Repo: e.relPath})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 	return b

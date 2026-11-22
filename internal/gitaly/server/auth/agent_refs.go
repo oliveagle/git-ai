@@ -489,7 +489,7 @@ func agentRefField(fd protoreflect.FieldDescriptor) (refFieldKind, bool) {
 	return notRef, false
 }
 
-// isAgent reports whether the caller of ctx authenticated with a per-agent token.
+// isAgent reports whether the caller of ctx authenticated with an agent's SSH key.
 func isAgent(ctx context.Context) (string, bool) {
 	id, ok := identity.FromContext(ctx)
 	return id.Name, ok && id.Source == identity.SourceAgent

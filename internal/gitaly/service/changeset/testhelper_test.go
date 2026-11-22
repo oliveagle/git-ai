@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/blob"
@@ -13,7 +14,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/ref"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/repository"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/ssh"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
@@ -70,11 +70,7 @@ func setupChangesetServiceWith(tb testing.TB, ctx context.Context, cfg config.Cf
 	}, opts...)
 	cfg.SocketPath = serverSocketPath
 
-	conn, err := client.New(testhelper.Context(tb), serverSocketPath)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	tb.Cleanup(func() { conn.Close() })
+	conn := gittest.DialService(tb, testhelper.Context(tb), cfg)
 
 	md := testcfg.GitalyServersMetadataFromCfg(tb, cfg)
 	ctx = testhelper.MergeOutgoingMetadata(ctx, md)

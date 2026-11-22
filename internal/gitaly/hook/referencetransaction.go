@@ -440,7 +440,7 @@ func (m *GitLabHookManager) trackPendingTransaction(state ReferenceTransactionSt
 }
 
 // enforceGraftPolicy evaluates the standalone access policy ([[graft.policy]])
-// for reference updates that a request authenticated with a per-agent token
+// for reference updates that a request authenticated with an agent's SSH key
 // performs. It returns a PermissionDenied error when the policy denies one of
 // the updated references, which makes Git abort the whole reference
 // transaction.
@@ -451,7 +451,7 @@ func (m *GitLabHookManager) trackPendingTransaction(state ReferenceTransactionSt
 // policy has to be enforced here for an agent not to bypass it.
 //
 // The policy decides on the agent of the token, as the pre-receive hook does.
-// Callers that did not authenticate with an agent token (the shared token,
+// Callers that did not authenticate with an agent's SSH key (the shared token,
 // unauthenticated setups, Gitaly's own internal operations) are not restricted
 // here: they are trusted, and their pushes and OperationService RPCs are still
 // checked by the pre-receive hook. The policy governs the references under
@@ -586,7 +586,7 @@ func (m *GitLabHookManager) graftPolicyDecision(policy *policystore.Snapshot, en
 // checks it first to return the policy message with PermissionDenied.
 //
 // Like enforceGraftPolicy, it decides only for a caller that authenticated with
-// a per-agent token: the reservation of refs/graft/ in every mode, the rest of
+// an agent's SSH key: the reservation of refs/graft/ in every mode, the rest of
 // the policy only in standalone mode with a policy. The hook still runs
 // afterwards.
 func CheckAgentPolicy(ctx context.Context, graft config.Graft, changes string) error {

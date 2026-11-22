@@ -43,10 +43,10 @@ func TestCLIReviewShowEscapesServerText(t *testing.T) {
 
 	require.Contains(t, stdout, "review "+id+" (open): "+`fix\x1b[1A\x1b[2Kforged`+"\n")
 	require.Contains(t, stdout, "\nfirst line\nsecond"+`\x1b[2K`+"\n", "a description keeps its newlines and escapes each line")
-	require.Contains(t, stdout, `anonymous on `)
+	require.Contains(t, stdout, `shared on `)
 	require.Contains(t, stdout, `: nit\x1b[3A\x1b[2Kapproved: yes`+"\n", "the comment stays on one line")
 	require.Contains(t, stdout, "\napproved: no\n", "the real approval line is intact")
-	require.Contains(t, stdout, "changes requested by anonymous on")
+	require.Contains(t, stdout, "changes requested by shared on")
 	require.Contains(t, stdout, `: wait\x1b[2K`+"\n    two\n", "a continuation line of a body is indented")
 	require.Contains(t, stdout, `y\x1b[2Kz.go`)
 	require.Contains(t, stdout, `multi\x0aline.txt`, "a newline in a file name does not break the files list")
@@ -136,7 +136,7 @@ func TestCLIReviewVerdictAcceptsShortHead(t *testing.T) {
 
 	code, stdout, stderr = runCLI(t, "review", "show", "-C", dir, id)
 	require.Equal(t, exitOK, code, stderr)
-	require.Contains(t, stdout, "approved by anonymous on "+shortOID(moved.String()))
+	require.Contains(t, stdout, "approved by shared on "+shortOID(moved.String()))
 }
 
 // TestDisplayLinesIndentsContinuationLines checks the layout of multi-line text:

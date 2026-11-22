@@ -153,10 +153,7 @@ func policyCheck(ctx context.Context, out io.Writer, o *options, f *policyFlags,
 	}
 
 	if len(f.repos) > 0 {
-		dialOpts := []sdk.DialOption{sdk.WithStorage(pick(o.storage, defaultStorage))}
-		if o.token != "" {
-			dialOpts = append(dialOpts, sdk.WithToken(o.token))
-		}
+		dialOpts := dialOptions(target{Address: o.address, Token: o.token, AgentKey: o.agentKey, Storage: o.storage})
 		client, err := sdk.Dial(ctx, o.address, dialOpts...)
 		if err != nil {
 			return err

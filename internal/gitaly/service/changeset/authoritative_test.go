@@ -48,6 +48,7 @@ func setupAuthoritative(t *testing.T, dialect sqlstore.Dialect) authoritativeEnv
 	ctx := testhelper.Context(t)
 	cfg := testcfg.Build(t)
 	cfg.Graft.Standalone = true
+	testcfg.RequireCredential(&cfg)
 
 	databaseURL := coretest.DatabaseURL(t, dialect)
 	bucketURL := coretest.BucketURL(t, false)
@@ -441,7 +442,11 @@ func TestAuthoritativeWritesAreLogged(t *testing.T) {
 				require.Equal(t, uint64(i+1), c.GetSequence(), "the entries are dense")
 				require.Equal(t, []byte("refs/heads/feature"), c.GetReference())
 				require.Equal(t, wantNew[i].String(), c.GetNewOid())
-				require.Equal(t, gittest.GlID, c.GetActor())
+				// Every Graft server request carries an authenticated identity, and
+				// the changeset log records that identity: this server authenticates
+				// its caller with the shared token, whose identity is "shared"
+				// (doc/graft/PLAN14.md).
+				require.Equal(t, "shared", c.GetActor())
 			}
 			require.Equal(t, string(gittest.DefaultObjectHash.ZeroOID), changesets[0].GetOldOid())
 			require.Equal(t, c1.String(), changesets[1].GetOldOid())

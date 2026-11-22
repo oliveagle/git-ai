@@ -345,11 +345,12 @@ func reviewTarget(o *options, f *reviewFlags) (target, string, error) {
 					f.repo, meta.Repo)
 			}
 			return target{
-				Address: pick(o.address, meta.Address),
-				Token:   o.token,
-				Storage: pick(o.storage, meta.Storage),
-				Repo:    meta.Repo,
-				User:    o.user,
+				AgentKey: o.agentKey,
+				Address:  pick(o.address, meta.Address),
+				Token:    o.token,
+				Storage:  pick(o.storage, meta.Storage),
+				Repo:     meta.Repo,
+				User:     o.user,
 			}, root, nil
 		}
 		rootErr = metaErr
@@ -357,7 +358,7 @@ func reviewTarget(o *options, f *reviewFlags) (target, string, error) {
 	if o.address == "" || f.repo == "" {
 		return target{}, "", rootErr
 	}
-	return target{Address: o.address, Token: o.token, Storage: o.storage, Repo: f.repo, User: o.user}, "", nil
+	return target{Address: o.address, Token: o.token, AgentKey: o.agentKey, Storage: o.storage, Repo: f.repo, User: o.user}, "", nil
 }
 
 // headOr returns head when the command names one. Otherwise it returns the

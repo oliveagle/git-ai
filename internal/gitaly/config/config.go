@@ -1089,6 +1089,7 @@ func (cfg *Cfg) Validate() error {
 		cfg.validateGitlabSecret,
 		cfg.Graft.Validate,
 		cfg.Auth.Validate,
+		cfg.validateGraftAuthentication,
 		cfg.validateBinDir,
 		cfg.validateRuntimeDir,
 		cfg.validateMaintenance,
@@ -1098,6 +1099,23 @@ func (cfg *Cfg) Validate() error {
 		if err := run(); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateGraftAuthentication reports a Graft server that would serve
+// anonymous callers. A Graft server refuses them: every request must carry a
+// credential, and the shared token is the credential the Git hooks and the
+// operator's tools call the server with. An upstream Gitaly keeps its
+// behaviour and serves anonymous callers when no token is configured.
+func (cfg *Cfg) validateGraftAuthentication() error {
+	if !cfg.Graft.RequiresAuthentication() {
+		return nil
+	}
+
+	if cfg.Auth.GetToken() == "" {
+		return fmt.Errorf("graft: a Graft server refuses anonymous requests, so auth.token must be set: the Git hooks and the operator's tools call the server with it")
 	}
 
 	return nil
@@ -1142,7 +1160,9 @@ func (cfg *Cfg) ValidateV2() error {
 			return cfg.Gitlab.Validate()
 		}},
 		{field: "gitlab-shell", validate: cfg.GitlabShell.Validate},
-		{field: "graft", validate: cfg.Graft.Validate},
+		{field: "graft", validate: func() error {
+			return errors.Join(cfg.Graft.Validate(), cfg.validateGraftAuthentication())
+		}},
 		{field: "graceful_restart_timeout", validate: func() error {
 			return cfgerror.Comparable(cfg.GracefulRestartTimeout.Duration()).GreaterOrEqual(0)
 		}},

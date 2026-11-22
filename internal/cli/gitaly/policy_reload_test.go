@@ -132,8 +132,9 @@ func TestReloadPolicy(t *testing.T) {
 		t.Parallel()
 
 		cfg, store, hook, reload := reloadSetup(t)
+		_, publicKey := testhelper.AgentKeyPair(t)
 		cfg.Graft.Policy = tighterRules
-		cfg.Graft.Agents = []config.GraftAgent{{Name: "alice", Token: "alice-secret-token"}}
+		cfg.Graft.Agents = []config.GraftAgent{{Name: "alice", PublicKey: publicKey}}
 
 		outcome := reload(testcfg.WriteTemporaryGitalyConfigFile(t, cfg))
 		require.Equal(t, policystore.Applied, outcome.Result)

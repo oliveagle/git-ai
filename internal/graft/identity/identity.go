@@ -10,11 +10,16 @@ import "context"
 type Source string
 
 const (
-	// SourceAgent is an identity authenticated with a per-agent token
+	// SourceAgent is an identity authenticated with an agent's SSH key
 	// configured under [[graft.agent]].
 	SourceAgent Source = "agent"
 	// SourceSharedToken is a caller authenticated with the shared auth.token.
 	SourceSharedToken Source = "shared_token"
+	// SourceAdmin is a caller authenticated with the super admin's token
+	// (graft.admin_token). It may delete a repository, which the server only
+	// does for an archived repository whose retention has passed
+	// (doc/graft/PLAN13.md).
+	SourceAdmin Source = "admin"
 	// SourceUser is an identity taken from the request's User message
 	// (gl_id / gl_username), trusted because the caller was authenticated.
 	SourceUser Source = "user"

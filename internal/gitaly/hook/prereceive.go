@@ -155,7 +155,7 @@ func (m *GitLabHookManager) preReceiveHook(ctx context.Context, payload gitcmd.H
 	}
 
 	// In Graft standalone mode the access policy decides on the identity that
-	// authenticated with a per-agent token, not on the client-supplied gl_id,
+	// authenticated with an agent's SSH key, not on the client-supplied gl_id,
 	// so that one agent cannot be evaluated as another.
 	batchAdmitted := false
 	if m.cfg.Graft.Standalone {

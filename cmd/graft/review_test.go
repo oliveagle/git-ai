@@ -81,8 +81,8 @@ func TestCLIReviewAgainstServer(t *testing.T) {
 
 	code, stdout, stderr = runCLI(t, "review", "show", "-C", dir, id)
 	require.Equal(t, exitOK, code, stderr)
-	require.Contains(t, stdout, "changes requested by anonymous on")
-	require.Contains(t, stdout, "anonymous x.go:3 on")
+	require.Contains(t, stdout, "changes requested by shared on")
+	require.Contains(t, stdout, "shared x.go:3 on")
 	require.Contains(t, stdout, ": nit")
 
 	code, stdout, stderr = runCLI(t, "review", "update", "-C", dir, id, "--head", next.String())

@@ -53,20 +53,20 @@ func TestRunWatchReportsFailureEvenWhenChangesetsCloseFirst(t *testing.T) {
 // build_bot can commit and land under a policy written for
 // refs/heads/graft/build_bot/**: the temporary branch keeps the name as given.
 func TestCLICommitPassesPolicyForAgentNameThatIsNotASlug(t *testing.T) {
-	env := startPolicyServerFor(t, "build_bot", "bb-secret")
+	env, keyPath := startPolicyServerFor(t, "build_bot")
 
 	dir := filepath.Join(t.TempDir(), "ws")
-	code, _, stderr := runCLI(t, "clone", "-token", "bb-secret", "-storage", env.storage, env.addr, env.relPath, dir)
+	code, _, stderr := runCLI(t, "clone", "-agent-key", keyPath, "-storage", env.storage, env.addr, env.relPath, dir)
 	require.Equal(t, exitOK, code, stderr)
 
 	writeLocal(t, dir, "a.txt", "two\n")
-	code, stdout, stderr := runCLI(t, "commit", "-C", dir, "-token", "bb-secret", "-user", "build_bot", "-m", "change")
+	code, stdout, stderr := runCLI(t, "commit", "-C", dir, "-agent-key", keyPath, "-user", "build_bot", "-m", "change")
 	require.Equal(t, exitOK, code, stderr)
 	require.Contains(t, stdout, "graft/build_bot/")
-	code, _, stderr = runCLI(t, "land", "-C", dir, "-token", "bb-secret", "-user", "build_bot")
+	code, _, stderr = runCLI(t, "land", "-C", dir, "-agent-key", keyPath, "-user", "build_bot")
 	require.Equal(t, exitOK, code, stderr)
 
-	code, stdout, _ = runCLI(t, "cat", "-C", dir, "-token", "bb-secret", "main:a.txt")
+	code, stdout, _ = runCLI(t, "cat", "-C", dir, "-agent-key", keyPath, "main:a.txt")
 	require.Equal(t, exitOK, code)
 	require.Equal(t, "two\n", stdout)
 }

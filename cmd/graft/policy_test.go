@@ -110,9 +110,9 @@ func TestPolicyCheckOffline(t *testing.T) {
 func TestPolicyCheckAgainstChangesets(t *testing.T) {
 	t.Parallel()
 
-	env := startPolicyServer(t)
+	env, keyPath := startPolicyServer(t)
 	ctx := env.ctx
-	b, err := openSDKBackend(ctx, target{Address: env.addr, Token: "alice-secret", Storage: env.storage, Repo: env.relPath, User: "alice"})
+	b, err := openSDKBackend(ctx, target{Address: env.addr, AgentKey: keyPath, Storage: env.storage, Repo: env.relPath, User: "alice"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
@@ -140,7 +140,7 @@ func TestPolicyCheckAgainstChangesets(t *testing.T) {
 		{Actor: "alice", Refs: []string{"refs/heads/graft/alice/**"}, Allow: true},
 		{Actor: "*", Allow: false},
 	})
-	server := []string{"-address", env.addr, "-token", "alice-secret", "-storage", env.storage}
+	server := []string{"-address", env.addr, "-agent-key", keyPath, "-storage", env.storage}
 
 	t.Run("the updates the candidate would deny", func(t *testing.T) {
 		code, stdout, stderr := runPolicyCheck(append([]string{candidate, "-repo", env.relPath, "--json"}, server...)...)

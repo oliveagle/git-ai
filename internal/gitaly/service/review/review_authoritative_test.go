@@ -14,7 +14,6 @@ import (
 	hookservice "github.com/feder-cr/git-ai/internal/gitaly/service/hook"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
@@ -42,6 +41,7 @@ func setupWithConfig(t *testing.T, mode corestore.Mode, adjust func(*config.Cfg)
 	cfg := testcfg.Build(t)
 	cfg.Graft.Standalone = true
 	adjust(&cfg)
+	testcfg.RequireCredential(&cfg)
 	// The service writes keep-around references through the
 	// reference-transaction hook.
 	testcfg.BuildGitalyHooks(t, cfg)
@@ -56,9 +56,7 @@ func setupWithConfig(t *testing.T, mode corestore.Mode, adjust func(*config.Cfg)
 		gitalypb.RegisterHookServiceServer(srv, hookservice.NewServer(deps))
 	}, testserver.WithGraftStorage(core))
 
-	conn, err := client.New(ctx, cfg.SocketPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { testhelper.MustClose(t, conn) })
+	conn := gittest.DialService(t, ctx, cfg)
 
 	return ctx, cfg, core, gitalypb.NewReviewServiceClient(conn)
 }

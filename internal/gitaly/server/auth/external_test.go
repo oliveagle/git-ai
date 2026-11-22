@@ -16,6 +16,7 @@ import (
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/server"
 	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"github.com/feder-cr/git-ai/internal/testhelper"
@@ -97,16 +98,52 @@ func (gitConfigEchoServer) SSHReceivePack(stream gitalypb.SSHService_SSHReceiveP
 	}
 }
 
+// agentConnection opens a connection that signs every request with the
+// private key of the agent, as the SDK does.
+func agentConnection(t *testing.T, address string, privateKey []byte) *grpc.ClientConn {
+	t.Helper()
+
+	signer, err := agentkey.ParsePrivateKey(privateKey)
+	require.NoError(t, err)
+	clientSigner := agentkey.NewSigner(signer)
+
+	conn, err := grpc.NewClient(address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(clientSigner.UnaryInterceptor()),
+		grpc.WithChainStreamInterceptor(clientSigner.StreamInterceptor()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+
+	return conn
+}
+
+// sharedConnection opens a connection that sends the shared token on every
+// request.
+func sharedConnection(t *testing.T, address, token string) *grpc.ClientConn {
+	t.Helper()
+
+	conn, err := grpc.NewClient(address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(token)),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+
+	return conn
+}
+
 // TestExternalServerAgentGitConfigOptions checks that an agent cannot pass Git
 // configuration options, which could disable the hooks of a push or run
 // arbitrary commands, while a shared-token caller still can.
 func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 	t.Parallel()
 
+	privateKey, publicKey := testhelper.AgentKeyPair(t)
 	cfg := testcfg.Build(t, testcfg.WithBase(config.Cfg{
 		Auth: gitalycfgauth.Config{Token: "shared-secret"},
 		Graft: config.Graft{
-			Agents: []config.GraftAgent{{Name: "ci", Token: "ci-secret"}},
+			Agents: []config.GraftAgent{{Name: "ci", PublicKey: publicKey}},
 		},
 	}))
 
@@ -131,21 +168,12 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	agentConn := agentConnection(t, listener.Addr().String(), privateKey)
+	sharedConn := sharedConnection(t, listener.Addr().String(), "shared-secret")
 
-	agentCtx := func(t *testing.T) context.Context {
-		return metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer ci-secret")
-	}
-	sharedCtx := func(t *testing.T) context.Context {
-		md, err := gitalyauth.RPCCredentialsV2("shared-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-		return metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", md["authorization"])
-	}
 	repo := &gitalypb.Repository{StorageName: "default", RelativePath: "repo.git"}
 
-	uploadPack := func(ctx context.Context, options []string) error {
+	uploadPack := func(conn *grpc.ClientConn, ctx context.Context, options []string) error {
 		_, err := gitalypb.NewSSHServiceClient(conn).SSHUploadPackWithSidechannel(ctx,
 			&gitalypb.SSHUploadPackWithSidechannelRequest{Repository: repo, GitConfigOptions: options})
 		return err
@@ -153,7 +181,9 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 
 	// receivePack sends a first message without options, then one with the
 	// given options, and returns the error that ends the stream.
-	receivePack := func(t *testing.T, ctx context.Context, options []string) error {
+	receivePack := func(t *testing.T, conn *grpc.ClientConn, ctx context.Context, options []string) error {
+		t.Helper()
+
 		stream, err := gitalypb.NewSSHServiceClient(conn).SSHReceivePack(ctx)
 		require.NoError(t, err)
 
@@ -177,7 +207,7 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 
 	t.Run("agent cannot set options on a unary request", func(t *testing.T) {
 		t.Parallel()
-		testhelper.RequireGrpcCode(t, uploadPack(agentCtx(t), []string{"uploadpack.packObjectsHook=touch /tmp/pwned"}), codes.PermissionDenied)
+		testhelper.RequireGrpcCode(t, uploadPack(agentConn, testhelper.Context(t), []string{"uploadpack.packObjectsHook=touch /tmp/pwned"}), codes.PermissionDenied)
 	})
 
 	// SSH RPCs are not on the agent allowlist, so an agent is refused before the
@@ -185,22 +215,22 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 	// RPCs allowed, see TestAgentRequestGuard.
 	t.Run("agent cannot call SSH RPCs even without options", func(t *testing.T) {
 		t.Parallel()
-		testhelper.RequireGrpcCode(t, uploadPack(agentCtx(t), nil), codes.PermissionDenied)
+		testhelper.RequireGrpcCode(t, uploadPack(agentConn, testhelper.Context(t), nil), codes.PermissionDenied)
 	})
 
 	t.Run("agent cannot set options in a later stream message", func(t *testing.T) {
 		t.Parallel()
-		testhelper.RequireGrpcCode(t, receivePack(t, agentCtx(t), []string{"core.hooksPath=/var/empty"}), codes.PermissionDenied)
+		testhelper.RequireGrpcCode(t, receivePack(t, agentConn, testhelper.Context(t), []string{"core.hooksPath=/var/empty"}), codes.PermissionDenied)
 	})
 
 	t.Run("shared token may set options", func(t *testing.T) {
 		t.Parallel()
 
-		err := uploadPack(sharedCtx(t), []string{"transfer.hideRefs=refs/x"})
+		err := uploadPack(sharedConn, testhelper.Context(t), []string{"transfer.hideRefs=refs/x"})
 		testhelper.RequireGrpcCode(t, err, codes.Unimplemented)
 		require.Contains(t, status.Convert(err).Message(), "transfer.hideRefs=refs/x")
 
-		testhelper.RequireGrpcCode(t, receivePack(t, sharedCtx(t), []string{"receive.maxInputSize=1"}), codes.Unimplemented)
+		testhelper.RequireGrpcCode(t, receivePack(t, sharedConn, testhelper.Context(t), []string{"receive.maxInputSize=1"}), codes.Unimplemented)
 	})
 }
 
@@ -210,11 +240,12 @@ func TestExternalServerAgentGitConfigOptions(t *testing.T) {
 func TestExternalServerStandaloneIdentity(t *testing.T) {
 	t.Parallel()
 
+	privateKey, publicKey := testhelper.AgentKeyPair(t)
 	cfg := testcfg.Build(t, testcfg.WithBase(config.Cfg{
 		Auth: gitalycfgauth.Config{Token: "shared-secret"},
 		Graft: config.Graft{
 			Standalone: true,
-			Agents:     []config.GraftAgent{{Name: "ci", Token: "ci-secret"}},
+			Agents:     []config.GraftAgent{{Name: "ci", PublicKey: publicKey}},
 		},
 	}))
 
@@ -239,9 +270,8 @@ func TestExternalServerStandaloneIdentity(t *testing.T) {
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	agentConn := agentConnection(t, listener.Addr().String(), privateKey)
+	sharedConn := sharedConnection(t, listener.Addr().String(), "shared-secret")
 
 	request := func() *gitalypb.UserCreateBranchRequest {
 		return &gitalypb.UserCreateBranchRequest{
@@ -254,8 +284,7 @@ func TestExternalServerStandaloneIdentity(t *testing.T) {
 	t.Run("agent cannot claim another user", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer ci-secret")
-		resp, err := gitalypb.NewOperationServiceClient(conn).UserCreateBranch(ctx, request())
+		resp, err := gitalypb.NewOperationServiceClient(agentConn).UserCreateBranch(testhelper.Context(t), request())
 		require.NoError(t, err)
 		require.Equal(t, "ci/ci", string(resp.GetBranch().GetName()))
 	})
@@ -263,19 +292,15 @@ func TestExternalServerStandaloneIdentity(t *testing.T) {
 	t.Run("shared token keeps the client values", func(t *testing.T) {
 		t.Parallel()
 
-		md, err := gitalyauth.RPCCredentialsV2("shared-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-
-		ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", md["authorization"])
-		resp, err := gitalypb.NewOperationServiceClient(conn).UserCreateBranch(ctx, request())
+		resp, err := gitalypb.NewOperationServiceClient(sharedConn).UserCreateBranch(testhelper.Context(t), request())
 		require.NoError(t, err)
 		require.Equal(t, "admin/root", string(resp.GetBranch().GetName()))
 	})
 
-	commitFiles := func(t *testing.T, ctx context.Context) string {
+	commitFiles := func(t *testing.T, conn *grpc.ClientConn) string {
 		t.Helper()
 
-		stream, err := gitalypb.NewOperationServiceClient(conn).UserCommitFiles(ctx)
+		stream, err := gitalypb.NewOperationServiceClient(conn).UserCommitFiles(testhelper.Context(t))
 		require.NoError(t, err)
 		require.NoError(t, stream.Send(&gitalypb.UserCommitFilesRequest{
 			UserCommitFilesRequestPayload: &gitalypb.UserCommitFilesRequest_Header{
@@ -295,28 +320,25 @@ func TestExternalServerStandaloneIdentity(t *testing.T) {
 	t.Run("agent cannot claim another user in a stream header", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer ci-secret")
-		require.Equal(t, "ci/ci", commitFiles(t, ctx))
+		require.Equal(t, "ci/ci", commitFiles(t, agentConn))
 	})
 
 	t.Run("shared token keeps the stream header values", func(t *testing.T) {
 		t.Parallel()
 
-		md, err := gitalyauth.RPCCredentialsV2("shared-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-
-		ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", md["authorization"])
-		require.Equal(t, "admin/root", commitFiles(t, ctx))
+		require.Equal(t, "admin/root", commitFiles(t, sharedConn))
 	})
 }
 
 func TestExternalServerAgentAuthentication(t *testing.T) {
 	t.Parallel()
 
+	privateKey, publicKey := testhelper.AgentKeyPair(t)
 	cfg := testcfg.Build(t, testcfg.WithBase(config.Cfg{
 		Auth: gitalycfgauth.Config{Token: "shared-secret"},
 		Graft: config.Graft{
-			Agents: []config.GraftAgent{{Name: "agent-a", Token: "agent-a-secret"}},
+			Standalone: true,
+			Agents:     []config.GraftAgent{{Name: "agent-a", PublicKey: publicKey}},
 		},
 	}))
 
@@ -343,31 +365,25 @@ func TestExternalServerAgentAuthentication(t *testing.T) {
 	require.NoError(t, err)
 	go func() { _ = srv.Serve(listener) }()
 
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	unsignedConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	t.Cleanup(func() { require.NoError(t, unsignedConn.Close()) })
 
-	withAuthorization := func(t *testing.T, authorization string) context.Context {
-		ctx := testhelper.Context(t)
-		if authorization == "" {
-			return ctx
-		}
-		return metadata.AppendToOutgoingContext(ctx, "authorization", authorization)
-	}
+	agentConn := agentConnection(t, listener.Addr().String(), privateKey)
+	sharedConn := sharedConnection(t, listener.Addr().String(), "shared-secret")
 
 	t.Run("health check needs no token", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := healthpb.NewHealthClient(conn).Check(testhelper.Context(t), &healthpb.HealthCheckRequest{})
+		resp, err := healthpb.NewHealthClient(unsignedConn).Check(testhelper.Context(t), &healthpb.HealthCheckRequest{})
 		require.NoError(t, err)
 		require.Equal(t, healthpb.HealthCheckResponse_SERVING, resp.GetStatus())
 	})
 
-	t.Run("agent token sets the agent identity", func(t *testing.T) {
+	t.Run("the signature of the agent sets the agent identity", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := gitalypb.NewServerServiceClient(conn).ServerInfo(
-			withAuthorization(t, "Bearer agent-a-secret"), &gitalypb.ServerInfoRequest{})
+		resp, err := gitalypb.NewServerServiceClient(agentConn).ServerInfo(testhelper.Context(t), &gitalypb.ServerInfoRequest{})
 		require.NoError(t, err)
 		require.Equal(t, "agent-a/agent", resp.GetServerVersion())
 	})
@@ -375,11 +391,7 @@ func TestExternalServerAgentAuthentication(t *testing.T) {
 	t.Run("shared token sets the shared identity", func(t *testing.T) {
 		t.Parallel()
 
-		md, err := gitalyauth.RPCCredentialsV2("shared-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-
-		resp, err := gitalypb.NewServerServiceClient(conn).ServerInfo(
-			withAuthorization(t, md["authorization"]), &gitalypb.ServerInfoRequest{})
+		resp, err := gitalypb.NewServerServiceClient(sharedConn).ServerInfo(testhelper.Context(t), &gitalypb.ServerInfoRequest{})
 		require.NoError(t, err)
 		require.Equal(t, "shared/shared_token", resp.GetServerVersion())
 	})
@@ -387,25 +399,24 @@ func TestExternalServerAgentAuthentication(t *testing.T) {
 	t.Run("missing token is rejected", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := gitalypb.NewServerServiceClient(conn).ServerInfo(
-			withAuthorization(t, ""), &gitalypb.ServerInfoRequest{})
+		_, err := gitalypb.NewServerServiceClient(unsignedConn).ServerInfo(testhelper.Context(t), &gitalypb.ServerInfoRequest{})
 		require.Equal(t, codes.Unauthenticated, status.Code(err))
 	})
 
 	t.Run("wrong token is rejected", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := gitalypb.NewServerServiceClient(conn).ServerInfo(
-			withAuthorization(t, "Bearer nope"), &gitalypb.ServerInfoRequest{})
+		ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer nope")
+		_, err := gitalypb.NewServerServiceClient(unsignedConn).ServerInfo(ctx, &gitalypb.ServerInfoRequest{})
 		require.Equal(t, codes.Unauthenticated, status.Code(err))
 	})
 
 	// HookService trusts the actor carried in its requests' hooks payload, so an
 	// agent calling it could act as another actor.
-	referenceTransactionHook := func(t *testing.T, ctx context.Context) error {
+	referenceTransactionHook := func(t *testing.T, conn *grpc.ClientConn) error {
 		t.Helper()
 
-		stream, err := gitalypb.NewHookServiceClient(conn).ReferenceTransactionHook(ctx)
+		stream, err := gitalypb.NewHookServiceClient(conn).ReferenceTransactionHook(testhelper.Context(t))
 		require.NoError(t, err)
 		// Send fails with io.EOF when the server already rejected the stream; the
 		// status is returned by Recv.
@@ -422,36 +433,21 @@ func TestExternalServerAgentAuthentication(t *testing.T) {
 	t.Run("agent cannot call HookService", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := withAuthorization(t, "Bearer agent-a-secret")
-
-		_, err := gitalypb.NewHookServiceClient(conn).PackObjectsHookWithSidechannel(ctx, &gitalypb.PackObjectsHookWithSidechannelRequest{})
+		_, err := gitalypb.NewHookServiceClient(agentConn).PackObjectsHookWithSidechannel(testhelper.Context(t), &gitalypb.PackObjectsHookWithSidechannelRequest{})
 		testhelper.RequireGrpcCode(t, err, codes.PermissionDenied)
 
-		testhelper.RequireGrpcCode(t, referenceTransactionHook(t, ctx), codes.PermissionDenied)
-	})
-
-	t.Run("agent with HMAC token cannot call HookService", func(t *testing.T) {
-		t.Parallel()
-
-		md, err := gitalyauth.RPCCredentialsV2("agent-a-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-
-		testhelper.RequireGrpcCode(t, referenceTransactionHook(t, withAuthorization(t, md["authorization"])), codes.PermissionDenied)
+		testhelper.RequireGrpcCode(t, referenceTransactionHook(t, agentConn), codes.PermissionDenied)
 	})
 
 	t.Run("shared token may call HookService", func(t *testing.T) {
 		t.Parallel()
 
-		md, err := gitalyauth.RPCCredentialsV2("shared-secret").GetRequestMetadata(testhelper.Context(t))
-		require.NoError(t, err)
-		ctx := withAuthorization(t, md["authorization"])
-
 		// The stub server does not implement the RPCs, so passing authentication
 		// yields Unimplemented.
-		_, err = gitalypb.NewHookServiceClient(conn).PackObjectsHookWithSidechannel(ctx, &gitalypb.PackObjectsHookWithSidechannelRequest{})
+		_, err := gitalypb.NewHookServiceClient(sharedConn).PackObjectsHookWithSidechannel(testhelper.Context(t), &gitalypb.PackObjectsHookWithSidechannelRequest{})
 		testhelper.RequireGrpcCode(t, err, codes.Unimplemented)
 
-		testhelper.RequireGrpcCode(t, referenceTransactionHook(t, ctx), codes.Unimplemented)
+		testhelper.RequireGrpcCode(t, referenceTransactionHook(t, sharedConn), codes.Unimplemented)
 	})
 }
 
@@ -487,8 +483,8 @@ func TestExternalServerWithoutAgentsKeepsUpstreamAuthentication(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, conn.Close()) })
 
-	// Without agents a plain token is not a credential: upstream only accepts
-	// v2 HMAC tokens, and never sets an identity.
+	// Without agents a plain token is not a credential: a Gitaly server only
+	// accepts v2 HMAC tokens.
 	ctx := metadata.AppendToOutgoingContext(testhelper.Context(t), "authorization", "Bearer agent-a-secret")
 	_, err = gitalypb.NewServerServiceClient(conn).ServerInfo(ctx, &gitalypb.ServerInfoRequest{})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
@@ -499,5 +495,5 @@ func TestExternalServerWithoutAgentsKeepsUpstreamAuthentication(t *testing.T) {
 
 	resp, err := gitalypb.NewServerServiceClient(conn).ServerInfo(ctx, &gitalypb.ServerInfoRequest{})
 	require.NoError(t, err)
-	require.Equal(t, "no identity", resp.GetServerVersion())
+	require.Equal(t, "shared/shared_token", resp.GetServerVersion())
 }

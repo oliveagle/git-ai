@@ -50,7 +50,8 @@ func (s *scriptedServerStream) RecvMsg(m any) error {
 func TestAgentRequestGuard(t *testing.T) {
 	t.Parallel()
 
-	unary, stream, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), guardAgentRPCs, true)
+	agents, a, b := testAgents(t)
+	unary, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents, AgentRPCs: guardAgentRPCs}, true)
 	require.NoError(t, err)
 
 	options := []string{"core.hooksPath=/var/empty"}
@@ -59,8 +60,9 @@ func TestAgentRequestGuard(t *testing.T) {
 		t.Parallel()
 
 		called := false
-		_, err := unary(contextWithAuthorization(t, "Bearer "+agentASecret),
-			&gitalypb.SSHUploadPackWithSidechannelRequest{GitConfigOptions: options},
+		req := &gitalypb.SSHUploadPackWithSidechannelRequest{GitConfigOptions: options}
+		_, err := unary(signedAgentContextFor(t, a, gitalypb.SSHService_SSHUploadPackWithSidechannel_FullMethodName, req),
+			req,
 			&grpc.UnaryServerInfo{FullMethod: gitalypb.SSHService_SSHUploadPackWithSidechannel_FullMethodName},
 			func(context.Context, any) (any, error) {
 				called = true
@@ -75,8 +77,9 @@ func TestAgentRequestGuard(t *testing.T) {
 		t.Parallel()
 
 		called := false
-		_, err := unary(contextWithAuthorization(t, "Bearer "+agentASecret),
-			&gitalypb.SSHUploadPackWithSidechannelRequest{},
+		req := &gitalypb.SSHUploadPackWithSidechannelRequest{}
+		_, err := unary(signedAgentContextFor(t, a, gitalypb.SSHService_SSHUploadPackWithSidechannel_FullMethodName, req),
+			req,
 			&grpc.UnaryServerInfo{FullMethod: gitalypb.SSHService_SSHUploadPackWithSidechannel_FullMethodName},
 			func(context.Context, any) (any, error) {
 				called = true
@@ -90,7 +93,7 @@ func TestAgentRequestGuard(t *testing.T) {
 	t.Run("agent may not set options in a later stream message", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := contextWithAuthorization(t, "Bearer "+agentBSecret)
+		ctx := signedAgentContext(t, b, gitalypb.SSHService_SSHReceivePack_FullMethodName)
 		ss := &scriptedServerStream{ctx: ctx, msgs: []proto.Message{
 			&gitalypb.SSHReceivePackRequest{Repository: &gitalypb.Repository{RelativePath: "repo.git"}},
 			&gitalypb.SSHReceivePackRequest{GitConfigOptions: options},
@@ -114,7 +117,7 @@ func TestAgentRequestGuard(t *testing.T) {
 	t.Run("agent may stream without options", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := contextWithAuthorization(t, "Bearer "+agentASecret)
+		ctx := signedAgentContext(t, a, gitalypb.SSHService_SSHReceivePack_FullMethodName)
 		ss := &scriptedServerStream{ctx: ctx, msgs: []proto.Message{
 			&gitalypb.SSHReceivePackRequest{Repository: &gitalypb.Repository{RelativePath: "repo.git"}},
 		}}

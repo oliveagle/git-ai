@@ -26,7 +26,7 @@ func cmdClone(ctx context.Context, out io.Writer, o *options, args []string) err
 	}
 	address, repo, dir := args[0], args[1], args[2]
 	storage := pick(o.storage, defaultStorage)
-	backend, err := backendFactory(ctx, target{Address: address, Token: o.token, Storage: storage, Repo: repo, User: o.user})
+	backend, err := backendFactory(ctx, target{Address: address, Token: o.token, AgentKey: o.agentKey, Storage: storage, Repo: repo, User: o.user})
 	if err != nil {
 		return err
 	}
@@ -454,11 +454,12 @@ func openWorkspace(ctx context.Context, o *options) (*workspace.Workspace, error
 		return nil, err
 	}
 	backend, err := backendFactory(ctx, target{
-		Address: pick(o.address, meta.Address),
-		Token:   o.token,
-		Storage: pick(o.storage, meta.Storage),
-		Repo:    meta.Repo,
-		User:    o.user,
+		Address:  pick(o.address, meta.Address),
+		Token:    o.token,
+		AgentKey: o.agentKey,
+		Storage:  pick(o.storage, meta.Storage),
+		Repo:     meta.Repo,
+		User:     o.user,
 	})
 	if err != nil {
 		return nil, err
@@ -478,11 +479,12 @@ func remoteFor(ctx context.Context, o *options) (workspace.Backend, workspace.Me
 		return nil, workspace.Meta{}, err
 	}
 	backend, err := backendFactory(ctx, target{
-		Address: pick(o.address, meta.Address),
-		Token:   o.token,
-		Storage: pick(o.storage, meta.Storage),
-		Repo:    meta.Repo,
-		User:    o.user,
+		Address:  pick(o.address, meta.Address),
+		Token:    o.token,
+		AgentKey: o.agentKey,
+		Storage:  pick(o.storage, meta.Storage),
+		Repo:     meta.Repo,
+		User:     o.user,
 	})
 	if err != nil {
 		return nil, workspace.Meta{}, err

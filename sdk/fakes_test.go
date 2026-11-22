@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
 )
@@ -103,6 +104,9 @@ type fakeObjects struct {
 	// authorization records the authorization metadata of the last
 	// GetObjects call.
 	authorization string
+	// signature records the fingerprint metadata of the last GetObjects
+	// call, which a request signed with the key of an agent carries.
+	signature string
 
 	// tree is the list of entries of the repository's tree at revision "main",
 	// with paths relative to the root.
@@ -118,6 +122,9 @@ func (f *fakeObjects) GetObjects(req *gitalypb.GetObjectsRequest, stream gitalyp
 	if md, ok := metadata.FromIncomingContext(stream.Context()); ok {
 		if values := md.Get("authorization"); len(values) > 0 {
 			f.authorization = values[0]
+		}
+		if values := md.Get(agentkey.KeyMetadata); len(values) > 0 {
+			f.signature = values[0]
 		}
 	}
 	f.mu.Unlock()

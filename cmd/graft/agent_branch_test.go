@@ -17,9 +17,9 @@ import (
 func TestAgentLandLeavesNoTemporaryBranch(t *testing.T) {
 	t.Parallel()
 
-	env := startPolicyServer(t)
+	env, keyPath := startPolicyServer(t)
 	ctx := env.ctx
-	b, err := openSDKBackend(ctx, target{Address: env.addr, Token: "alice-secret", Storage: env.storage, Repo: env.relPath, User: "alice"})
+	b, err := openSDKBackend(ctx, target{Address: env.addr, AgentKey: keyPath, Storage: env.storage, Repo: env.relPath, User: "alice"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 

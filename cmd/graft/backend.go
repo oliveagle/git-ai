@@ -26,6 +26,9 @@ type sdkBackend struct {
 	repo    *sdk.Repo
 	address string
 	token   string
+	// agentKey is the path of the private key of the agent. The requests of
+	// the operation service are signed with it.
+	agentKey string
 	// userID is the configured acting user ID (gl_id) of writes; see user.
 	userID string
 
@@ -91,24 +94,37 @@ func openSDKBackend(ctx context.Context, t target) (*sdkBackend, error) {
 		return nil, errors.New("workspace does not name a repository")
 	}
 
-	opts := []sdk.DialOption{sdk.WithStorage(pick(t.Storage, defaultStorage))}
-	if t.Token != "" {
-		// The HMAC v2 format is accepted for the shared token and for agent
-		// tokens, which are used as the secret.
-		opts = append(opts, sdk.WithToken(t.Token))
-	}
-
-	c, err := sdk.Dial(ctx, t.Address, opts...)
+	c, err := sdk.Dial(ctx, t.Address, dialOptions(t)...)
 	if err != nil {
 		return nil, err
 	}
 	return &sdkBackend{
-		client:  c,
-		repo:    c.Repo(t.Repo),
-		address: t.Address,
-		token:   t.Token,
-		userID:  t.User,
+		client:   c,
+		repo:     c.Repo(t.Repo),
+		address:  t.Address,
+		token:    t.Token,
+		agentKey: t.AgentKey,
+		userID:   t.User,
 	}, nil
+}
+
+// dialOptions returns the options to dial the server of the target with. The
+// agent's key signs every request when there is one; the shared token is used
+// otherwise.
+func dialOptions(t target) []sdk.DialOption {
+	opts := []sdk.DialOption{sdk.WithStorage(pick(t.Storage, defaultStorage))}
+	switch {
+	case t.AdminToken != "":
+		// Cleanup and purge are explicitly admin commands. A key configured for
+		// ordinary agent work is ignored here rather than silently upgraded.
+		opts = append(opts, sdk.WithToken(t.AdminToken))
+	case t.AgentKey != "":
+		opts = append(opts, sdk.WithAgentKey(t.AgentKey))
+	case t.Token != "":
+		// The HMAC v2 format is accepted for the shared token.
+		opts = append(opts, sdk.WithToken(t.Token))
+	}
+	return opts
 }
 
 // anonymousUser is the user ID of writes when none is configured. It is the
@@ -120,12 +136,11 @@ const anonymousUser = "anonymous"
 // server records.
 //
 // A standalone server fills an empty user ID only in top-level request fields
-// (with the identity of the access token), so with no configured user ID a
-// land is checked as the token's identity. UserCommitFiles carries its user in
-// a nested header that the server does not fill, and its hooks refuse a write
+// (with the authenticated identity), so with no configured user ID a land is
+// checked as the agent's identity. UserCommitFiles carries its user in a
+// nested header that the server does not fill, and its hooks refuse a write
 // without a user ID, so commits fall back to anonymousUser. Whatever the user
-// ID, the changeset log records the identity of the access token when there is
-// one.
+// ID, the changeset log records the authenticated identity.
 func (b *sdkBackend) user(name, email string, needsID bool) sdk.User {
 	id := b.userID
 	if id == "" && needsID {
@@ -302,7 +317,7 @@ func (b *sdkBackend) DeleteBranch(ctx context.Context, branch string) error {
 	_, err = ops.UserDeleteBranch(ctx, &gitalypb.UserDeleteBranchRequest{
 		Repository: b.repository(),
 		BranchName: []byte(branch),
-		// The user is filled in by the server from the identity of the token
+		// The user is filled in by the server from the authenticated identity
 		// when it is empty, and always for agents.
 		User: &gitalypb.User{GlId: b.userID, GlUsername: b.userID},
 	})
@@ -397,7 +412,17 @@ func (b *sdkBackend) operationService(ctx context.Context) (gitalypb.OperationSe
 	}
 
 	var grpcOpts []grpc.DialOption
-	if b.token != "" {
+	switch {
+	case b.agentKey != "":
+		signer, err := sdk.AgentSigner(b.agentKey)
+		if err != nil {
+			return nil, err
+		}
+		grpcOpts = append(grpcOpts,
+			grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
+		)
+	case b.token != "":
 		grpcOpts = append(grpcOpts, grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(b.token)))
 	}
 	conn, err := client.DialContext(ctx, b.address, client.WithGrpcOptions(grpcOpts))

@@ -14,7 +14,7 @@ import (
 )
 
 // agentNeverAllowedServices are the gRPC services that no caller authenticated
-// with a per-agent token may call, even when [graft] agent_rpcs names one of
+// with an agent's SSH key may call, even when [graft] agent_rpcs names one of
 // their methods:
 //
 //   - HookService is called back by Git hooks over the internal socket. Called
@@ -38,8 +38,8 @@ var agentNeverAllowedServices = []string{
 	gitalypb.StorageCoreService_ServiceDesc.ServiceName,
 }
 
-// agentNeverAllowedMethods are RPCs that no caller authenticated with a
-// per-agent token may call, even when [graft] agent_rpcs names them. Each of
+// agentNeverAllowedMethods are RPCs that no caller authenticated with
+// an agent's SSH key may call, even when [graft] agent_rpcs names them. Each of
 // them replaces, removes or rewrites a whole repository, writes references
 // outside the reference transaction policy when it is not checked, or installs
 // server-side hooks. They are administrative operations, reserved for the
@@ -99,7 +99,7 @@ var agentNeverAllowedMethods = map[string]struct{}{
 }
 
 // builtinAgentRPCs is the set of full method names that callers authenticated
-// with a per-agent token may call without any [graft] agent_rpcs entry. It
+// with an agent's SSH key may call without any [graft] agent_rpcs entry. It
 // holds what the SDK (sdk/), the CLI (cmd/graft) and the graft-cache
 // pass-through use from agents, and the read-only accessors:
 //
@@ -185,7 +185,7 @@ func fullMethodName(service, method string) string {
 }
 
 // agentAllowlist is the set of full method names ("/package.Service/Method")
-// that callers authenticated with a per-agent token may call. Every other
+// that callers authenticated with an agent's SSH key may call. Every other
 // method is denied.
 type agentAllowlist map[string]struct{}
 
@@ -277,7 +277,7 @@ func agentNeverAllowed(fullMethod string) bool {
 	return false
 }
 
-// mayCall reports whether a caller authenticated with a per-agent token may
+// mayCall reports whether a caller authenticated with an agent's SSH key may
 // call the RPC fullMethod. The RPC must be on the allowlist and must not be
 // never-allowed.
 func (a agentAllowlist) mayCall(fullMethod string) bool {
@@ -290,7 +290,7 @@ func (a agentAllowlist) mayCall(fullMethod string) bool {
 }
 
 // authorizeAgent rejects with PermissionDenied a request of a caller that
-// authenticated with a per-agent token for an RPC that is not on the allowlist.
+// authenticated with an agent's SSH key for an RPC that is not on the allowlist.
 // Every other caller is left alone.
 func authorizeAgent(ctx context.Context, allowlist agentAllowlist, fullMethod string) error {
 	id, ok := identity.FromContext(ctx)

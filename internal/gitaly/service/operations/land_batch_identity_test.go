@@ -32,7 +32,7 @@ import (
 const testAgentHeader = "x-test-agent"
 
 // agentInterceptors authenticates each request as the agent named in its test header, the way the
-// per-agent token authentication does, so that every request carries its own identity. In
+// agent's SSH key authentication does, so that every request carries its own identity. In
 // standalone mode it then fills the request's defaults from that identity, as the server does right
 // after authentication (requestdefaults): the gl_id and gl_username of an agent's request are the
 // agent's name. The test interceptors run after the server's own, which saw no identity yet.
@@ -86,6 +86,7 @@ func setupAgentLandServiceWith(t *testing.T, ctx context.Context, graft config.G
 		t.Cleanup(lanes.Close)
 	}
 
+	testcfg.RequireCredential(&cfg)
 	testcfg.BuildGitalySSH(t, cfg)
 	testcfg.BuildGitalyHooks(t, cfg)
 	cfg.SocketPath = runOperationServiceServerWithLanes(t, cfg, lanes, append([]testserver.GitalyServerOpt{
@@ -93,7 +94,7 @@ func setupAgentLandServiceWith(t *testing.T, ctx context.Context, graft config.G
 		testserver.WithGraftPolicy(policy),
 		testserver.WithGitLabClient(gitlab.NewStandaloneClientWithPolicy(policy, testhelper.NewLogger(t))),
 	}, options...)...)
-	client, conn := newOperationClient(t, cfg.SocketPath)
+	client, conn := newOperationClient(t, cfg)
 	t.Cleanup(func() { conn.Close() })
 	ctx = testhelper.MergeOutgoingMetadata(ctx, testcfg.GitalyServersMetadataFromCfg(t, cfg))
 

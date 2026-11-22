@@ -70,7 +70,7 @@ func TestSpecCompleteEarlyIndexOutOfRangeReturnsFalse(t *testing.T) {
 func specBatchedRun(t *testing.T, graphAncestry bool, workers int, window string) ([]string, int32, []string) {
 	t.Helper()
 
-	graft, tokens := workerGraft(workers)
+	graft, tokens := workerGraft(t, workers)
 	graft.Land.Batch.Window = window
 	graft.Land.GraphAncestry = graphAncestry
 
@@ -150,7 +150,7 @@ func TestSpecPhase4BatchOfOneKeepsMember(t *testing.T) {
 	// single member (original -> landed).
 	t.Parallel()
 
-	graft, tokens := workerGraft(1)
+	graft, tokens := workerGraft(t, 1)
 	s := startGitaly(t, graft, sharedTestToken)
 	ctx := s.ctx
 

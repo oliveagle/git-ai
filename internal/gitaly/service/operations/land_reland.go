@@ -83,7 +83,13 @@ func (s *Server) landReviewResolution(ctx context.Context, in *gitalypb.UserLand
 
 	// The merge commit names the actor and every resolved path in its trailers: a value that cannot
 	// be one trailer line is refused before anything else, and resolving the path again cannot help.
-	actor := identity.Actor(ctx, "")
+	// Only an agent signature yields a named resolver: the name is the identity the server
+	// authenticated, which the request cannot claim (doc/graft/PLAN14.md). A caller that resolves
+	// with the shared token is the operator, not an agent, so the trailer stays "agent".
+	actor := ""
+	if id, ok := identity.FromContext(ctx); ok && id.Source == identity.SourceAgent {
+		actor = id.Name
+	}
 	if !landTrailerValueValid(landAgentResolver(actor)) {
 		return landReview{}, structerr.NewFailedPrecondition("the actor %q cannot be recorded in the %s trailer: it must be one line of printable UTF-8", actor, landTrailerResolvedBy)
 	}

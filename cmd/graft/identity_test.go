@@ -20,21 +20,24 @@ import (
 )
 
 // startPolicyServer starts a standalone server with the agent alice and a policy
-// that lets only alice update main and her own temporary branches.
-func startPolicyServer(t *testing.T) serverEnv {
+// that lets only alice update main and her own temporary branches. It returns
+// the server and the path of the private key of alice.
+func startPolicyServer(t *testing.T) (serverEnv, string) {
 	t.Helper()
-	return startPolicyServerFor(t, "alice", "alice-secret")
+	return startPolicyServerFor(t, "alice")
 }
 
-// startPolicyServerFor is startPolicyServer for an agent with the given name and
-// token, whose policy is written for graft/<name>/** as the documentation says.
-func startPolicyServerFor(t *testing.T, agent, token string) serverEnv {
+// startPolicyServerFor is startPolicyServer for an agent with the given name,
+// whose policy is written for graft/<name>/** as the documentation says. It
+// returns the server and the path of the private key of the agent.
+func startPolicyServerFor(t *testing.T, agent string) (serverEnv, string) {
 	t.Helper()
 
+	keyPath, publicKey := testhelper.AgentKeyFiles(t)
 	ctx := featureflag.OutgoingCtxWithFeatureFlag(testhelper.Context(t), featureflag.GPGSigning, false)
 	cfg := testcfg.Build(t)
 	cfg.Graft.Standalone = true
-	cfg.Graft.Agents = []config.GraftAgent{{Name: agent, Token: token}}
+	cfg.Graft.Agents = []config.GraftAgent{{Name: agent, PublicKey: publicKey}}
 	cfg.Graft.Policy = []config.GraftPolicyRule{
 		{Actor: agent, Refs: []string{"refs/heads/main", "refs/heads/graft/" + agent + "/**"}, Allow: true},
 		{Actor: "*", Allow: false},
@@ -46,7 +49,7 @@ func startPolicyServerFor(t *testing.T, agent, token string) serverEnv {
 	cfg.SocketPath = addr
 
 	// The repository is created on disk because every RPC of the server needs the
-	// agent token, and the test helper's creation path does not present one.
+	// agent key, and the test helper's creation path does not present one.
 	repoProto, repoPath := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{SkipCreationViaService: true})
 	env := serverEnv{
 		ctx:      ctx,
@@ -57,18 +60,18 @@ func startPolicyServerFor(t *testing.T, agent, token string) serverEnv {
 		repoPath: repoPath,
 	}
 	env.seedMain(t, map[string]string{"a.txt": "one\n"})
-	return env
+	return env, keyPath
 }
 
 // TestSDKBackendWritesAsConfiguredUser checks that a commit passes the server's
 // access policy as the configured user, on a temporary branch named after that
-// user, and that the changeset log records the identity of the agent token.
+// user, and that the changeset log records the identity of the agent key.
 func TestSDKBackendWritesAsConfiguredUser(t *testing.T) {
 	t.Parallel()
 
-	env := startPolicyServer(t)
+	env, keyPath := startPolicyServer(t)
 	ctx := env.ctx
-	b, err := openSDKBackend(ctx, target{Address: env.addr, Token: "alice-secret", Storage: env.storage, Repo: env.relPath, User: "alice"})
+	b, err := openSDKBackend(ctx, target{Address: env.addr, AgentKey: keyPath, Storage: env.storage, Repo: env.relPath, User: "alice"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
@@ -111,9 +114,9 @@ func TestSDKBackendWritesAsConfiguredUser(t *testing.T) {
 func TestSDKBackendWithoutUserIsCheckedAsAnonymous(t *testing.T) {
 	t.Parallel()
 
-	env := startPolicyServer(t)
+	env, keyPath := startPolicyServer(t)
 	ctx := env.ctx
-	b, err := openSDKBackend(ctx, target{Address: env.addr, Token: "alice-secret", Storage: env.storage, Repo: env.relPath})
+	b, err := openSDKBackend(ctx, target{Address: env.addr, AgentKey: keyPath, Storage: env.storage, Repo: env.relPath})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = b.Close() })
 
@@ -131,7 +134,7 @@ func TestSDKBackendWithoutUserIsCheckedAsAnonymous(t *testing.T) {
 	require.Equal(t, "one\n", readRemoteFile(t, env, b, "main", "a.txt"))
 
 	// Naming another user than the policy allows is refused too, without the hint.
-	other, err := openSDKBackend(ctx, target{Address: env.addr, Token: "alice-secret", Storage: env.storage, Repo: env.relPath, User: "mallory"})
+	other, err := openSDKBackend(ctx, target{Address: env.addr, AgentKey: keyPath, Storage: env.storage, Repo: env.relPath, User: "mallory"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = other.Close() })
 	_, err = other.CommitFiles(ctx, workspace.CommitOptions{
@@ -149,25 +152,25 @@ func TestSDKBackendWithoutUserIsCheckedAsAnonymous(t *testing.T) {
 // command line with the user from -user and from GRAFT_USER. It is not parallel
 // because it sets the environment.
 func TestCLIWritesAsUserFromFlagAndEnvironment(t *testing.T) {
-	env := startPolicyServer(t)
+	env, keyPath := startPolicyServer(t)
 
 	dir := filepath.Join(t.TempDir(), "ws")
-	code, _, stderr := runCLI(t, "clone", "-token", "alice-secret", "-storage", env.storage, env.addr, env.relPath, dir)
+	code, _, stderr := runCLI(t, "clone", "-agent-key", keyPath, "-storage", env.storage, env.addr, env.relPath, dir)
 	require.Equal(t, exitOK, code, stderr)
 
 	writeLocal(t, dir, "a.txt", "two\n")
-	code, _, stderr = runCLI(t, "commit", "-C", dir, "-token", "alice-secret", "-m", "no user")
+	code, _, stderr = runCLI(t, "commit", "-C", dir, "-agent-key", keyPath, "-m", "no user")
 	require.Equal(t, exitError, code)
 	require.Contains(t, stderr, "GRAFT_USER")
 
-	code, stdout, stderr := runCLI(t, "commit", "-C", dir, "-token", "alice-secret", "-user", "alice", "-m", "flag user")
+	code, stdout, stderr := runCLI(t, "commit", "-C", dir, "-agent-key", keyPath, "-user", "alice", "-m", "flag user")
 	require.Equal(t, exitOK, code, stderr)
 	require.Contains(t, stdout, "graft/alice/")
-	code, stdout, stderr = runCLI(t, "land", "-C", dir, "-token", "alice-secret")
+	code, stdout, stderr = runCLI(t, "land", "-C", dir, "-agent-key", keyPath)
 	require.Equal(t, exitOK, code, stderr)
 	require.Contains(t, stdout, "landed at")
 
-	t.Setenv("GRAFT_TOKEN", "alice-secret")
+	t.Setenv("GRAFT_AGENT_KEY", keyPath)
 	t.Setenv("GRAFT_USER", "alice")
 	writeLocal(t, dir, "a.txt", "three\n")
 	code, stdout, stderr = runCLI(t, "commit", "-C", dir, "-m", "env user", "-land", "main")

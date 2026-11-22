@@ -87,7 +87,7 @@ func TestAgreeWithTheModelsThatAgreeLandThroughVerify(t *testing.T) {
 
 	ex, runs := agreeResolverConfig(t, fakeModel)
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -113,7 +113,7 @@ func TestAgreeWithTheModelsThatDisagreeAreHeld(t *testing.T) {
 
 	ex, runs := agreeResolverConfig(t, otherModel)
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -165,7 +165,7 @@ command = ["python3", "-I", "`+model+`"]
 model = "fake"
 `), 0o600))
 
-	graft, tokens := workerGraft(1)
+	graft, tokens := workerGraft(t, 1)
 	graft.Land.Resolver = config.GraftResolver{
 		Enabled: true,
 		Command: []string{buildAgentsTool(t, "./cmd/graft-resolve"), "--config", resolveConfig},

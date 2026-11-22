@@ -25,7 +25,7 @@ type CreateOptions struct {
 
 // Create creates the repository on the server, empty. Only an operator may
 // create repositories: the call needs the shared token (WithToken), and an
-// agent token fails with PermissionDenied. A repository that exists already
+// agent key fails with PermissionDenied. A repository that exists already
 // fails with AlreadyExists (see IsAlreadyExists).
 //
 // With the storage core in authoritative mode the server registers the new

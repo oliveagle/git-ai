@@ -392,6 +392,13 @@ func (s *Server) GetObjects(req *gitalypb.GetObjectsRequest, stream gitalypb.Obj
 		return s.forwardGetObjects(ctx, req, stream)
 	}
 	if err := s.authorize(ctx, repo); err != nil {
+		if errors.Is(err, errNoTierCredential) {
+			// The tier cannot make an upstream request for a signed caller
+			// without a token of its own: forward the signed request, which
+			// the upstream authenticates and authorizes itself. Nothing is
+			// cached.
+			return s.forwardGetObjects(ctx, req, stream)
+		}
 		return err
 	}
 
@@ -502,6 +509,9 @@ func (s *Server) GetTree(req *gitalypb.GetTreeRequest, stream gitalypb.ObjectSer
 		return structerr.NewInvalidArgument("tree_oid and revision are mutually exclusive")
 	}
 	if err := s.authorize(ctx, repo); err != nil {
+		if errors.Is(err, errNoTierCredential) {
+			return s.forwardGetTree(ctx, req, stream)
+		}
 		return err
 	}
 
@@ -751,7 +761,7 @@ func (s *Server) forwardGetObjects(ctx context.Context, req *gitalypb.GetObjects
 // tier's token when the caller sent none. The upstream's error is returned
 // unchanged, so a rejected caller gets the same status as a direct call.
 func (s *Server) authorize(ctx context.Context, repo *gitalypb.Repository) error {
-	outCtx, err := s.outgoingContext(ctx)
+	outCtx, err := s.syntheticContext(ctx)
 	if err != nil {
 		return err
 	}

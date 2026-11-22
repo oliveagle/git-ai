@@ -2,12 +2,16 @@ package sdk_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
@@ -24,11 +28,6 @@ func TestDial_TokenIsSentAsAuthorization(t *testing.T) {
 			name:       "shared token uses HMAC v2 format",
 			opt:        sdk.WithToken("shared-secret"),
 			wantPrefix: "Bearer v2.",
-		},
-		{
-			name:      "agent token is a plain bearer token",
-			opt:       sdk.WithAgentToken("agent-token"),
-			wantExact: "Bearer agent-token",
 		},
 	}
 
@@ -54,6 +53,40 @@ func TestDial_TokenIsSentAsAuthorization(t *testing.T) {
 	}
 }
 
+// TestDial_AgentKeySignsTheRequest checks that the requests of an agent carry
+// the signature of its key, and that they carry no bearer token.
+func TestDial_AgentKeySignsTheRequest(t *testing.T) {
+	t.Parallel()
+
+	privateKey, publicKey := testhelper.AgentKeyPair(t)
+	keyPath := filepath.Join(t.TempDir(), "agent")
+	require.NoError(t, os.WriteFile(keyPath, privateKey, 0o600))
+
+	fakes := newFakeServices()
+	fakes.objects.objects = map[string][]byte{"oid": []byte("x")}
+
+	client := dialFake(t, fakes.register, sdk.WithAgentKey(keyPath))
+	_, err := client.Repo("repo").GetObjects(t.Context(), []string{"oid"})
+	require.NoError(t, err)
+
+	// The fingerprint the server looks the agent up with is the one of the
+	// public key.
+	parsed, err := agentkey.ParsePublicKey([]byte(publicKey))
+	require.NoError(t, err)
+	require.Equal(t, agentkey.Fingerprint(parsed), fakes.objects.signature)
+	require.Empty(t, fakes.objects.authorization, "a signed request carries no bearer token")
+}
+
+// TestDial_AgentKeyMustBeReadable checks that an unreadable private key is
+// reported when the client is dialed.
+func TestDial_AgentKeyMustBeReadable(t *testing.T) {
+	t.Parallel()
+
+	_, err := sdk.Dial(t.Context(), "tcp://127.0.0.1:1",
+		sdk.WithAgentKey(filepath.Join(t.TempDir(), "missing")))
+	require.ErrorContains(t, err, "read the private key of the agent")
+}
+
 func TestDial_NoTokenSendsNoAuthorization(t *testing.T) {
 	t.Parallel()
 
@@ -69,8 +102,12 @@ func TestDial_NoTokenSendsNoAuthorization(t *testing.T) {
 func TestDial_TokenOptionsAreMutuallyExclusive(t *testing.T) {
 	t.Parallel()
 
+	privateKey, _ := testhelper.AgentKeyPair(t)
+	keyPath := filepath.Join(t.TempDir(), "agent")
+	require.NoError(t, os.WriteFile(keyPath, privateKey, 0o600))
+
 	_, err := sdk.Dial(t.Context(), "tcp://127.0.0.1:1",
-		sdk.WithToken("shared"), sdk.WithAgentToken("agent"))
+		sdk.WithToken("shared"), sdk.WithAgentKey(keyPath))
 	require.ErrorContains(t, err, "mutually exclusive")
 }
 

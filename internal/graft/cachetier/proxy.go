@@ -2,6 +2,7 @@ package cachetier
 
 import (
 	"context"
+	"errors"
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
@@ -18,6 +19,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 )
 
 // DialUpstream dials addr for use as the upstream of a cache tier. The
@@ -89,28 +92,83 @@ func (s *Server) director(ctx context.Context, _ string, peeker proxy.StreamPeek
 	}, nil, nil, nil), nil
 }
 
-// outgoingContext returns the context for an upstream call made for the client
-// request carrying ctx. All of the client's incoming metadata is forwarded, so
-// authorization, correlation IDs and feature flags reach the upstream. If the
-// client sent no authorization, the cache's own token is used when one is
-// configured. A fill that serves other clients may reuse this context only
-// because the request that created it was authorized first, see authorize.
+// outgoingContext returns the context for an upstream call that forwards the
+// client request carrying ctx unchanged. All of the client's incoming
+// metadata is forwarded, so authorization, correlation IDs, feature flags and
+// the signature of an agent reach the upstream. If the client sent no
+// credential, the cache's own token is used when one is configured. A client
+// that signs its requests with its agent key sends no authorization at all:
+// its signature is forwarded instead, and the cache adds no token of its own,
+// so that the upstream sees the agent and not the cache.
 func (s *Server) outgoingContext(ctx context.Context) (context.Context, error) {
 	incoming, _ := metadata.FromIncomingContext(ctx)
 	outgoing := incoming.Copy()
 
-	if len(outgoing.Get("authorization")) == 0 && s.token != "" {
-		md, err := s.tokenMetadata(ctx)
-		if err != nil {
+	if len(outgoing.Get("authorization")) == 0 && !hasAgentSignature(outgoing) && s.token != "" {
+		if err := s.addToken(ctx, outgoing); err != nil {
 			return nil, err
-		}
-		for key, values := range md {
-			outgoing.Set(key, values)
 		}
 	}
 
 	return metadata.NewOutgoingContext(ctx, outgoing), nil
 }
+
+// hasAgentSignature reports whether md carries the signature of an agent.
+func hasAgentSignature(md metadata.MD) bool {
+	return len(md.Get(agentkey.SignatureMetadata)) > 0 || len(md.Get(agentkey.KeyMetadata)) > 0
+}
+
+// addToken sets the cache's own token on outgoing.
+func (s *Server) addToken(ctx context.Context, outgoing metadata.MD) error {
+	md, err := s.tokenMetadata(ctx)
+	if err != nil {
+		return err
+	}
+	for key, values := range md {
+		outgoing.Set(key, values)
+	}
+	return nil
+}
+
+// syntheticContext returns the context for an upstream call the tier makes on
+// the caller's behalf, such as the RepositoryExists that authorizes a cached
+// read or the batched fill of missing objects. Those calls are not the
+// client's request: a signature covers the client's method and request, so it
+// cannot authenticate them. When the caller signed with an agent key the tier
+// therefore authenticates them with its own token, and reports
+// errNoTierCredential when it has none. Every other caller keeps the behavior
+// of outgoingContext: the client's authorization, or the tier's token when the
+// client sent none.
+func (s *Server) syntheticContext(ctx context.Context) (context.Context, error) {
+	incoming, _ := metadata.FromIncomingContext(ctx)
+	if !hasAgentSignature(incoming) {
+		return s.outgoingContext(ctx)
+	}
+
+	if s.token == "" {
+		return nil, errNoTierCredential
+	}
+
+	outgoing := incoming.Copy()
+	for _, key := range []string{
+		agentkey.KeyMetadata,
+		agentkey.TimestampMetadata,
+		agentkey.NonceMetadata,
+		agentkey.SignatureMetadata,
+	} {
+		delete(outgoing, key)
+	}
+	if err := s.addToken(ctx, outgoing); err != nil {
+		return nil, err
+	}
+
+	return metadata.NewOutgoingContext(ctx, outgoing), nil
+}
+
+// errNoTierCredential is returned when the tier has to make an upstream request
+// on behalf of a signed caller but has no token of its own. The read is then
+// forwarded to the upstream instead of being served from the cache.
+var errNoTierCredential = errors.New("the cache tier needs its own token to serve a request signed by an agent: the signature cannot be replayed for the request the tier makes")
 
 func (s *Server) tokenMetadata(ctx context.Context) (map[string]string, error) {
 	md, err := gitalyauth.RPCCredentialsV2(s.token).GetRequestMetadata(ctx)

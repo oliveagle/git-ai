@@ -50,7 +50,7 @@ func TestAgentCannotCreateRepositoryFromSnapshot(t *testing.T) {
 	const relPath = "evil/agent-made.git"
 	repo := &gitalypb.Repository{StorageName: s.storage, RelativePath: relPath}
 
-	builderRepos := gitalypb.NewRepositoryServiceClient(s.dialAgent(t, exampleTokens["builder"]))
+	builderRepos := gitalypb.NewRepositoryServiceClient(s.dialAgent(t, exampleKeys["builder"].privateKeyPath))
 	_, err = builderRepos.CreateRepositoryFromSnapshot(s.ctx, &gitalypb.CreateRepositoryFromSnapshotRequest{
 		Repository: repo,
 		HttpUrl:    srv.URL,
@@ -89,7 +89,7 @@ func TestAgentCannotMakeServerDialAddress(t *testing.T) {
 		}
 	}()
 
-	builder := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleTokens["builder"]))
+	builder := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleKeys["builder"].privateKeyPath))
 	commitFiles := func(ctx context.Context) error {
 		stream, err := builder.UserCommitFiles(ctx)
 		require.NoError(t, err)

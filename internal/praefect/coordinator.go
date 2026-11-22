@@ -115,6 +115,12 @@ var transactionRPCs = map[string]transactionsCondition{
 	// behind Praefect); CollectGarbage deletes bucket objects and rows (also in shadow mode).
 	"/gitaly.StorageCoreService/CreateCheckpoint": transactionsDisabled,
 	"/gitaly.StorageCoreService/CollectGarbage":   transactionsDisabled,
+	// The archive lifecycle freezes a repository and writes the storage core's database and
+	// bucket, never the references of a Gitaly replica. Only ArchiveRepository touches the
+	// replica (it makes it read-only), and the super admin purges through the storage core.
+	"/gitaly.StorageCoreService/ArchiveRepository":   transactionsDisabled,
+	"/gitaly.StorageCoreService/UnarchiveRepository": transactionsDisabled,
+	"/gitaly.StorageCoreService/PurgeRepository":     transactionsDisabled,
 }
 
 // forcePrimaryRoutingRPCs tracks RPCs which need to always get routed to the primary. This should

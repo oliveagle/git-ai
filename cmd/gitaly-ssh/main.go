@@ -10,6 +10,7 @@ import (
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/featureflag"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/grpc/sidechannel"
 	"github.com/feder-cr/git-ai/internal/log"
@@ -36,6 +37,7 @@ type gitalySSHCommand struct {
 
 // GITALY_ADDRESS="tcp://1.2.3.4:9999" or "unix:/var/run/gitaly.sock"
 // GITALY_TOKEN="foobar1234"
+// GRAFT_AGENT_KEY="/path/to/the/private/key/of/the/agent"
 // GITALY_PAYLOAD="{repo...}"
 // GITALY_WD="/path/to/working-directory"
 // GITALY_FEATUREFLAGS="upload_pack_filter:false,hooks_rpc:true"
@@ -141,14 +143,50 @@ func getConnection(ctx context.Context, url string, registry *sidechannel.Regist
 		return nil, fmt.Errorf("gitaly address can not be empty")
 	}
 
-	return sidechannel.Dial(ctx, registry, logger, url, client.WithGrpcOptions(dialOpts()))
+	opts, err := dialOpts()
+	if err != nil {
+		return nil, err
+	}
+
+	return sidechannel.Dial(ctx, registry, logger, url, client.WithGrpcOptions(opts))
 }
 
-func dialOpts() []grpc.DialOption {
+// dialOpts returns the dial options that authenticate the requests of the
+// transport. GITALY_TOKEN is the shared operator token. GRAFT_AGENT_KEY is
+// the path of the private key of an agent: every request is signed with it,
+// and the server verifies the signature with the public key the agent was
+// configured with. The two are mutually exclusive, so an agent never falls
+// back to the shared token.
+func dialOpts() ([]grpc.DialOption, error) {
 	var connOpts []grpc.DialOption
-	if token := os.Getenv("GITALY_TOKEN"); token != "" {
+
+	token := os.Getenv("GITALY_TOKEN")
+	agentKeyPath := os.Getenv("GRAFT_AGENT_KEY")
+	if token != "" && agentKeyPath != "" {
+		return nil, errors.New("GITALY_TOKEN and GRAFT_AGENT_KEY are mutually exclusive")
+	}
+
+	if token != "" {
 		connOpts = append(connOpts, grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(token)))
 	}
 
-	return append(connOpts, client.UnaryInterceptor(), client.StreamInterceptor())
+	if agentKeyPath != "" {
+		raw, err := os.ReadFile(agentKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read the private key of the agent: %w", err)
+		}
+
+		privateKey, err := agentkey.ParsePrivateKey(raw)
+		if err != nil {
+			return nil, err
+		}
+
+		signer := agentkey.NewSigner(privateKey)
+		connOpts = append(connOpts,
+			grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
+		)
+	}
+
+	return append(connOpts, client.UnaryInterceptor(), client.StreamInterceptor()), nil
 }

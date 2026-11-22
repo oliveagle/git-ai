@@ -141,7 +141,7 @@ func TestPhase4GraphAncestryMatchesGit(t *testing.T) {
 	var tallies [2]loadTally
 	var files [2][]string
 	for i, on := range []bool{false, true} {
-		graft, tokens := workerGraft(private + shared)
+		graft, tokens := workerGraft(t, private+shared)
 		graft.Land.Batch.Window = "300ms"
 		graft.Land.GraphAncestry = on
 
@@ -177,7 +177,7 @@ func TestPhase4BatchOfOneIsLand(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{"README.md": "single\n"})
@@ -336,7 +336,7 @@ func TestPhase4AdaptiveSizingVisible(t *testing.T) {
 		slowStep = 3 * time.Second
 	)
 
-	graft, tokens := workerGraft(agents)
+	graft, tokens := workerGraft(t, agents)
 	graft.Land.Batch.Window = "100ms"
 	graft.Land.Batch.MaxSize = maxSize
 	graft.Land.Batch.TargetLatency = target.String()
@@ -428,7 +428,7 @@ func TestPhase4EarlyCompletionPolicyDenied(t *testing.T) {
 
 	const workers = 10
 
-	graft, tokens := protectedGraft(workers)
+	graft, tokens := protectedGraft(t, workers)
 	graft.Land.Batch.Window = "10m"
 	graft.Land.Batch.MaxSize = workers + 1
 	graft.Land.Batch.TargetLatency = "0s"

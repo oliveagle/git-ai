@@ -7,6 +7,7 @@ import (
 
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -28,10 +29,11 @@ func TestInterceptors_AgentCannotUpdateRemoteMirror(t *testing.T) {
 	_, err := newAgentAllowlist([]string{method})
 	require.ErrorContains(t, err, "may never be called by an agent")
 
-	unary, _, err := InterceptorsWithAgentRPCs(conf, testAgents(), nil, true)
+	agents, a, _ := testAgents(t)
+	unary, _, err := Interceptors(conf, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
-	_, err = unary(contextWithAuthorization(t, "Bearer "+agentASecret), nil,
+	_, err = unary(signedAgentContext(t, a, method), nil,
 		&grpc.UnaryServerInfo{FullMethod: method},
 		func(context.Context, any) (any, error) {
 			t.Fatal("the handler must not run for an agent")
@@ -39,7 +41,7 @@ func TestInterceptors_AgentCannotUpdateRemoteMirror(t *testing.T) {
 		})
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
 
-	_, _, err = InterceptorsWithAgentRPCs(conf, testAgents(), []string{method}, true)
+	_, _, err = Interceptors(conf, Config{Agents: agents, AgentRPCs: []string{method}}, true)
 	require.ErrorContains(t, err, "may never be called by an agent")
 }
 
@@ -51,7 +53,8 @@ func TestInterceptors_AgentCannotQueryRemoteURLs(t *testing.T) {
 	t.Parallel()
 
 	conf := gitalycfgauth.Config{Token: sharedSecretTest}
-	unary, _, err := InterceptorsWithAgentRPCs(conf, testAgents(), nil, true)
+	agents, a, _ := testAgents(t)
+	unary, _, err := Interceptors(conf, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
 	for _, method := range []string{
@@ -63,10 +66,10 @@ func TestInterceptors_AgentCannotQueryRemoteURLs(t *testing.T) {
 		_, err := newAgentAllowlist([]string{method})
 		require.ErrorContains(t, err, "may never be called by an agent", "%s", method)
 
-		_, _, err = InterceptorsWithAgentRPCs(conf, testAgents(), []string{method}, true)
+		_, _, err = Interceptors(conf, Config{Agents: agents, AgentRPCs: []string{method}}, true)
 		require.ErrorContains(t, err, "may never be called by an agent", "%s", method)
 
-		_, err = unary(contextWithAuthorization(t, "Bearer "+agentASecret), nil,
+		_, err = unary(signedAgentContext(t, a, method), nil,
 			&grpc.UnaryServerInfo{FullMethod: method},
 			func(context.Context, any) (any, error) {
 				t.Fatalf("the handler of %s must not run for an agent", method)
@@ -76,17 +79,28 @@ func TestInterceptors_AgentCannotQueryRemoteURLs(t *testing.T) {
 	}
 }
 
-// contextWithGitalyServers returns an incoming context with the authorization
-// and gitaly-servers metadata naming address for the storage "evil".
-func contextWithGitalyServers(t *testing.T, authorization, address string) context.Context {
+// gitalyServersMetadata returns the metadata that names address for the
+// storage "evil".
+func gitalyServersMetadata(t *testing.T, address string) metadata.MD {
 	t.Helper()
 
 	outgoing, err := storage.InjectGitalyServers(context.Background(), "evil", address, "attacker-token")
 	require.NoError(t, err)
 	servers, _ := metadata.FromOutgoingContext(outgoing)
 
-	md := metadata.Join(metadata.Pairs("authorization", authorization), servers)
-	return metadata.NewIncomingContext(contextWithAuthorization(t, ""), md)
+	return servers
+}
+
+// contextWithMetadataAndAuthorization returns a context with md, and with the
+// authorization header when it is not empty.
+func contextWithMetadataAndAuthorization(t *testing.T, md metadata.MD, authorization string) context.Context {
+	t.Helper()
+
+	if authorization != "" {
+		md.Set("authorization", authorization)
+	}
+
+	return contextWithMetadata(t, md)
 }
 
 // TestInterceptors_AgentCannotSendGitalyServers checks that an agent may not
@@ -98,7 +112,8 @@ func contextWithGitalyServers(t *testing.T, authorization, address string) conte
 func TestInterceptors_AgentCannotSendGitalyServers(t *testing.T) {
 	t.Parallel()
 
-	unary, stream, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), nil, true)
+	agents, a, b := testAgents(t)
+	unary, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
 	const address = "tcp://127.0.0.1:1"
@@ -126,10 +141,30 @@ func TestInterceptors_AgentCannotSendGitalyServers(t *testing.T) {
 		return called, err
 	}
 
+	// agentUnaryContext returns the metadata of a signed unary call, with the
+	// gitaly-servers metadata of the attacker.
+	agentUnaryContext := func(key *agentKey) context.Context {
+		md := gitalyServersMetadata(t, address)
+		for k, v := range key.sign(t, unaryMethod, agentkey.BodyHash(&gitalypb.RepositoryExistsRequest{})) {
+			md.Set(k, v...)
+		}
+		return contextWithMetadata(t, md)
+	}
+
+	// agentStreamContext returns the metadata of a signed stream call, with the
+	// gitaly-servers metadata of the attacker.
+	agentStreamContext := func(key *agentKey) context.Context {
+		md := gitalyServersMetadata(t, address)
+		for k, v := range key.sign(t, streamInfo.FullMethod, "") {
+			md.Set(k, v...)
+		}
+		return contextWithMetadata(t, md)
+	}
+
 	t.Run("agent may not send gitaly-servers on a unary RPC", func(t *testing.T) {
 		t.Parallel()
 
-		called, err := runUnary(contextWithGitalyServers(t, "Bearer "+agentASecret, address))
+		called, err := runUnary(agentUnaryContext(a))
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "error: %v", err)
 		require.ErrorContains(t, err, storage.GitalyServersMetadataKey)
 		require.False(t, called)
@@ -138,7 +173,7 @@ func TestInterceptors_AgentCannotSendGitalyServers(t *testing.T) {
 	t.Run("agent may not send gitaly-servers on UserCommitFiles", func(t *testing.T) {
 		t.Parallel()
 
-		called, err := runStream(contextWithGitalyServers(t, v2Authorization(agentBSecret, time.Now()), address))
+		called, err := runStream(agentStreamContext(b))
 		require.Equal(t, codes.PermissionDenied, status.Code(err), "error: %v", err)
 		require.False(t, called, "the handler must not run, so nothing is dialed")
 	})
@@ -146,7 +181,7 @@ func TestInterceptors_AgentCannotSendGitalyServers(t *testing.T) {
 	t.Run("agent may call UserCommitFiles without gitaly-servers", func(t *testing.T) {
 		t.Parallel()
 
-		called, err := runStream(contextWithAuthorization(t, "Bearer "+agentASecret))
+		called, err := runStream(signedAgentContext(t, a, streamInfo.FullMethod))
 		require.NoError(t, err)
 		require.True(t, called)
 	})
@@ -154,11 +189,13 @@ func TestInterceptors_AgentCannotSendGitalyServers(t *testing.T) {
 	t.Run("shared token may send gitaly-servers", func(t *testing.T) {
 		t.Parallel()
 
-		called, err := runUnary(contextWithGitalyServers(t, v2Authorization(sharedSecretTest, time.Now()), address))
+		called, err := runUnary(contextWithMetadataAndAuthorization(t,
+			gitalyServersMetadata(t, address), v2Authorization(sharedSecretTest, time.Now())))
 		require.NoError(t, err)
 		require.True(t, called)
 
-		called, err = runStream(contextWithGitalyServers(t, v2Authorization(sharedSecretTest, time.Now()), address))
+		called, err = runStream(contextWithMetadataAndAuthorization(t,
+			gitalyServersMetadata(t, address), v2Authorization(sharedSecretTest, time.Now())))
 		require.NoError(t, err)
 		require.True(t, called)
 	})

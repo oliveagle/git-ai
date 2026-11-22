@@ -7,5 +7,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	testhelper.Run(m)
+	testhelper.Run(m,
+		testhelper.WithSetup(setupExampleKeys),
+		testhelper.WithTeardown(teardownExampleKeys),
+	)
 }

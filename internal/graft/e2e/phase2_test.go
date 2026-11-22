@@ -46,12 +46,12 @@ func TestPhase2AgentAllowlist(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	planner := s.dialAgent(t, exampleTokens["planner"])
+	planner := s.dialAgent(t, exampleKeys["planner"].privateKeyPath)
 
 	// ServerInfo is an accessor that agents may use.
 	info, err := gitalypb.NewServerServiceClient(planner).ServerInfo(s.ctx, &gitalypb.ServerInfoRequest{})
 	require.NoError(t, err)
-	require.NotEmpty(t, info.GetServerVersion())
+	require.NotEmpty(t, info.GetGitVersion())
 
 	// DeleteRefs is a ref mutator outside the allowlist.
 	_, err = gitalypb.NewRefServiceClient(planner).DeleteRefs(s.ctx, &gitalypb.DeleteRefsRequest{
@@ -115,7 +115,7 @@ func TestPhase2LandingScenarioConflictsWithoutResolver(t *testing.T) {
 			t.Parallel()
 
 			s := startExample(t)
-			repo := s.repoAs(t, exampleTokens["planner"])
+			repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 			ctx := s.ctx
 
 			base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -170,7 +170,7 @@ func TestPhase2ConcurrentPrivateLandsSucceed(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -209,7 +209,7 @@ func buildAgentsTool(t *testing.T, pkg string) string {
 	bin := filepath.Join(t.TempDir(), filepath.Base(pkg))
 	// GOPROXY=off keeps the build from the network: the module of the tools
 	// needs its dependencies in the module cache already.
-	cmd := exec.Command("go", "-C", "../../../tools/graft-agents", "build", "-o", bin, pkg)
+	cmd := exec.Command("go", "-C", "../../../tools/graft-agents", "build", "-buildvcs=false", "-o", bin, pkg)
 	cmd.Env = append(os.Environ(), "GOPROXY=off")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build %s (run go -C tools/graft-agents mod download first if the module cache is cold): %s", pkg, out)
@@ -245,7 +245,7 @@ func TestPhase2ResolveConflictThroughGraftResolve(t *testing.T) {
 		Command: []string{buildAgentsTool(t, "./cmd/graft-resolve"), "--config", writeResolveConfig(t)},
 	}
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -293,7 +293,7 @@ func TestPhase2ResolverRejectsDeniedPath(t *testing.T) {
 		PathsDeny: []string{sharedLogPath},
 	}
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -339,7 +339,7 @@ func TestPhase2VerifyDetectsAndReverts(t *testing.T) {
 
 	ex := loadExample(t)
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{"README.md": "base\n"})
@@ -411,7 +411,7 @@ func buildGraftCLI(t *testing.T) string {
 	t.Helper()
 
 	bin := filepath.Join(t.TempDir(), "graft")
-	out, err := exec.Command("go", "-C", "../../..", "build", "-o", bin, "./cmd/graft").CombinedOutput()
+	out, err := exec.Command("go", "-C", "../../..", "build", "-buildvcs=false", "-o", bin, "./cmd/graft").CombinedOutput()
 	require.NoError(t, err, "build graft: %s", out)
 	return bin
 }
@@ -471,7 +471,7 @@ func TestPhase2SuperfanPostsToWebhook(t *testing.T) {
 
 	ex := loadExample(t)
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})

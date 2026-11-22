@@ -238,11 +238,12 @@ func TestCLIRepoCreateConverges(t *testing.T) {
 // denial with what is done and left, and is completed by the same command with
 // a user the policy allows.
 func TestCLIRepoCreateOperatorOnly(t *testing.T) {
+	keyPath, publicKey := testhelper.AgentKeyFiles(t)
 	ctx := featureflag.OutgoingCtxWithFeatureFlag(testhelper.Context(t), featureflag.GPGSigning, false)
 	cfg := testcfg.Build(t)
 	cfg.Auth.Token = "operator-secret"
 	cfg.Graft.Standalone = true
-	cfg.Graft.Agents = []config.GraftAgent{{Name: "alice", Token: "alice-secret"}}
+	cfg.Graft.Agents = []config.GraftAgent{{Name: "alice", PublicKey: publicKey}}
 	cfg.Graft.Policy = []config.GraftPolicyRule{
 		{Actor: "alice", Refs: []string{"refs/heads/main"}, Allow: true},
 		{Actor: "bob", Refs: []string{"refs/heads/release"}, Allow: true},
@@ -255,7 +256,7 @@ func TestCLIRepoCreateOperatorOnly(t *testing.T) {
 	server := []string{"-address", addr, "-storage", cfg.Storages[0].Name}
 	path := filepath.Join(cfg.Storages[0].Path, "a.git")
 
-	code, _, stderr := repoCLI(t, append([]string{"-token", "alice-secret"}, server...), "a.git")
+	code, _, stderr := repoCLI(t, append([]string{"-agent-key", keyPath}, server...), "a.git")
 	require.Equal(t, exitError, code)
 	require.Contains(t, stderr, "PermissionDenied")
 	require.Contains(t, stderr, "hint: creating a repository needs the shared (operator) token")
@@ -277,7 +278,7 @@ func TestCLIRepoCreateOperatorOnly(t *testing.T) {
 	require.Equal(t, []string{"release"}, res.BranchesCreated)
 	requireRefs(t, cfg, path, map[string]string{"refs/heads/main": res.InitialCommit, "refs/heads/release": res.InitialCommit})
 
-	client, err := sdk.Dial(ctx, addr, sdk.WithStorage(cfg.Storages[0].Name), sdk.WithAgentToken("alice-secret"))
+	client, err := sdk.Dial(ctx, addr, sdk.WithStorage(cfg.Storages[0].Name), sdk.WithAgentKey(keyPath))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = client.Close() })
 	readme, err := client.Repo("a.git").ReadFile(ctx, "main", "README.md")
@@ -295,6 +296,7 @@ func TestCLIRepoCreateStorageCore(t *testing.T) {
 		t.Run(string(mode), func(t *testing.T) {
 			cfg := testcfg.Build(t)
 			cfg.Graft.Standalone = true
+			testcfg.RequireCredential(&cfg)
 			testcfg.BuildGitalySSH(t, cfg)
 			testcfg.BuildGitalyHooks(t, cfg)
 			core := coretest.Open(t, coretest.Options{Mode: mode})

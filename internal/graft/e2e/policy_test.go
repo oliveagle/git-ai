@@ -31,13 +31,13 @@ func TestPolicyHoldsForEveryReferenceUpdate(t *testing.T) {
 
 	s := startExample(t)
 	base := writeMain(t, s, map[string]string{"README.md": "every update\n"})
-	builder := s.repoAs(t, exampleTokens["builder"])
+	builder := s.repoAs(t, exampleKeys["builder"].privateKeyPath)
 
 	builderCommit, err := commitFile(s.ctx, builder, "builder", "builder/every", base, "builder.txt", "denied\n")
 	require.NoError(t, err)
 
 	repo := &gitalypb.Repository{StorageName: s.storage, RelativePath: s.relPath}
-	builderConn := s.dialAgent(t, exampleTokens["builder"])
+	builderConn := s.dialAgent(t, exampleKeys["builder"].privateKeyPath)
 	builderRepos := gitalypb.NewRepositoryServiceClient(builderConn)
 	builderRefs := gitalypb.NewRefServiceClient(builderConn)
 	builderOps := gitalypb.NewOperationServiceClient(builderConn)
@@ -95,7 +95,7 @@ func TestPolicyHoldsForEveryReferenceUpdate(t *testing.T) {
 	require.Equal(t, base, s.git(t, "rev-parse", "refs/heads/main"))
 
 	// The planner may move main.
-	_, err = landAs(s.ctx, s.repoAs(t, exampleTokens["planner"]), "planner", "main", builderCommit)
+	_, err = landAs(s.ctx, s.repoAs(t, exampleKeys["planner"].privateKeyPath), "planner", "main", builderCommit)
 	require.NoError(t, err)
 	require.Equal(t, builderCommit, s.git(t, "rev-parse", "refs/heads/main"))
 
@@ -138,11 +138,11 @@ func TestPolicyDenialSurfacesWithoutPreReceive(t *testing.T) {
 	s := startWithoutPreReceive(t, nil)
 
 	base := writeMain(t, s, map[string]string{"README.md": "opt in\n"})
-	builderCommit, err := commitFile(s.ctx, s.repoAs(t, exampleTokens["builder"]), "builder", "builder/opt-in", base, "builder.txt", "denied\n")
+	builderCommit, err := commitFile(s.ctx, s.repoAs(t, exampleKeys["builder"].privateKeyPath), "builder", "builder/opt-in", base, "builder.txt", "denied\n")
 	require.NoError(t, err)
 
 	repo := &gitalypb.Repository{StorageName: s.storage, RelativePath: s.relPath}
-	ops := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleTokens["builder"]))
+	ops := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleKeys["builder"].privateKeyPath))
 	target := "refs/merge-requests/1/head"
 
 	_, err = ops.UserMergeToRef(s.ctx, &gitalypb.UserMergeToRefRequest{
@@ -187,10 +187,10 @@ func TestPolicyAllowsWithoutPreReceive(t *testing.T) {
 	})
 
 	base := writeMain(t, s, map[string]string{"README.md": "opt in\n"})
-	builderCommit, err := commitFile(s.ctx, s.repoAs(t, exampleTokens["builder"]), "builder", "builder/opt-in", base, "builder.txt", "allowed\n")
+	builderCommit, err := commitFile(s.ctx, s.repoAs(t, exampleKeys["builder"].privateKeyPath), "builder", "builder/opt-in", base, "builder.txt", "allowed\n")
 	require.NoError(t, err)
 
-	ops := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleTokens["builder"]))
+	ops := gitalypb.NewOperationServiceClient(s.dialAgent(t, exampleKeys["builder"].privateKeyPath))
 	_, err = ops.UserRebaseToRef(s.ctx, &gitalypb.UserRebaseToRefRequest{
 		Repository:     &gitalypb.Repository{StorageName: s.storage, RelativePath: s.relPath},
 		User:           &gitalypb.User{Name: []byte("builder")},

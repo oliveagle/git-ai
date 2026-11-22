@@ -21,7 +21,7 @@ import (
 
 // TestReferenceTransactionHook_graftPolicy checks that in standalone mode the
 // reference-transaction hook enforces the [[graft.policy]] rules in the
-// prepared state for updates of a caller authenticated with an agent token, so
+// prepared state for updates of a caller authenticated with an agent's SSH key, so
 // that RPCs which do not run the pre-receive hook cannot bypass the policy. It
 // also pins that nothing changes outside standalone mode, without a policy,
 // for callers that are not agents and in the other states. HEAD is governed like

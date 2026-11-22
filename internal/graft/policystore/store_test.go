@@ -43,7 +43,8 @@ func TestStore_startupPolicy(t *testing.T) {
 func TestStore_reload(t *testing.T) {
 	t.Parallel()
 
-	running := config.Graft{Standalone: true, Agents: []config.GraftAgent{{Name: "planner", Token: "t"}}, Policy: allowMain}
+	_, plannerKey := testhelper.AgentKeyPair(t)
+	running := config.Graft{Standalone: true, Agents: []config.GraftAgent{{Name: "planner", PublicKey: plannerKey}}, Policy: allowMain}
 	s := New(running.Policy)
 	first := s.Current()
 
@@ -90,7 +91,8 @@ func TestStore_reload(t *testing.T) {
 	t.Run("other changes need a restart and are not applied", func(t *testing.T) {
 		next := running
 		next.Policy = allowMain
-		next.Agents = []config.GraftAgent{{Name: "planner", Token: "t"}, {Name: "builder", Token: "u"}}
+		_, builderKey := testhelper.AgentKeyPair(t)
+		next.Agents = []config.GraftAgent{{Name: "planner", PublicKey: plannerKey}, {Name: "builder", PublicKey: builderKey}}
 		next.AgentRPCs = []string{"/gitaly.SSHService/SSHReceivePack"}
 		outcome, err := s.Reload(next, running)
 		require.NoError(t, err)

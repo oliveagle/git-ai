@@ -35,7 +35,7 @@ type agentStream struct {
 func (s agentStream) Context() context.Context { return s.ctx }
 
 // agentInterceptors authenticates each streaming request as the agent named in its test header, the
-// way the per-agent token authentication does.
+// way the agent's SSH key authentication does.
 func agentInterceptors(log.Logger, localrepo.Factory) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor) {
 	return nil, []grpc.StreamServerInterceptor{
 		func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {

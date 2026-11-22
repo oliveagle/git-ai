@@ -47,7 +47,7 @@ import (
 type options struct {
 	address    string
 	token      string
-	agentToken string
+	agentKey   string
 	storage    string
 	repo       string
 	createRepo bool
@@ -101,8 +101,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch {
 	case opts.token != "":
 		dialOpts = append(dialOpts, sdk.WithToken(opts.token))
-	case opts.agentToken != "":
-		dialOpts = append(dialOpts, sdk.WithAgentToken(opts.agentToken))
+	case opts.agentKey != "":
+		dialOpts = append(dialOpts, sdk.WithAgentKey(opts.agentKey))
 	}
 
 	client, err := sdk.Dial(ctx, opts.address, dialOpts...)
@@ -144,7 +144,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	fs.SetOutput(stderr)
 	fs.StringVar(&opts.address, "address", "", "server address: unix:<path>, tcp://<host:port> or tls://<host:port> (required)")
 	fs.StringVar(&opts.token, "token", "", "shared token (default $GRAFT_TOKEN)")
-	fs.StringVar(&opts.agentToken, "agent-token", "", "agent token (default $GRAFT_AGENT_TOKEN)")
+	fs.StringVar(&opts.agentKey, "agent-key", "", "private key of the agent, which signs every request (default $GRAFT_AGENT_KEY)")
 	fs.StringVar(&opts.storage, "storage", sdk.DefaultStorage, "storage name")
 	fs.StringVar(&opts.repo, "repo", "", "relative path of the repository (required; with --repos, the base name of the repositories)")
 	addrs := fs.String("addrs", "", "comma-separated server addresses, one Gitaly per address (replaces --address; repositories are placed round robin)")
@@ -174,12 +174,12 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 
 	explicit := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-	token, agentToken, err := resolveTokens(explicit, opts.token, opts.agentToken,
-		os.Getenv("GRAFT_TOKEN"), os.Getenv("GRAFT_AGENT_TOKEN"))
+	token, agentKey, err := resolveTokens(explicit, opts.token, opts.agentKey,
+		os.Getenv("GRAFT_TOKEN"), os.Getenv("GRAFT_AGENT_KEY"))
 	if err != nil {
 		return options{}, err
 	}
-	opts.token, opts.agentToken = token, agentToken
+	opts.token, opts.agentKey = token, agentKey
 
 	opts.config.Mode = Mode(*mode)
 	opts.config.MaxAttempts = int32(*maxAttempts)
@@ -216,24 +216,24 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 // resolveTokens picks the credentials of the run. An explicit flag wins over
 // its environment variable, so one flag never conflicts with the other
 // variable. Without flags, the shared token of $GRAFT_TOKEN is used in
-// preference to $GRAFT_AGENT_TOKEN when both are set. Passing both flags is an
-// error.
-func resolveTokens(explicit map[string]bool, flagToken, flagAgentToken, envToken, envAgentToken string) (string, string, error) {
-	tokenSet, agentSet := explicit["token"], explicit["agent-token"]
+// preference to the agent key of $GRAFT_AGENT_KEY when both are set. Passing
+// both flags is an error.
+func resolveTokens(explicit map[string]bool, flagToken, flagAgentKey, envToken, envAgentKey string) (string, string, error) {
+	tokenSet, agentSet := explicit["token"], explicit["agent-key"]
 	switch {
 	case tokenSet && agentSet:
-		if flagToken != "" && flagAgentToken != "" {
-			return "", "", errors.New("--token and --agent-token are mutually exclusive")
+		if flagToken != "" && flagAgentKey != "" {
+			return "", "", errors.New("--token and --agent-key are mutually exclusive")
 		}
-		return flagToken, flagAgentToken, nil
+		return flagToken, flagAgentKey, nil
 	case tokenSet:
 		return flagToken, "", nil
 	case agentSet:
-		return "", flagAgentToken, nil
+		return "", flagAgentKey, nil
 	case envToken != "":
 		return envToken, "", nil
 	default:
-		return "", envAgentToken, nil
+		return "", envAgentKey, nil
 	}
 }
 

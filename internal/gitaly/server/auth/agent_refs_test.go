@@ -167,18 +167,20 @@ func (s *recordingServerStream) SendMsg(m any) error {
 func TestAgentRefFilter_throughTheInterceptors(t *testing.T) {
 	t.Parallel()
 
-	unary, stream, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), nil, true)
+	agents, a, _ := testAgents(t)
+	unary, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
-	agentCtx := contextWithAuthorization(t, "Bearer "+agentASecret)
 
 	called := false
-	_, err = unary(agentCtx, &gitalypb.FindCommitRequest{Revision: []byte("refs/graft/green/main")},
+	req := &gitalypb.FindCommitRequest{Revision: []byte("refs/graft/green/main")}
+	_, err = unary(signedAgentContextFor(t, a, gitalypb.CommitService_FindCommit_FullMethodName, req), req,
 		&grpc.UnaryServerInfo{FullMethod: gitalypb.CommitService_FindCommit_FullMethodName},
 		func(context.Context, any) (any, error) { called = true; return &gitalypb.FindCommitResponse{}, nil })
 	require.Equal(t, codes.PermissionDenied, status.Code(err), "err = %v", err)
 	require.False(t, called)
 
-	resp, err := unary(agentCtx, &gitalypb.FindRefsByOIDRequest{Oid: "1"},
+	findReq := &gitalypb.FindRefsByOIDRequest{Oid: "1"}
+	resp, err := unary(signedAgentContextFor(t, a, gitalypb.RefService_FindRefsByOID_FullMethodName, findReq), findReq,
 		&grpc.UnaryServerInfo{FullMethod: gitalypb.RefService_FindRefsByOID_FullMethodName},
 		func(context.Context, any) (any, error) {
 			return &gitalypb.FindRefsByOIDResponse{Refs: []string{"refs/heads/a", "refs/graft/green/main"}}, nil
@@ -186,7 +188,7 @@ func TestAgentRefFilter_throughTheInterceptors(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"refs/heads/a"}, resp.(*gitalypb.FindRefsByOIDResponse).GetRefs())
 
-	ss := &recordingServerStream{ctx: agentCtx}
+	ss := &recordingServerStream{ctx: signedAgentContext(t, a, gitalypb.RefService_ListRefs_FullMethodName)}
 	err = stream(nil, ss, &grpc.StreamServerInfo{FullMethod: gitalypb.RefService_ListRefs_FullMethodName},
 		func(srv any, s grpc.ServerStream) error {
 			return s.SendMsg(&gitalypb.ListRefsResponse{References: []*gitalypb.ListRefsResponse_Reference{

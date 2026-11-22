@@ -250,7 +250,10 @@ func TestUpdateOfAReviewWhoseCommitIsLost(t *testing.T) {
 			TargetBranch: []byte("main"),
 			HeadCommitId: head.String(),
 			BaseCommitId: lost,
-			Author:       anonymousActor,
+			// The review was written by the operator, the identity the shared
+			// token of the test server authenticates (doc/graft/PLAN14.md), so
+			// only that identity may update it.
+			Author: "shared",
 		}},
 	})
 	// The first request lets the gate replace the imported copy by a cache built

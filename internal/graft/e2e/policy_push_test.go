@@ -34,9 +34,9 @@ func startWithAgentPushes(t *testing.T, standalone bool, opts ...testserver.Gita
 }
 
 // agentPush pushes refspec from the client repository at clientPath to the
-// stack's repository over gitaly-ssh, authenticated with the agent token, and
-// returns the combined output of git push and whether it succeeded.
-func agentPush(t *testing.T, s gitalyStack, clientPath, token, agent, refspec string) (string, bool) {
+// stack's repository over gitaly-ssh, signed with the private key of an agent,
+// and returns the combined output of git push and whether it succeeded.
+func agentPush(t *testing.T, s gitalyStack, clientPath, agentKeyPath, agent, refspec string) (string, bool) {
 	t.Helper()
 
 	payload, err := protojson.Marshal(&gitalypb.SSHReceivePackRequest{
@@ -60,7 +60,7 @@ func agentPush(t *testing.T, s gitalyStack, clientPath, token, agent, refspec st
 	cmd.Env = append(cmd.Env,
 		"GITALY_PAYLOAD="+string(payload),
 		"GITALY_ADDRESS="+s.addr,
-		"GITALY_TOKEN="+token,
+		"GRAFT_AGENT_KEY="+agentKeyPath,
 		"GITALY_FEATUREFLAGS="+strings.Join(flags, ","),
 		fmt.Sprintf("GIT_SSH_COMMAND=%s receive-pack", s.cfg.BinaryPath("gitaly-ssh")),
 	)
@@ -97,7 +97,7 @@ func testPolicyHoldsOnAgentPushes(t *testing.T, standalone bool) {
 	gittest.Exec(t, s.cfg, "-C", clientPath, "-c", "user.name=builder", "-c", "user.email=builder@example.com", "commit", "--quiet", "-m", "pushed")
 	pushed := strings.TrimSpace(string(gittest.Exec(t, s.cfg, "-C", clientPath, "rev-parse", "HEAD")))
 
-	builder := exampleTokens["builder"]
+	builder := exampleKeys["builder"].privateKeyPath
 
 	// A branch the policy allows is accepted: the push path works for agents.
 	out, ok := agentPush(t, s, clientPath, builder, "builder", "HEAD:refs/heads/feature/pushed")

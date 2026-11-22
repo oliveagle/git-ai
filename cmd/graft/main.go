@@ -27,8 +27,14 @@ const (
 type target struct {
 	Address string
 	Token   string
-	Storage string
-	Repo    string
+	// AdminToken is the explicit super-admin token of cleanup and purge. It
+	// replaces Token on those commands.
+	AdminToken string
+	// AgentKey is the path of the private key of the agent. When it is set,
+	// the requests are signed with it and the server knows the agent.
+	AgentKey string
+	Storage  string
+	Repo     string
 	// User is the acting user ID (gl_id) sent with writes. See sdkBackend.user.
 	User string
 }
@@ -42,16 +48,20 @@ var backendFactory = dialBackend
 type options struct {
 	address string
 	token   string
-	storage string
-	user    string
-	author  string
-	dir     string
-	branch  string
-	sparse  string
-	message string
-	land    string
-	abort   bool
-	resolve bool
+	// adminToken is the explicit super-admin token of cleanup and purge.
+	adminToken string
+	// agentKey is the path of the private key of the agent.
+	agentKey string
+	storage  string
+	user     string
+	author   string
+	dir      string
+	branch   string
+	sparse   string
+	message  string
+	land     string
+	abort    bool
+	resolve  bool
 	// conflictsDir and resolved are the directories of graft land --conflicts-dir and
 	// --resolved.
 	conflictsDir string
@@ -196,19 +206,22 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 // defaultOptions reads the environment. Flags override it.
 func defaultOptions() options {
 	return options{
-		address: os.Getenv("GRAFT_ADDRESS"),
-		token:   os.Getenv("GRAFT_TOKEN"),
-		storage: os.Getenv("GRAFT_STORAGE"),
-		user:    os.Getenv("GRAFT_USER"),
-		author:  os.Getenv("GRAFT_AUTHOR"),
+		address:  os.Getenv("GRAFT_ADDRESS"),
+		token:    os.Getenv("GRAFT_TOKEN"),
+		agentKey: os.Getenv("GRAFT_AGENT_KEY"),
+		storage:  os.Getenv("GRAFT_STORAGE"),
+		user:     os.Getenv("GRAFT_USER"),
+		author:   os.Getenv("GRAFT_AUTHOR"),
 	}
 }
 
 func bindCommon(fs *flag.FlagSet, o *options) {
 	fs.StringVar(&o.address, "address", o.address, "server address (env GRAFT_ADDRESS)")
-	fs.StringVar(&o.token, "token", o.token, "access token (env GRAFT_TOKEN)")
+	fs.StringVar(&o.token, "token", o.token, "shared access token of the operator (env GRAFT_TOKEN)")
+	fs.StringVar(&o.adminToken, "admin-token", o.adminToken, "super-admin token of cleanup and purge (env GRAFT_ADMIN_TOKEN)")
+	fs.StringVar(&o.agentKey, "agent-key", o.agentKey, "private key of the agent, which signs every request (env GRAFT_AGENT_KEY)")
 	fs.StringVar(&o.storage, "storage", o.storage, `storage name (env GRAFT_STORAGE, default "default")`)
-	fs.StringVar(&o.user, "user", o.user, `acting user ID of writes, normally the agent name of the token (env GRAFT_USER, default "`+anonymousUser+`")`)
+	fs.StringVar(&o.user, "user", o.user, `acting user ID of writes, normally the agent name of the signing key (env GRAFT_USER, default "`+anonymousUser+`")`)
 	fs.StringVar(&o.author, "author", o.author, `commit author as "Name <email>" (env GRAFT_AUTHOR)`)
 	fs.StringVar(&o.dir, "C", "", "workspace directory (default: search upward from the current directory)")
 }
@@ -274,16 +287,21 @@ commands:
   cat REV:PATH           print a file at a revision
   search QUERY           search file contents (--regex, -i, --path, --context, -n, --rev, --json)
   review SUBCOMMAND      create, show, list, comment, approve, request-changes, update, close (--branch, --title, --json)
-  storage SUBCOMMAND     import, state, verify, checkpoint, gc a repository in the storage core; gc --removed for a storage (--connectivity, --dry-run, --json)
+  storage SUBCOMMAND     import, state, verify, checkpoint, archive, unarchive, purge and gc a repository in the storage
+                         core; archived and gc --removed for a storage (--connectivity, --dry-run, --json)
   repo create REPO       create a repository, with the shared token (--default-branch, --object-format,
                          --initial-commit [--branch NAME], --json)
   policy check FILE      validate the access policy of a configuration file before a reload, and list
                          what it would deny among recent changesets (-repo, --limit, --json)
 
-environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
+environment: GRAFT_ADDRESS, GRAFT_TOKEN, GRAFT_AGENT_KEY, GRAFT_STORAGE, GRAFT_USER, GRAFT_AUTHOR
+
+GRAFT_AGENT_KEY (-agent-key) is the private key of the agent: every request is
+signed with it, and the server names the agent the key belongs to. It takes
+precedence over GRAFT_TOKEN, which is the shared token of the operator.
 
 GRAFT_USER (-user) is the user ID of writes and names the temporary branches of
-commit (graft/USER/...). Set it to the agent name of GRAFT_TOKEN. With the shared
-token it is also the user that the server's access policy checks.
+commit (graft/USER/...). Set it to the agent name of GRAFT_AGENT_KEY. With the
+shared token it is also the user that the server's access policy checks.
 `)
 }

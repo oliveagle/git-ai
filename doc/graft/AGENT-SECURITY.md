@@ -7,21 +7,45 @@ identified, and which settings control it.
 
 ## Identities
 
-- Each agent has its own token, configured as a `[[graft.agent]]` entry with a
-  `token_file`. The token is compared in constant time. The v2 HMAC token
-  format, computed with the agent token as the secret, is accepted too.
-- A request with a valid agent token runs as that agent
-  (`identity.SourceAgent`). The agent name is the actor recorded in the
-  changelog, in policy decisions and in trailers.
-- The shared token (`auth.token`) is an operator credential. It is not an
-  agent. Setup calls of tools and the verifier use it.
-- Health checks need no token.
-- With no agents configured, the server behaves as upstream Gitaly.
+A Graft server serves no anonymous caller: every request carries a credential
+and is authenticated before it is dispatched (doc/graft/PLAN14.md). A Graft
+server is one that runs standalone, with the storage core, or with an agent or
+super-admin credential configured; an upstream Gitaly without a token keeps
+its behaviour.
 
-Agent identity is taken from the token, never from the request. The request
-defaults interceptor overwrites `gl_id` and `gl_username` fields with the
-agent's name for agent callers. An agent cannot impersonate another actor by
-putting a different name in the request.
+- Each agent is an SSH key pair, configured as a `[[graft.agent]]` entry with
+  its name and `public_key` (inline) or `public_key_file`. The private key
+  never leaves the agent.
+- Every request of an agent is signed with that key: an SSH (RFC 4253)
+  signature over `graft-ssh-v1`, the timestamp, the nonce, the full method and
+  the SHA-256 of the request body (empty for a stream). The signature, the
+  timestamp, the nonce and the SHA-256 fingerprint of the public key travel in
+  the `graft-signature`, `graft-timestamp`, `graft-nonce` and `graft-key`
+  metadata (`internal/graft/agentkey`).
+- The server looks the agent up by the fingerprint, verifies the signature
+  with the configured public key, refuses a timestamp more than 60 seconds
+  from its clock, and remembers the nonces it has seen so that a captured
+  request cannot be replayed. The signed method and body hash bind the
+  signature to that one call.
+- A request that presents a signature is authenticated with it and with
+  nothing else: a broken or unknown signature is refused, never downgraded to
+  the shared token.
+- A request with a valid signature runs as that agent (`identity.SourceAgent`).
+  The agent name is the actor recorded in the changelog, in policy decisions
+  and in trailers.
+- The super admin's secret (`graft.admin_token` or `graft.admin_token_file`)
+  is the only credential that may purge an archived repository
+  (doc/graft/PLAN13.md). It is not an agent.
+- The shared token (`auth.token`) is an operator credential. It is not an
+  agent. Setup calls of tools and the verifier use it. A Graft server requires
+  one even when agents are configured, because its Git hooks and operator tools
+  call it with it.
+- Health checks need no credential.
+
+Agent identity is taken from the signed key, never from the request. The
+request defaults interceptor overwrites `gl_id` and `gl_username` fields with
+the agent's name for agent callers. An agent cannot impersonate another actor
+by putting a different name in the request.
 
 ## What an agent may call
 
@@ -39,7 +63,7 @@ cache pass-through use for agent work:
   keep those commits from garbage collection while the review is open). The
   reference name is derived from a commit that must already be in the
   repository, so a review cannot write a branch, a tag or any other name, nor
-  add an object. They record the token's identity as the actor, so an agent
+  add an object. They record the agent's identity as the actor, so an agent
   cannot approve as another agent;
 - landing and commits: `UserLand`, `UserCommitFiles`, `UserCreateBranch`,
   `UserDeleteBranch` (through policy);
@@ -301,8 +325,11 @@ are never replayed as rules (see [RESOLVE](RESOLVE.md)).
 
 ## Operator checklist
 
-1. Give every agent its own token file, readable only by the agent's account.
+1. Give every agent its own SSH key pair; keep the private key readable only
+   by the agent's account and configure its public key in `[[graft.agent]]`.
 2. Keep `auth.token` for operators and tooling, and do not give it to agents.
+   Give `graft.admin_token` only to the super admin: it purges archived
+   repositories.
 3. Protect default and release branches with policy rules.
 4. Enable resolution only for actors and paths you trust.
 5. Keep `graft-resolve` and the verifier on a separate account when possible.

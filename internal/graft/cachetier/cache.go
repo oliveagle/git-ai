@@ -208,7 +208,7 @@ func (s *Server) loadPass(ctx context.Context, repo *gitalypb.Repository, oids [
 // objects. It keeps the request's outgoing metadata, which is the only way its
 // credentials reach the upstream.
 func (s *Server) fillContext(ctx context.Context) (context.Context, error) {
-	outCtx, err := s.outgoingContext(ctx)
+	outCtx, err := s.syntheticContext(ctx)
 	if err != nil {
 		return nil, err
 	}

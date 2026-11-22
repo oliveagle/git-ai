@@ -97,7 +97,7 @@ func TestAuthFailures(t *testing.T) {
 		{
 			desc: "wrong secret",
 			opts: []grpc.DialOption{grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2("foobar"))},
-			code: codes.PermissionDenied,
+			code: codes.Unauthenticated,
 		},
 	}
 	for _, tc := range testCases {
@@ -176,7 +176,7 @@ func TestUnauthenticatedHealthService(t *testing.T) {
 		{
 			desc:                    "with wrong token",
 			token:                   "incorrect-token",
-			expectedAuthFailureCode: codes.PermissionDenied,
+			expectedAuthFailureCode: codes.Unauthenticated,
 		},
 		{
 			desc:                    "without token",
@@ -490,7 +490,7 @@ func TestTokenValidityHelperProcess(t *testing.T) {
 	switch {
 	case err == nil:
 		writeTokenValidityHelperResult(t, outPath, "accepted")
-	case status.Code(err) == codes.PermissionDenied:
+	case status.Code(err) == codes.Unauthenticated:
 		writeTokenValidityHelperResult(t, outPath, "denied")
 	default:
 		failTokenValidityHelper(t, outPath, "unexpected code %v: %v", status.Code(err), err)

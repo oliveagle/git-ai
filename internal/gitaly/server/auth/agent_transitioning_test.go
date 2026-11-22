@@ -3,7 +3,6 @@ package auth
 import (
 	"testing"
 
-	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
 	"github.com/stretchr/testify/require"
 )
@@ -15,12 +14,17 @@ import (
 func TestInterceptors_TransitioningWithAgentsFailsAtStartup(t *testing.T) {
 	t.Parallel()
 
-	agents := []config.GraftAgent{{Name: "a", Token: "agent-secret"}}
+	agents, _, _ := testAgents(t)
 	for _, external := range []bool{true, false} {
-		_, _, err := Interceptors(gitalycfgauth.Config{Token: "shared", Transitioning: true}, agents, external)
+		_, _, err := Interceptors(gitalycfgauth.Config{Token: "shared", Transitioning: true}, Config{Agents: agents}, external)
 		require.ErrorContains(t, err, "auth.transitioning must be false")
 	}
 
-	_, _, err := Interceptors(gitalycfgauth.Config{Token: "shared", Transitioning: true}, nil, true)
+	_, _, err := Interceptors(gitalycfgauth.Config{Token: "shared", Transitioning: true}, Config{}, true)
 	require.NoError(t, err)
+
+	// A server that requires authentication refuses the mode as well: a
+	// request without a credential would be let through.
+	_, _, err = Interceptors(gitalycfgauth.Config{Token: "shared", Transitioning: true}, Config{RequireAuthentication: true}, true)
+	require.ErrorContains(t, err, "auth.transitioning must be false")
 }

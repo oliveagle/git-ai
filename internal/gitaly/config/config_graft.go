@@ -25,10 +25,12 @@ type Graft struct {
 	// first rule whose Actor and Refs both match decides. When Policy is
 	// empty every authenticated actor may update every reference.
 	Policy []GraftPolicyRule `json:"policy" toml:"policy,omitempty"`
-	// Agents are the per-agent credentials accepted by the gRPC server. When
-	// at least one agent is configured, every request must present one of
-	// these tokens (in addition to or instead of auth.token), and the agent
-	// name becomes the request's identity.
+	// Agents are the per-agent credentials accepted by the gRPC server. Every
+	// agent is an SSH key pair: the server holds the public key and verifies
+	// the signature of every request of the agent, and the agent name
+	// becomes the request's identity. A request that presents a signature is
+	// authenticated by it alone: a broken signature is refused, even when
+	// the request also carries the shared token.
 	Agents []GraftAgent `json:"agents" toml:"agent,omitempty"`
 	// ObjectService configures the ObjectService RPCs.
 	ObjectService GraftObjectService `json:"object_service" toml:"object_service,omitempty"`
@@ -40,7 +42,7 @@ type Graft struct {
 	Land GraftLand `json:"land" toml:"land,omitempty"`
 	// AgentRPCs lists extra full gRPC method names (e.g.
 	// "/gitaly.RepositoryService/RepositorySize") that callers authenticated
-	// with an agent token may call in addition to the built-in agent
+	// with an agent's SSH key may call in addition to the built-in agent
 	// allowlist. Agents are untrusted: every other RPC is rejected with
 	// PermissionDenied for them.
 	AgentRPCs []string `json:"agent_rpcs" toml:"agent_rpcs,omitempty"`
@@ -51,6 +53,13 @@ type Graft struct {
 	// Storage configures the storage core: repository state in a database
 	// plus object storage (doc/graft/STORAGE.md).
 	Storage GraftStorage `json:"storage" toml:"storage,omitempty"`
+	// AdminToken is the secret of the super admin: the credential that may
+	// delete a repository. The server only deletes an archived repository
+	// whose archive retention has passed, and only for the super admin
+	// (doc/graft/PLAN13.md). Either AdminToken or AdminTokenFile must be set.
+	AdminToken string `json:"admin_token" toml:"admin_token,omitempty"`
+	// AdminTokenFile is a file containing the super admin's secret.
+	AdminTokenFile string `json:"admin_token_file" toml:"admin_token_file,omitempty"`
 }
 
 // GraftSearch configures code search.
@@ -575,7 +584,70 @@ func (g Graft) Validate() error {
 		return err
 	}
 
+	if err := g.validateAdminToken(); err != nil {
+		return err
+	}
+
+	if err := g.validateAgents(); err != nil {
+		return err
+	}
+
 	return g.Land.Resolver.validate()
+}
+
+// RequiresAuthentication reports whether the server refuses anonymous
+// requests. A Graft server always authenticates its callers: an agent with
+// the signature of its SSH key, an operator with the shared token, the super
+// admin with graft.admin_token. An upstream Gitaly keeps its behaviour and
+// serves anonymous callers when no token is configured.
+//
+// Every configured Graft credential makes the server a Graft server: a server
+// with [[graft.agent]] or graft.admin_token, or in standalone mode or with the
+// storage core, never serves an anonymous caller. A server that configured an
+// agent but let anonymous callers in would let them write the same branches
+// the agent may write, with no identity at all.
+func (g Graft) RequiresAuthentication() bool {
+	return g.Standalone ||
+		g.Storage.Enabled() ||
+		len(g.Agents) > 0 ||
+		g.AdminToken != "" ||
+		g.AdminTokenFile != ""
+}
+
+// validateAgents reports a malformed agent credential at load time: an agent
+// without a name, without a public key, or with both a public key and a
+// public key file.
+func (g Graft) validateAgents() error {
+	for i, agent := range g.Agents {
+		switch {
+		case agent.Name == "":
+			return fmt.Errorf("graft agent %d: name must not be empty", i)
+		case agent.PublicKey == "" && agent.PublicKeyFile == "":
+			return fmt.Errorf("graft agent %q: either public_key or public_key_file must be set", agent.Name)
+		case agent.PublicKey != "" && agent.PublicKeyFile != "":
+			return fmt.Errorf("graft agent %q: public_key and public_key_file are mutually exclusive", agent.Name)
+		}
+	}
+	return nil
+}
+
+// validateAdminToken reports a malformed super admin credential at load time:
+// the token and the token file are mutually exclusive, and the file must hold
+// a token.
+func (g Graft) validateAdminToken() error {
+	if g.AdminToken != "" && g.AdminTokenFile != "" {
+		return fmt.Errorf("graft: admin_token and admin_token_file are mutually exclusive")
+	}
+	if g.AdminTokenFile != "" {
+		raw, err := os.ReadFile(g.AdminTokenFile)
+		if err != nil {
+			return fmt.Errorf("graft: read the admin token file: %w", err)
+		}
+		if strings.TrimSpace(string(raw)) == "" {
+			return fmt.Errorf("graft: admin token file %q is empty", g.AdminTokenFile)
+		}
+	}
+	return nil
 }
 
 func (r GraftResolver) validate() error {
@@ -794,14 +866,22 @@ type GraftPolicyRule struct {
 }
 
 // GraftAgent is one agent credential.
+//
+// The credential of an agent is an SSH key pair: the server holds the public
+// key and verifies the signature of every request of the agent, and the agent
+// holds the private key and signs every request with it (doc/graft/PLAN14.md).
+// The identity of the caller is the agent the key belongs to, never a name
+// the request carries.
 type GraftAgent struct {
 	// Name identifies the agent; it is used as the request identity, as the
 	// actor of changesets and as the user ID passed to hooks.
 	Name string `json:"name" toml:"name,omitempty"`
-	// Token is the agent's secret. Either Token or TokenFile must be set.
-	Token string `json:"token" toml:"token,omitempty"`
-	// TokenFile is a file containing the agent's secret.
-	TokenFile string `json:"token_file" toml:"token_file,omitempty"`
+	// PublicKey is the public key of the agent, in the OpenSSH format
+	// ("ssh-ed25519 AAAA... comment"), as ssh-keygen writes it. Either
+	// PublicKey or PublicKeyFile must be set.
+	PublicKey string `json:"public_key" toml:"public_key,omitempty"`
+	// PublicKeyFile is a file containing the public key of the agent.
+	PublicKeyFile string `json:"public_key_file" toml:"public_key_file,omitempty"`
 }
 
 // GraftObjectService configures the ObjectService.

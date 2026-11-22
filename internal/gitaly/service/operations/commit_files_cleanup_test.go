@@ -50,7 +50,7 @@ func TestUserCommitFilesReleasesProcessesAndFiles(t *testing.T) {
 		gitalypb.RegisterHookServiceServer(srv, hook.NewServer(deps))
 		gitalypb.RegisterRepositoryServiceServer(srv, repository.NewServer(deps))
 	})
-	client, conn := newOperationClient(t, cfg.SocketPath)
+	client, conn := newOperationClient(t, cfg)
 	t.Cleanup(func() { conn.Close() })
 	ctx = testhelper.MergeOutgoingMetadata(ctx, testcfg.GitalyServersMetadataFromCfg(t, cfg))
 

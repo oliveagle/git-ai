@@ -315,12 +315,12 @@ func TestParseOptions(t *testing.T) {
 	}{
 		{"no address", []string{"--repo", "r.git"}, "--address is required"},
 		{"no repo", []string{"--address", "unix:/a"}, "--repo is required"},
-		{"both tokens", []string{"--address", "unix:/a", "--repo", "r", "--token", "a", "--agent-token", "b"}, "mutually exclusive"},
+		{"both credentials", []string{"--address", "unix:/a", "--repo", "r", "--token", "a", "--agent-key", "b"}, "mutually exclusive"},
 		{"bad format", []string{"--address", "unix:/a", "--repo", "r", "--format", "xml"}, "unknown format"},
 		{"bad mode", []string{"--address", "unix:/a", "--repo", "r", "--mode", "x"}, "unknown mode"},
 		{"positional", []string{"--address", "unix:/a", "--repo", "r", "extra"}, "unexpected arguments"},
 		{"zero timeout", []string{"--address", "unix:/a", "--repo", "r", "--timeout", "0s"}, "--timeout must be positive"},
-		{"create repo without the shared token", []string{"--address", "unix:/a", "--repo", "r", "--agent-token", "a", "--create-repo"}, "needs the shared --token"},
+		{"create repo without the shared token", []string{"--address", "unix:/a", "--repo", "r", "--agent-key", "a", "--create-repo"}, "needs the shared --token"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -366,32 +366,32 @@ func TestResolveTokens(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name                      string
-		explicit                  []string
-		flagToken, flagAgentToken string
-		envToken, envAgentToken   string
-		wantToken, wantAgentToken string
-		wantErr                   bool
+		name                    string
+		explicit                []string
+		flagToken, flagAgentKey string
+		envToken, envAgentKey   string
+		wantToken, wantAgentKey string
+		wantErr                 bool
 	}{
 		{name: "nothing set"},
 		{name: "shared token from the environment", envToken: "s", wantToken: "s"},
-		{name: "agent token from the environment", envAgentToken: "a", wantAgentToken: "a"},
-		{name: "both from the environment prefer the shared token", envToken: "s", envAgentToken: "a", wantToken: "s"},
+		{name: "agent key from the environment", envAgentKey: "a", wantAgentKey: "a"},
+		{name: "both from the environment prefer the shared token", envToken: "s", envAgentKey: "a", wantToken: "s"},
 		{
-			name: "token flag overrides the environment agent token", explicit: []string{"token"},
-			flagToken: "f", envAgentToken: "a", wantToken: "f",
+			name: "token flag overrides the environment agent key", explicit: []string{"token"},
+			flagToken: "f", envAgentKey: "a", wantToken: "f",
 		},
 		{
-			name: "agent flag overrides the environment shared token", explicit: []string{"agent-token"},
-			flagAgentToken: "a", envToken: "s", wantAgentToken: "a",
+			name: "agent flag overrides the environment shared token", explicit: []string{"agent-key"},
+			flagAgentKey: "a", envToken: "s", wantAgentKey: "a",
 		},
 		{
-			name: "both flags", explicit: []string{"token", "agent-token"},
-			flagToken: "f", flagAgentToken: "a", wantErr: true,
+			name: "both flags", explicit: []string{"token", "agent-key"},
+			flagToken: "f", flagAgentKey: "a", wantErr: true,
 		},
 		{
-			name: "both flags with one empty", explicit: []string{"token", "agent-token"},
-			flagToken: "f", envToken: "s", envAgentToken: "a", wantToken: "f",
+			name: "both flags with one empty", explicit: []string{"token", "agent-key"},
+			flagToken: "f", envToken: "s", envAgentKey: "a", wantToken: "f",
 		},
 	}
 	for _, tt := range tests {
@@ -402,35 +402,35 @@ func TestResolveTokens(t *testing.T) {
 			for _, name := range tt.explicit {
 				explicit[name] = true
 			}
-			token, agentToken, err := resolveTokens(explicit, tt.flagToken, tt.flagAgentToken, tt.envToken, tt.envAgentToken)
+			token, agentKey, err := resolveTokens(explicit, tt.flagToken, tt.flagAgentKey, tt.envToken, tt.envAgentKey)
 			if tt.wantErr {
 				require.ErrorContains(t, err, "mutually exclusive")
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.wantToken, token)
-			require.Equal(t, tt.wantAgentToken, agentToken)
+			require.Equal(t, tt.wantAgentKey, agentKey)
 		})
 	}
 }
 
 // TestParseOptionsTokenEnvironment checks that the environment variables do
-// not make an invocation fail when no token flag is passed, and that a flag
-// overrides the other variable. It sets the environment, so it does not run
-// in parallel.
+// not make an invocation fail when no credential flag is passed, and that a
+// flag overrides the other variable. It sets the environment, so it does not
+// run in parallel.
 func TestParseOptionsTokenEnvironment(t *testing.T) {
 	t.Setenv("GRAFT_TOKEN", "shared")
-	t.Setenv("GRAFT_AGENT_TOKEN", "agent")
+	t.Setenv("GRAFT_AGENT_KEY", "agent")
 
 	opts, err := parseOptions([]string{"--address", "unix:/a", "--repo", "r.git"}, &bytes.Buffer{})
 	require.NoError(t, err)
 	require.Equal(t, "shared", opts.token)
-	require.Empty(t, opts.agentToken)
+	require.Empty(t, opts.agentKey)
 
-	opts, err = parseOptions([]string{"--address", "unix:/a", "--repo", "r.git", "--agent-token", "flag"}, &bytes.Buffer{})
+	opts, err = parseOptions([]string{"--address", "unix:/a", "--repo", "r.git", "--agent-key", "flag"}, &bytes.Buffer{})
 	require.NoError(t, err)
 	require.Empty(t, opts.token)
-	require.Equal(t, "flag", opts.agentToken)
+	require.Equal(t, "flag", opts.agentKey)
 }
 
 // TestAggregateReportsDistinctFailureKinds checks that the same failure on

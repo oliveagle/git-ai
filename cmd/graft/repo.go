@@ -174,10 +174,7 @@ func repoCreate(ctx context.Context, out io.Writer, o *options, f *repoFlags, ar
 		return err
 	}
 
-	dialOpts := []sdk.DialOption{sdk.WithStorage(pick(o.storage, defaultStorage))}
-	if o.token != "" {
-		dialOpts = append(dialOpts, sdk.WithToken(o.token))
-	}
+	dialOpts := dialOptions(target{Address: o.address, Token: o.token, AgentKey: o.agentKey, Storage: o.storage})
 	client, err := sdk.Dial(ctx, o.address, dialOpts...)
 	if err != nil {
 		return err
@@ -402,5 +399,5 @@ func withOperatorHint(err error) error {
 	if sdk.Code(err) != codes.PermissionDenied {
 		return err
 	}
-	return fmt.Errorf("%w\nhint: creating a repository needs the shared (operator) token in GRAFT_TOKEN (or -token), not an agent token", err)
+	return fmt.Errorf("%w\nhint: creating a repository needs the shared (operator) token in GRAFT_TOKEN (or -token), not an agent key", err)
 }

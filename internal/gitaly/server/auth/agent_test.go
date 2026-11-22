@@ -16,6 +16,7 @@ import (
 
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	gitalycfgauth "github.com/feder-cr/git-ai/internal/gitaly/config/auth"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/graft/identity"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/stretchr/testify/assert"
@@ -28,18 +29,21 @@ import (
 
 const (
 	agentAName       = "agent-a"
-	agentASecret     = "agent-a-secret"
 	agentBName       = "agent-b"
-	agentBSecret     = "agent-b-secret"
 	sharedSecretTest = "shared-secret"
+	adminSecretTest  = "admin-secret"
 	testMethod       = "/gitaly.RepositoryService/RepositoryExists"
 )
 
-func testAgents() []config.GraftAgent {
-	return []config.GraftAgent{
-		{Name: agentAName, Token: agentASecret},
-		{Name: agentBName, Token: agentBSecret},
-	}
+// testAgents returns the configuration of the two test agents, and their key
+// pairs.
+func testAgents(t testing.TB) ([]config.GraftAgent, *agentKey, *agentKey) {
+	t.Helper()
+
+	a := newAgentKey(t, agentAName)
+	b := newAgentKey(t, agentBName)
+
+	return []config.GraftAgent{a.agent(), b.agent()}, a, b
 }
 
 // v2Authorization returns a v2 HMAC authorization header value signed with
@@ -68,6 +72,7 @@ func callUnary(t *testing.T, ctx context.Context, interceptor grpc.UnaryServerIn
 	return got, found, err
 }
 
+// contextWithAuthorization returns a context with an authorization header.
 func contextWithAuthorization(t *testing.T, authorization string) context.Context {
 	t.Helper()
 
@@ -79,7 +84,7 @@ func contextWithAuthorization(t *testing.T, authorization string) context.Contex
 	return metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", authorization))
 }
 
-func TestInterceptors_AgentTokens(t *testing.T) {
+func TestInterceptors_AgentSignatures(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
@@ -88,175 +93,164 @@ func TestInterceptors_AgentTokens(t *testing.T) {
 	testCases := []struct {
 		desc          string
 		conf          gitalycfgauth.Config
-		agents        []config.GraftAgent
+		graft         Config
 		external      bool
 		server        any
 		authorization string
-		wantCode      codes.Code
-		wantIdentity  bool
-		wantID        identity.Identity
+		// signature is the metadata of the signed request. It is built per
+		// test case, because the key pairs are random.
+		signature func(t *testing.T, a, b *agentKey) metadata.MD
+		wantCode  codes.Code
+		wantID    identity.Identity
+		wantFound bool
 	}{
 		{
-			desc:          "agent plain bearer token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Bearer " + agentASecret,
-			wantCode:      codes.OK,
-			wantIdentity:  true,
-			wantID:        identity.Identity{Name: agentAName, Source: identity.SourceAgent},
-		},
-		{
-			desc:          "second agent plain bearer token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Bearer " + agentBSecret,
-			wantCode:      codes.OK,
-			wantIdentity:  true,
-			wantID:        identity.Identity{Name: agentBName, Source: identity.SourceAgent},
-		},
-		{
-			desc:          "agent v2 HMAC token signed with agent token",
-			conf:          gitalycfgauth.Config{},
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization(agentBSecret, now),
-			wantCode:      codes.OK,
-			wantIdentity:  true,
-			wantID:        identity.Identity{Name: agentBName, Source: identity.SourceAgent},
-		},
-		{
-			desc:          "shared token v2 HMAC is accepted with agents configured",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization(sharedSecretTest, now),
-			wantCode:      codes.OK,
-			wantIdentity:  true,
-			wantID:        identity.Identity{Name: sharedTokenIdentityName, Source: identity.SourceSharedToken},
-		},
-		{
-			desc:          "shared token is not accepted when auth.token is unset",
-			conf:          gitalycfgauth.Config{},
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization(sharedSecretTest, now),
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			// The shared auth.token is accepted only as a v2 HMAC token. The plain
-			// bearer form is rejected, even though the shared token is configured.
-			desc:          "shared token as plain bearer token is rejected",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Bearer " + sharedSecretTest,
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "wrong plain token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Bearer not-a-token",
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "plain token that is a prefix of an agent token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Bearer " + agentASecret[:5],
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "v2 token signed with an unknown secret",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization("unknown-secret", now),
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "expired v2 token signed with agent token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization(agentASecret, now.Add(-time.Hour)),
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "future v2 token signed with agent token",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: v2Authorization(agentASecret, now.Add(time.Hour)),
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:          "non bearer scheme",
-			conf:          sharedConf,
-			agents:        testAgents(),
-			external:      true,
-			authorization: "Basic " + agentASecret,
-			wantCode:      codes.Unauthenticated,
-		},
-		{
-			desc:     "no credentials",
+			desc:     "the signature of an agent is accepted",
 			conf:     sharedConf,
-			agents:   testAgents(),
+			external: true,
+			signature: func(_ *testing.T, a, _ *agentKey) metadata.MD {
+				return a.sign(t, testMethod, "")
+			},
+			wantCode:  codes.OK,
+			wantID:    identity.Identity{Name: agentAName, Source: identity.SourceAgent},
+			wantFound: true,
+		},
+		{
+			desc:     "the signature of the second agent is accepted",
+			conf:     sharedConf,
+			external: true,
+			signature: func(_ *testing.T, _, b *agentKey) metadata.MD {
+				return b.sign(t, testMethod, "")
+			},
+			wantCode:  codes.OK,
+			wantID:    identity.Identity{Name: agentBName, Source: identity.SourceAgent},
+			wantFound: true,
+		},
+		{
+			desc:     "a signature of another method is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(_ *testing.T, a, _ *agentKey) metadata.MD {
+				return a.sign(t, "/gitaly.RepositoryService/RepositorySize", "")
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "a signature of another request is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(_ *testing.T, a, _ *agentKey) metadata.MD {
+				return a.sign(t, testMethod, "hash of another request")
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "an unknown key is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, _, _ *agentKey) metadata.MD {
+				other := newAgentKey(t, "stranger")
+				return other.sign(t, testMethod, "")
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "a signature of a key the server does not know is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, a, _ *agentKey) metadata.MD {
+				md := a.sign(t, testMethod, "")
+				md.Set(agentkey.KeyMetadata, "SHA256:unknown")
+				return md
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "a signature of the past is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, a, _ *agentKey) metadata.MD {
+				return a.signAt(t, testMethod, "", now.Add(-time.Hour))
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "a signature of the future is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, a, _ *agentKey) metadata.MD {
+				return a.signAt(t, testMethod, "", now.Add(time.Hour))
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "an incomplete signature is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, a, _ *agentKey) metadata.MD {
+				md := a.sign(t, testMethod, "")
+				md.Set(agentkey.SignatureMetadata, "")
+				return md
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:     "a broken signature is refused",
+			conf:     sharedConf,
+			external: true,
+			signature: func(t *testing.T, a, _ *agentKey) metadata.MD {
+				md := a.sign(t, testMethod, "")
+				md.Set(agentkey.SignatureMetadata, "bm90LWEtc2lnbmF0dXJl")
+				return md
+			},
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			desc:          "the shared token is accepted next to the agents",
+			conf:          sharedConf,
+			external:      true,
+			authorization: v2Authorization(sharedSecretTest, now),
+			wantCode:      codes.OK,
+			wantID:        identity.Identity{Name: sharedTokenIdentityName, Source: identity.SourceSharedToken},
+			wantFound:     true,
+		},
+		{
+			desc:          "the admin token is accepted as the super admin",
+			conf:          sharedConf,
+			graft:         Config{AdminToken: adminSecretTest},
+			external:      true,
+			authorization: v2Authorization(adminSecretTest, now),
+			wantCode:      codes.OK,
+			wantID:        identity.Identity{Name: adminIdentityName, Source: identity.SourceAdmin},
+			wantFound:     true,
+		},
+		{
+			desc:     "a request with no credential is refused",
+			conf:     sharedConf,
 			external: true,
 			wantCode: codes.Unauthenticated,
 		},
 		{
-			desc:     "health check is unauthenticated",
+			desc:     "the health check is not authenticated",
 			conf:     sharedConf,
-			agents:   testAgents(),
 			external: true,
 			server:   UnauthenticatedHealthService{},
 			wantCode: codes.OK,
 		},
 		{
-			desc:     "internal server ignores agents and accepts a missing token when auth is disabled",
-			conf:     gitalycfgauth.Config{},
-			agents:   testAgents(),
-			external: false,
-			wantCode: codes.OK,
-		},
-		{
-			desc:     "internal server requires the shared token when it is set",
-			conf:     sharedConf,
-			agents:   testAgents(),
-			external: false,
-			wantCode: codes.Unauthenticated,
-		},
-		{
-			desc:          "internal server accepts the shared token without setting an identity",
+			desc:          "the internal server accepts the shared token",
 			conf:          sharedConf,
-			agents:        testAgents(),
 			external:      false,
 			authorization: v2Authorization(sharedSecretTest, now),
 			wantCode:      codes.OK,
+			wantID:        identity.Identity{Name: sharedTokenIdentityName, Source: identity.SourceSharedToken},
+			wantFound:     true,
 		},
 		{
-			desc:     "no agents: upstream rejects a missing token",
+			desc:     "the internal server refuses a request without a credential",
 			conf:     sharedConf,
-			external: true,
+			external: false,
 			wantCode: codes.Unauthenticated,
-		},
-		{
-			desc:          "no agents: upstream accepts the shared token without setting an identity",
-			conf:          sharedConf,
-			external:      true,
-			authorization: v2Authorization(sharedSecretTest, now),
-			wantCode:      codes.OK,
-		},
-		{
-			desc:     "no agents and no token: upstream accepts everything without identity",
-			conf:     gitalycfgauth.Config{},
-			external: true,
-			wantCode: codes.OK,
 		},
 	}
 
@@ -264,30 +258,117 @@ func TestInterceptors_AgentTokens(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			unary, _, err := Interceptors(tc.conf, tc.agents, tc.external)
+			agents, a, b := testAgents(t)
+			graft := tc.graft
+			graft.Agents = agents
+
+			unary, _, err := Interceptors(tc.conf, graft, tc.external)
 			require.NoError(t, err)
 
-			ctx := contextWithAuthorization(t, tc.authorization)
+			var md metadata.MD
+			if tc.signature != nil {
+				md = tc.signature(t, a, b)
+			}
+
+			ctx := contextWithSignature(t, md, tc.authorization)
 			id, found, err := callUnary(t, ctx, unary, tc.server)
 			require.Equal(t, tc.wantCode, status.Code(err), "error: %v", err)
-			require.Equal(t, tc.wantIdentity, found)
-			if tc.wantIdentity {
+			require.Equal(t, tc.wantFound, found)
+			if tc.wantFound {
 				require.Equal(t, tc.wantID, id)
 			}
 		})
 	}
 }
 
-func TestInterceptors_StreamAgentToken(t *testing.T) {
+// TestInterceptors_ReplayedSignatureIsRefused checks that a captured request
+// cannot be sent twice.
+func TestInterceptors_ReplayedSignatureIsRefused(t *testing.T) {
 	t.Parallel()
 
-	_, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), true)
+	agents, a, _ := testAgents(t)
+	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
-	t.Run("agent identity reaches the handler", func(t *testing.T) {
+	md := a.sign(t, testMethod, "")
+	ctx := contextWithSignature(t, md, "")
+
+	_, found, err := callUnary(t, ctx, unary, nil)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	// The same signature a second time is a replay.
+	_, found, err = callUnary(t, ctx, unary, nil)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	require.False(t, found)
+}
+
+// TestInterceptors_SignatureIsNotDowngraded checks that a request with a
+// broken signature is refused even when it carries the shared token: a signed
+// request is authenticated with its signature and with nothing else.
+func TestInterceptors_SignatureIsNotDowngraded(t *testing.T) {
+	t.Parallel()
+
+	agents, a, _ := testAgents(t)
+	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
+	require.NoError(t, err)
+
+	md := a.sign(t, testMethod, "")
+	md.Set(agentkey.SignatureMetadata, "bm90LWEtc2lnbmF0dXJl")
+
+	ctx := contextWithSignature(t, md, v2Authorization(sharedSecretTest, time.Now()))
+	_, found, err := callUnary(t, ctx, unary, nil)
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	require.False(t, found)
+}
+
+// TestInterceptors_AnonymousIsRefused checks that a server that requires
+// authentication refuses the callers that present no credential, and that an
+// upstream Gitaly without a token keeps its behaviour.
+func TestInterceptors_AnonymousIsRefused(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a Graft server refuses anonymous callers", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := contextWithAuthorization(t, "Bearer "+agentBSecret)
+		unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{RequireAuthentication: true}, true)
+		require.NoError(t, err)
+
+		_, found, err := callUnary(t, testhelper.Context(t), unary, nil)
+		require.Equal(t, codes.Unauthenticated, status.Code(err))
+		require.False(t, found)
+	})
+
+	t.Run("an upstream Gitaly without a token serves anonymous callers", func(t *testing.T) {
+		t.Parallel()
+
+		unary, _, err := Interceptors(gitalycfgauth.Config{}, Config{}, true)
+		require.NoError(t, err)
+
+		_, found, err := callUnary(t, testhelper.Context(t), unary, nil)
+		require.NoError(t, err)
+		require.False(t, found)
+	})
+
+	t.Run("a server that requires authentication and has no credential is a configuration error", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := Interceptors(gitalycfgauth.Config{}, Config{RequireAuthentication: true}, true)
+		require.ErrorContains(t, err, "no credential is configured")
+	})
+}
+
+func TestInterceptors_StreamAgentSignature(t *testing.T) {
+	t.Parallel()
+
+	agents, _, b := testAgents(t)
+	_, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
+	require.NoError(t, err)
+
+	t.Run("the identity of the agent reaches the handler", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := contextWithSignature(t, b.sign(t, testMethod, ""), "")
 
 		var got identity.Identity
 		var found bool
@@ -302,7 +383,7 @@ func TestInterceptors_StreamAgentToken(t *testing.T) {
 		require.Equal(t, identity.Identity{Name: agentBName, Source: identity.SourceAgent}, got)
 	})
 
-	t.Run("wrong token is rejected before the handler", func(t *testing.T) {
+	t.Run("a request without a signature is rejected before the handler", func(t *testing.T) {
 		t.Parallel()
 
 		ctx := contextWithAuthorization(t, "Bearer wrong")
@@ -331,114 +412,103 @@ func TestLoadAgentCredentials(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	a := newAgentKey(t, "a")
+	b := newAgentKey(t, "b")
 
-	tokenFile := filepath.Join(dir, "agent-token")
-	require.NoError(t, os.WriteFile(tokenFile, []byte("  file-secret \n"), 0o600))
+	keyFile := filepath.Join(dir, "agent.pub")
+	require.NoError(t, os.WriteFile(keyFile, []byte(a.publicKey+"\n"), 0o600))
 
-	emptyFile := filepath.Join(dir, "empty-token")
+	brokenFile := filepath.Join(dir, "broken.pub")
+	require.NoError(t, os.WriteFile(brokenFile, []byte("not a key\n"), 0o600))
+
+	emptyFile := filepath.Join(dir, "empty.pub")
 	require.NoError(t, os.WriteFile(emptyFile, []byte(" \n"), 0o600))
 
-	multiLineFile := filepath.Join(dir, "multi-line-token")
-	require.NoError(t, os.WriteFile(multiLineFile, []byte("line1\nline2\n"), 0o600))
-
 	testCases := []struct {
-		desc        string
-		sharedToken string
-		agents      []config.GraftAgent
-		want        []agentCredential
-		wantErr     string
+		desc    string
+		agents  []config.GraftAgent
+		want    []agentCredential
+		wantErr string
 	}{
-		{
-			desc:        "agent token equal to the shared token is rejected",
-			sharedToken: "same",
-			agents:      []config.GraftAgent{{Name: "a", Token: "same"}},
-			wantErr:     "same as auth.token",
-		},
-		{
-			desc:        "agent token different from the shared token is accepted",
-			sharedToken: "shared",
-			agents:      []config.GraftAgent{{Name: "a", Token: "tok"}},
-			want:        []agentCredential{{name: "a", token: "tok"}},
-		},
-		{
-			desc:    "inline token with whitespace is rejected",
-			agents:  []config.GraftAgent{{Name: "a", Token: "two words"}},
-			wantErr: "whitespace or control characters",
-		},
-		{
-			desc:    "inline token with a control character is rejected",
-			agents:  []config.GraftAgent{{Name: "a", Token: "tok\x00"}},
-			wantErr: "whitespace or control characters",
-		},
-		{
-			desc:    "token file with an internal newline is rejected",
-			agents:  []config.GraftAgent{{Name: "a", TokenFile: multiLineFile}},
-			wantErr: "whitespace or control characters",
-		},
 		{
 			desc:   "no agents",
 			agents: nil,
 			want:   []agentCredential{},
 		},
 		{
-			desc:   "inline token",
-			agents: []config.GraftAgent{{Name: "a", Token: "tok"}},
-			want:   []agentCredential{{name: "a", token: "tok"}},
+			desc:   "an inline public key",
+			agents: []config.GraftAgent{a.agent()},
+			want:   []agentCredential{{name: a.name, fingerprint: a.fingerprint}},
 		},
 		{
-			desc:   "token file is read and trimmed",
-			agents: []config.GraftAgent{{Name: "a", TokenFile: tokenFile}},
-			want:   []agentCredential{{name: "a", token: "file-secret"}},
+			desc:   "the public key file is read",
+			agents: []config.GraftAgent{{Name: "a", PublicKeyFile: keyFile}},
+			want:   []agentCredential{{name: "a", fingerprint: a.fingerprint}},
 		},
 		{
-			desc:    "empty name",
-			agents:  []config.GraftAgent{{Name: "", Token: "tok"}},
+			desc:    "an inline key that is not a key",
+			agents:  []config.GraftAgent{{Name: "a", PublicKey: "not a key"}},
+			wantErr: "parse the public key",
+		},
+		{
+			desc:    "a key file that holds no key",
+			agents:  []config.GraftAgent{{Name: "a", PublicKeyFile: brokenFile}},
+			wantErr: "parse the public key file",
+		},
+		{
+			desc:    "an empty key file",
+			agents:  []config.GraftAgent{{Name: "a", PublicKeyFile: emptyFile}},
+			wantErr: "parse the public key file",
+		},
+		{
+			desc:    "an empty name",
+			agents:  []config.GraftAgent{{Name: "", PublicKey: a.publicKey}},
 			wantErr: "name must not be empty",
 		},
 		{
-			desc:    "reserved shared name",
-			agents:  []config.GraftAgent{{Name: sharedTokenIdentityName, Token: "tok"}},
+			desc:    "the reserved name of the shared token",
+			agents:  []config.GraftAgent{{Name: sharedTokenIdentityName, PublicKey: a.publicKey}},
 			wantErr: "is reserved",
 		},
 		{
-			desc:    "reserved name of the proposals",
-			agents:  []config.GraftAgent{{Name: "proposals", Token: "tok"}},
+			desc:    "the reserved name of the super admin",
+			agents:  []config.GraftAgent{{Name: adminIdentityName, PublicKey: a.publicKey}},
+			wantErr: "is reserved",
+		},
+		{
+			desc:    "the reserved name of the proposals",
+			agents:  []config.GraftAgent{{Name: "proposals", PublicKey: a.publicKey}},
 			wantErr: "is reserved for the server's references under refs/graft/",
 		},
 		{
-			desc:    "reserved name of the green references",
-			agents:  []config.GraftAgent{{Name: "green", Token: "tok"}},
+			desc:    "the reserved name of the green references",
+			agents:  []config.GraftAgent{{Name: "green", PublicKey: a.publicKey}},
 			wantErr: "is reserved for the server's references under refs/graft/",
 		},
 		{
-			desc:    "duplicate name",
-			agents:  []config.GraftAgent{{Name: "a", Token: "one"}, {Name: "a", Token: "two"}},
+			desc:    "a duplicate name",
+			agents:  []config.GraftAgent{a.agent(), {Name: a.name, PublicKey: b.publicKey}},
 			wantErr: "duplicate name",
 		},
 		{
-			desc:    "duplicate token",
-			agents:  []config.GraftAgent{{Name: "a", Token: "same"}, {Name: "b", Token: "same"}},
-			wantErr: "already used",
+			desc:    "a duplicate key",
+			agents:  []config.GraftAgent{a.agent(), {Name: "b", PublicKey: a.publicKey}},
+			wantErr: "already used by another agent",
 		},
 		{
-			desc:    "token and token file are mutually exclusive",
-			agents:  []config.GraftAgent{{Name: "a", Token: "tok", TokenFile: tokenFile}},
+			desc:    "the key and the key file are mutually exclusive",
+			agents:  []config.GraftAgent{{Name: "a", PublicKey: a.publicKey, PublicKeyFile: keyFile}},
 			wantErr: "mutually exclusive",
 		},
 		{
-			desc:    "neither token nor token file",
+			desc:    "neither a key nor a key file",
 			agents:  []config.GraftAgent{{Name: "a"}},
-			wantErr: "either token or token_file must be set",
+			wantErr: "either public_key or public_key_file must be set",
 		},
 		{
-			desc:    "missing token file",
-			agents:  []config.GraftAgent{{Name: "a", TokenFile: filepath.Join(dir, "missing")}},
-			wantErr: "reading token file",
-		},
-		{
-			desc:    "empty token file",
-			agents:  []config.GraftAgent{{Name: "a", TokenFile: emptyFile}},
-			wantErr: "is empty",
+			desc:    "a missing key file",
+			agents:  []config.GraftAgent{{Name: "a", PublicKeyFile: filepath.Join(dir, "missing")}},
+			wantErr: "read the public key file",
 		},
 	}
 
@@ -446,50 +516,94 @@ func TestLoadAgentCredentials(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := loadAgentCredentials(tc.sharedToken, tc.agents)
+			got, err := loadAgentCredentials(tc.agents)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
+			require.Len(t, got, len(tc.want))
+			for i, cred := range got {
+				require.Equal(t, tc.want[i].name, cred.name)
+				require.Equal(t, tc.want[i].fingerprint, cred.fingerprint)
+				require.NotNil(t, cred.key)
+			}
 		})
 	}
+}
+
+func TestResolveAdminToken(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tokenFile := filepath.Join(dir, "admin-token")
+	require.NoError(t, os.WriteFile(tokenFile, []byte("  file-secret \n"), 0o600))
+
+	t.Run("an inline token", func(t *testing.T) {
+		t.Parallel()
+
+		secret, err := resolveAdminToken("inline", "")
+		require.NoError(t, err)
+		require.Equal(t, "inline", secret)
+	})
+
+	t.Run("the token file is read and trimmed", func(t *testing.T) {
+		t.Parallel()
+
+		secret, err := resolveAdminToken("", tokenFile)
+		require.NoError(t, err)
+		require.Equal(t, "file-secret", secret)
+	})
+
+	t.Run("the token and the token file are mutually exclusive", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := resolveAdminToken("inline", tokenFile)
+		require.ErrorContains(t, err, "mutually exclusive")
+	})
+
+	t.Run("a missing token file", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := resolveAdminToken("", filepath.Join(dir, "missing"))
+		require.ErrorContains(t, err, "read the admin token file")
+	})
 }
 
 func TestInterceptors_InvalidAgentConfigFailsAtStartup(t *testing.T) {
 	t.Parallel()
 
-	_, _, err := Interceptors(gitalycfgauth.Config{}, []config.GraftAgent{{Name: "a"}}, true)
-	require.ErrorContains(t, err, "either token or token_file must be set")
+	_, _, err := Interceptors(gitalycfgauth.Config{}, Config{Agents: []config.GraftAgent{{Name: "a"}}}, true)
+	require.ErrorContains(t, err, "either public_key or public_key_file must be set")
 
-	// The internal server uses upstream authentication, but a broken agent
-	// configuration is still reported, so that a Gitaly instance without external
+	// The internal server uses the same configuration, so a broken agent
+	// configuration is reported there too: a Gitaly instance without external
 	// listeners does not start with it unnoticed.
-	_, _, err = Interceptors(gitalycfgauth.Config{}, []config.GraftAgent{{Name: "a"}}, false)
-	require.ErrorContains(t, err, "either token or token_file must be set")
+	_, _, err = Interceptors(gitalycfgauth.Config{}, Config{Agents: []config.GraftAgent{{Name: "a"}}}, false)
+	require.ErrorContains(t, err, "either public_key or public_key_file must be set")
 
-	// An unreadable token file is reported by the internal server as well.
+	// An unreadable key file is reported by the internal server as well.
 	missing := filepath.Join(t.TempDir(), "missing")
-	_, _, err = Interceptors(gitalycfgauth.Config{}, []config.GraftAgent{{Name: "a", TokenFile: missing}}, false)
-	require.ErrorContains(t, err, "reading token file")
+	_, _, err = Interceptors(gitalycfgauth.Config{}, Config{Agents: []config.GraftAgent{{Name: "a", PublicKeyFile: missing}}}, false)
+	require.ErrorContains(t, err, "read the public key file")
 
-	// Without agents the internal server is unchanged.
-	_, _, err = Interceptors(gitalycfgauth.Config{}, nil, false)
+	// Without agents the server is unchanged.
+	_, _, err = Interceptors(gitalycfgauth.Config{}, Config{}, false)
 	require.NoError(t, err)
 
-	// An agent with the shared auth.token is reported at startup, on both servers.
+	// An unreadable admin token file is reported at startup, on both servers.
 	for _, external := range []bool{true, false} {
-		_, _, err = Interceptors(gitalycfgauth.Config{Token: "same"}, []config.GraftAgent{{Name: "a", Token: "same"}}, external)
-		require.ErrorContains(t, err, "same as auth.token")
+		_, _, err = Interceptors(gitalycfgauth.Config{}, Config{AdminTokenFile: missing}, external)
+		require.ErrorContains(t, err, "read the admin token file")
 	}
 }
 
 func TestInterceptors_ConcurrentAuthentication(t *testing.T) {
 	t.Parallel()
 
-	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), true)
+	agents, a, b := testAgents(t)
+	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
 	const workers = 50
@@ -502,13 +616,15 @@ func TestInterceptors_ConcurrentAuthentication(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			name, secret := agentAName, agentASecret
+			key := a
+			name := agentAName
 			if i%2 == 1 {
-				name, secret = agentBName, agentBSecret
+				key = b
+				name = agentBName
 			}
 
 			for j := 0; j < iterations; j++ {
-				ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+secret))
+				ctx := metadata.NewIncomingContext(context.Background(), key.sign(t, testMethod, ""))
 
 				var got identity.Identity
 				_, err := unary(ctx, nil, &grpc.UnaryServerInfo{FullMethod: testMethod},

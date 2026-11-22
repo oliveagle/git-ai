@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -1283,12 +1285,27 @@ func TestIntegration_PathHistory(t *testing.T) {
 func TestIntegration_Authentication(t *testing.T) {
 	t.Parallel()
 
+	privateKey, publicKey := testhelper.AgentKeyPair(t)
+	agentKeyPath := filepath.Join(t.TempDir(), "agent")
+	require.NoError(t, os.WriteFile(agentKeyPath, privateKey, 0o600))
+
+	foreignKey, _ := testhelper.AgentKeyPair(t)
+	foreignKeyPath := filepath.Join(t.TempDir(), "foreign")
+	require.NoError(t, os.WriteFile(foreignKeyPath, foreignKey, 0o600))
+
 	env := startIntegration(t, func(cfg *config.Cfg) {
 		cfg.Auth.Token = "shared-secret"
-		cfg.Graft.Agents = []config.GraftAgent{{Name: "agent-1", Token: "agent-secret"}}
+		cfg.Graft.Agents = []config.GraftAgent{{Name: "agent-1", PublicKey: publicKey}}
 	})
 	base := env.writeCommit(t, "main", map[string]string{"base.txt": "base"})
 	want := base.String()
+
+	t.Run("the key of the agent signs every request", func(t *testing.T) {
+		repo := env.dial(t, sdk.WithAgentKey(agentKeyPath))
+		got, err := repo.ResolveRevision(env.ctx, "main")
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
 
 	t.Run("shared token as v2 HMAC", func(t *testing.T) {
 		repo := env.dial(t, sdk.WithToken("shared-secret"))
@@ -1297,22 +1314,14 @@ func TestIntegration_Authentication(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 
-	t.Run("agent token as bearer", func(t *testing.T) {
-		repo := env.dial(t, sdk.WithAgentToken("agent-secret"))
-		got, err := repo.ResolveRevision(env.ctx, "main")
-		require.NoError(t, err)
-		require.Equal(t, want, got)
+	t.Run("the shared token is not accepted as an agent", func(t *testing.T) {
+		repo := env.dial(t, sdk.WithToken("agent-1"))
+		_, err := repo.ResolveRevision(env.ctx, "main")
+		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 	})
 
-	t.Run("agent token as v2 HMAC", func(t *testing.T) {
-		repo := env.dial(t, sdk.WithToken("agent-secret"))
-		got, err := repo.ResolveRevision(env.ctx, "main")
-		require.NoError(t, err)
-		require.Equal(t, want, got)
-	})
-
-	t.Run("shared token is not accepted as a plain bearer", func(t *testing.T) {
-		repo := env.dial(t, sdk.WithAgentToken("shared-secret"))
+	t.Run("a key the server does not know is refused", func(t *testing.T) {
+		repo := env.dial(t, sdk.WithAgentKey(foreignKeyPath))
 		_, err := repo.ResolveRevision(env.ctx, "main")
 		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 	})
@@ -1323,13 +1332,7 @@ func TestIntegration_Authentication(t *testing.T) {
 		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 	})
 
-	t.Run("wrong agent token", func(t *testing.T) {
-		repo := env.dial(t, sdk.WithAgentToken("wrong"))
-		_, err := repo.ResolveRevision(env.ctx, "main")
-		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
-	})
-
-	t.Run("no token", func(t *testing.T) {
+	t.Run("no credential", func(t *testing.T) {
 		repo := env.dial(t)
 		_, err := repo.ResolveRevision(env.ctx, "main")
 		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)

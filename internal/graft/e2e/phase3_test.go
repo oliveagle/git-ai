@@ -110,7 +110,7 @@ func casUpdateRef(t *testing.T, s gitalyStack, branch, old, next string) bool {
 func TestPhase3BatchedLandingAllPrivateChanges(t *testing.T) {
 	t.Parallel()
 
-	graft, tokens := workerGraft(phase3Agents)
+	graft, tokens := workerGraft(t, phase3Agents)
 	s := startGitaly(t, graft, sharedTestToken)
 	ctx := s.ctx
 
@@ -175,7 +175,7 @@ func TestPhase3Load100AgentsMixed(t *testing.T) {
 
 	const private, shared = 90, 10
 
-	graft, tokens := workerGraft(private + shared)
+	graft, tokens := workerGraft(t, private+shared)
 	s := startGitaly(t, graft, sharedTestToken)
 	ctx := s.ctx
 
@@ -232,7 +232,7 @@ func TestPhase3ExternalWriterRacesLane(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -464,7 +464,7 @@ func TestPhase3HookRejectionFallsBackUnbatched(t *testing.T) {
 	ex := loadExample(t)
 	ex.graft.Land.Batch.Window = "300ms"
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -567,7 +567,7 @@ func TestPhase3CancelledRequestsAreDropped(t *testing.T) {
 	ex := loadExample(t)
 	ex.graft.Land.Batch.Window = "1500ms"
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -615,12 +615,14 @@ func TestPhase3CancelledRequestsAreDropped(t *testing.T) {
 // protectedGraft returns the worker configuration of workerGraft plus an
 // outsider agent. Only the workers may update main, so the outsider is denied
 // there.
-func protectedGraft(n int) (config.Graft, map[string]string) {
-	graft, tokens := workerGraft(n)
+func protectedGraft(t *testing.T, n int) (config.Graft, map[string]string) {
+	t.Helper()
 
-	token := outsiderName + "-secret-for-tests"
-	tokens[outsiderName] = token
-	graft.Agents = append(graft.Agents, config.GraftAgent{Name: outsiderName, Token: token})
+	graft, tokens := workerGraft(t, n)
+
+	privateKeyPath, publicKey := testhelper.AgentKeyFiles(t)
+	tokens[outsiderName] = privateKeyPath
+	graft.Agents = append(graft.Agents, config.GraftAgent{Name: outsiderName, PublicKey: publicKey})
 
 	return graft, tokens
 }
@@ -635,7 +637,7 @@ func TestPhase3ProtectedBranchDeniesOutsider(t *testing.T) {
 	const workers = 10
 	const agents = workers + 1
 
-	graft, tokens := protectedGraft(workers)
+	graft, tokens := protectedGraft(t, workers)
 	s := startGitaly(t, graft, sharedTestToken)
 	ctx := s.ctx
 
@@ -677,7 +679,7 @@ func TestPhase3ProtectedBranchBatches(t *testing.T) {
 	t.Parallel()
 
 	const workers = 20
-	graft, tokens := workerGraft(workers)
+	graft, tokens := workerGraft(t, workers)
 	graft.Land.Batch.Window = "300ms"
 	s := startGitaly(t, graft, sharedTestToken)
 	ctx := s.ctx
@@ -860,7 +862,7 @@ func TestPhase3EagerDerivedDataVisibleAfterLand(t *testing.T) {
 	ex := loadExample(t)
 	ex.graft.Derived.Eager = true
 	s, events := startEagerGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})
@@ -930,7 +932,7 @@ func TestPhase3IndexedPathHistoryMatchesDeriver(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 	planner := sdk.User{ID: "planner", Name: "planner", Email: "planner@example.com"}
 
@@ -1011,7 +1013,7 @@ func TestPhase3SingleLandIsABatch(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{"README.md": "single\n"})

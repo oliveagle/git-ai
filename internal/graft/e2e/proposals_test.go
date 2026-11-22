@@ -51,7 +51,7 @@ model = "fake"
 		Command: []string{buildAgentsTool(t, "./cmd/graft-resolve"), "--config", resolveConfig},
 	}
 	s := startGitaly(t, ex.graft, ex.sharedToken)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 	ctx := s.ctx
 
 	base := writeMain(t, s, map[string]string{sharedLogPath: sharedLogHeader})

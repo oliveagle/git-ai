@@ -222,10 +222,11 @@ func newResolveFixtureOn(t *testing.T, cfg config.Cfg, graft config.Graft, baseE
 		lanes = landlane.NewShared(laneCfg)
 		t.Cleanup(lanes.Close)
 	}
+	testcfg.RequireCredential(&cfg)
 	testcfg.BuildGitalySSH(t, cfg)
 	testcfg.BuildGitalyHooks(t, cfg)
 	cfg.SocketPath = runOperationServiceServerWithLanes(t, cfg, lanes, options...)
-	client, conn := newOperationClient(t, cfg.SocketPath)
+	client, conn := newOperationClient(t, cfg)
 	t.Cleanup(func() { conn.Close() })
 	ctx := testhelper.MergeOutgoingMetadata(testhelper.Context(t), testcfg.GitalyServersMetadataFromCfg(t, cfg))
 	// The resolution writes commits directly, outside an RPC, so the feature flags that
@@ -700,6 +701,7 @@ func TestNewServer_warnsWhenResolverActorsMatchNobody(t *testing.T) {
 	t.Parallel()
 
 	const warning = "no [[graft.agent]] is configured"
+	_, builderKey := testhelper.AgentKeyPair(t)
 
 	for _, tc := range []struct {
 		desc     string
@@ -710,7 +712,7 @@ func TestNewServer_warnsWhenResolverActorsMatchNobody(t *testing.T) {
 		// Only agent authentication sets an identity: without agents a GitLab user name in
 		// actors admits nobody.
 		{desc: "actors without agents", actors: []string{"alice"}, wantWarn: true},
-		{desc: "actors with agents", actors: []string{"builder"}, agents: []config.GraftAgent{{Name: "builder", Token: "secret"}}},
+		{desc: "actors with agents", actors: []string{"builder"}, agents: []config.GraftAgent{{Name: "builder", PublicKey: builderKey}}},
 		{desc: "no actors without agents"},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {

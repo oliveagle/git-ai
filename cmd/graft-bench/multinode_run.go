@@ -79,8 +79,8 @@ func dialOptions(opts options) []sdk.DialOption {
 	switch {
 	case opts.token != "":
 		dialOpts = append(dialOpts, sdk.WithToken(opts.token))
-	case opts.agentToken != "":
-		dialOpts = append(dialOpts, sdk.WithAgentToken(opts.agentToken))
+	case opts.agentKey != "":
+		dialOpts = append(dialOpts, sdk.WithAgentKey(opts.agentKey))
 	}
 
 	return dialOpts

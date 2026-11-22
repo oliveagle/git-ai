@@ -20,6 +20,24 @@ import (
 // when the service is actually spun up.
 const UnconfiguredSocketPath = "it is a stub to bypass Validate method"
 
+// SharedToken is the auth.token that a test server serving a Graft server uses
+// when the test configures no other credential. A Graft server refuses
+// anonymous callers (doc/graft/PLAN14.md), so its tests must present one.
+const SharedToken = "test-shared-token"
+
+// RequireCredential gives cfg the shared token when it serves a Graft server
+// and configures no shared token. A Graft server refuses anonymous callers, so
+// its tests call it with SharedToken; a test that configures another
+// credential of its own keeps it, and one that also configures agents gets a
+// shared token for its plain clients, as a server may do in production
+// (doc/graft/PLAN14.md).
+func RequireCredential(cfg *config.Cfg) {
+	if !cfg.Graft.RequiresAuthentication() || cfg.Auth.GetToken() != "" {
+		return
+	}
+	cfg.Auth.Token = SharedToken
+}
+
 // Option is a configuration option for the builder.
 type Option func(*GitalyCfgBuilder)
 
@@ -175,6 +193,10 @@ func (gc *GitalyCfgBuilder) Build(tb testing.TB) config.Cfg {
 	}
 
 	require.NoError(tb, cfg.Sanitize())
+	// A Graft server refuses anonymous callers, and ValidateV2 enforces that.
+	// Give it the shared test token before validation unless the test
+	// configured a credential of its own.
+	RequireCredential(&cfg)
 	require.NoError(tb, cfg.ValidateV2())
 
 	return cfg

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/client"
@@ -31,6 +33,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/setup"
 	"github.com/feder-cr/git-ai/internal/gitlab"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/graft/cachetier"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
@@ -42,11 +45,53 @@ import (
 // exampleConfigPath is the example configuration, relative to this package.
 const exampleConfigPath = "../../../examples/graft/config.toml"
 
-// exampleTokens are the agent secrets written to the token files that the
-// example configuration names.
-var exampleTokens = map[string]string{
-	"planner": "planner-secret-for-tests",
-	"builder": "builder-secret-for-tests",
+// exampleAgentNames are the agents of examples/graft/config.toml.
+var exampleAgentNames = []string{"planner", "builder"}
+
+// exampleKey is the SSH credential of an agent of the example configuration.
+type exampleKey struct {
+	// privateKeyPath is the file the test clients sign their requests with.
+	privateKeyPath string
+	// publicKey is the credential the server authorizes.
+	publicKey string
+}
+
+// exampleKeys holds the credentials of the agents of the example
+// configuration. setupExampleKeys generates the key pairs once per test
+// binary: every stack that loads the example authorizes these public keys,
+// and the clients sign with these private keys, as a deployed agent would.
+var exampleKeys = map[string]exampleKey{}
+
+// exampleKeysDir is the directory of the generated private keys.
+var exampleKeysDir string
+
+// setupExampleKeys generates the key pairs of the example configuration. It
+// runs before the tests, from TestMain.
+func setupExampleKeys() error {
+	dir, err := os.MkdirTemp("", "graft-e2e-keys-")
+	if err != nil {
+		return err
+	}
+	exampleKeysDir = dir
+
+	for _, name := range exampleAgentNames {
+		privateKey, publicKey, err := testhelper.NewAgentKeyPair()
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(dir, name+".key")
+		if err := os.WriteFile(path, privateKey, 0o600); err != nil {
+			return err
+		}
+		exampleKeys[name] = exampleKey{privateKeyPath: path, publicKey: publicKey}
+	}
+
+	return nil
+}
+
+// teardownExampleKeys removes the generated private keys.
+func teardownExampleKeys(int) error {
+	return os.RemoveAll(exampleKeysDir)
 }
 
 // gitalyStack is a standalone Gitaly server with one repository. The server
@@ -66,6 +111,10 @@ type gitalyStack struct {
 // identity.
 const sharedTestToken = "shared-test-token"
 
+// adminTestToken is the super admin's token of the test servers that have one:
+// only the super admin may purge an archived repository (doc/graft/PLAN13.md).
+const adminTestToken = "admin-test-token"
+
 // exampleConfig is the part of examples/graft/config.toml that the tests run.
 type exampleConfig struct {
 	graft       config.Graft
@@ -74,7 +123,7 @@ type exampleConfig struct {
 
 // loadExample loads examples/graft/config.toml. The paths in the file are
 // rewritten into a temporary directory, the whole file must validate, and the
-// agent token files are written there.
+// public keys of the agents are written there.
 func loadExample(t *testing.T) exampleConfig {
 	t.Helper()
 
@@ -96,8 +145,8 @@ func loadExample(t *testing.T) exampleConfig {
 		text = strings.ReplaceAll(text, from, to)
 	}
 
-	for name, token := range exampleTokens {
-		require.NoError(t, os.WriteFile(filepath.Join(dirs["/etc/graft/tokens"], name), []byte(token+"\n"), 0o600))
+	for name, key := range exampleKeys {
+		require.NoError(t, os.WriteFile(filepath.Join(dirs["/etc/graft/tokens"], name+".pub"), []byte(key.publicKey+"\n"), 0o600))
 	}
 
 	cfg, err := config.Load(strings.NewReader(text))
@@ -192,7 +241,7 @@ func (s gitalyStack) repoAs(t *testing.T, token string) *sdk.Repo {
 
 	opts := []sdk.DialOption{sdk.WithStorage(s.storage)}
 	if token != "" {
-		opts = append(opts, sdk.WithAgentToken(token))
+		opts = append(opts, sdk.WithAgentKey(token))
 	}
 	conn, err := sdk.Dial(s.ctx, s.addr, opts...)
 	require.NoError(t, err)
@@ -354,8 +403,10 @@ func workerName(i int) string {
 
 // TestStandaloneSetup starts Gitaly with [graft] standalone = true, two agents
 // and a policy, from the example configuration, and checks that the server
-// starts without GitLab configured. Health checks need no token, agent
-// tokens are accepted, and unknown tokens are rejected. Covers WP1 and WP2.
+// starts without GitLab configured. Health checks need no credential, a signed
+// agent request is accepted, and anonymous or unknown-key requests are
+// rejected: a Graft server never serves an anonymous caller. Covers WP1, WP2
+// and the agent identity requirement (doc/graft/PLAN14.md).
 func TestStandaloneSetup(t *testing.T) {
 	t.Parallel()
 
@@ -378,23 +429,52 @@ func TestStandaloneSetup(t *testing.T) {
 
 	writeMain(t, s, map[string]string{"README.md": "hello graft\n"})
 
-	t.Run("agent token is accepted", func(t *testing.T) {
-		_, err := s.repoAs(t, exampleTokens["planner"]).ResolveRevision(s.ctx, "main")
+	t.Run("signed agent request is accepted", func(t *testing.T) {
+		_, err := s.repoAs(t, exampleKeys["planner"].privateKeyPath).ResolveRevision(s.ctx, "main")
 		require.NoError(t, err)
 	})
 
-	t.Run("missing token is rejected", func(t *testing.T) {
+	t.Run("anonymous request is rejected", func(t *testing.T) {
 		_, err := s.repoAs(t, "").ResolveRevision(s.ctx, "main")
 		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 	})
 
-	t.Run("unknown token is rejected", func(t *testing.T) {
-		_, err := s.repoAs(t, "not-an-agent").ResolveRevision(s.ctx, "main")
+	t.Run("anonymous write is rejected", func(t *testing.T) {
+		// The rule the user cares about: nobody changes main without an
+		// authenticated identity, and an agent's identity is its SSH key.
+		_, err := s.repoAs(t, "").CommitFiles(s.ctx, sdk.CommitOptions{
+			Branch:  "main",
+			Message: "anonymous write",
+			Author:  sdk.Signature{Name: "anonymous", Email: "anonymous@example.com"},
+			User:    sdk.User{ID: "anonymous", Name: "anonymous", Email: "anonymous@example.com"},
+			Actions: []sdk.Action{sdk.Put{Path: "anonymous.txt", Content: []byte("x\n")}},
+		})
+		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
+
+		tip, err := s.repoAs(t, exampleKeys["planner"].privateKeyPath).ResolveRevision(s.ctx, "main")
+		require.NoError(t, err)
+		require.NotEmpty(t, tip)
+	})
+
+	t.Run("unknown key is rejected", func(t *testing.T) {
+		unknownKey, _ := testhelper.AgentKeyFiles(t)
+		_, err := s.repoAs(t, unknownKey).ResolveRevision(s.ctx, "main")
+		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
+	})
+
+	t.Run("broken signature is rejected", func(t *testing.T) {
+		// A signature that was made for another method does not verify. The
+		// server refuses the request instead of falling back to a weaker
+		// credential.
+		conn := s.dialTamperedSignature(t, exampleKeys["planner"].privateKeyPath)
+		_, err := gitalypb.NewRepositoryServiceClient(conn).RepositoryExists(s.ctx, &gitalypb.RepositoryExistsRequest{
+			Repository: &gitalypb.Repository{StorageName: s.storage, RelativePath: s.relPath},
+		})
 		require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 	})
 }
 
-// TestAgentIdentitiesAndDefaults checks that every agent token maps to its
+// TestAgentIdentitiesAndDefaults checks that every agent key maps to its
 // agent name, and that a land without a user ID is recorded for the agent
 // whose token made the request. Covers WP2 (identities, request defaults) and
 // WP5 (actors in the changeset log).
@@ -404,8 +484,8 @@ func TestAgentIdentitiesAndDefaults(t *testing.T) {
 	s := startExampleUnbatched(t)
 	base := writeMain(t, s, map[string]string{"README.md": "base\n"})
 
-	planner := s.repoAs(t, exampleTokens["planner"])
-	builder := s.repoAs(t, exampleTokens["builder"])
+	planner := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
+	builder := s.repoAs(t, exampleKeys["builder"].privateKeyPath)
 
 	topic, err := commitFile(s.ctx, planner, "planner", "planner/topic", base, "planner.txt", "from planner\n")
 	require.NoError(t, err)
@@ -452,13 +532,17 @@ func TestDaemonChainedToCache(t *testing.T) {
 
 	s := startExample(t)
 	base := writeMain(t, s, map[string]string{"README.md": "chained\n", "docs-a.txt": "a\n"})
-	reader := s.repoAs(t, exampleTokens["planner"])
+	reader := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 
+	// The tiers hold the shared token: a signed request cannot be re-signed
+	// for the upstream calls a tier makes on the caller's behalf, so a tier
+	// that serves signed agents needs its own credential.
 	cacheAddr, cacheTier := startTier(t, s.addr, cachetier.Config{
 		Tier:    cachetier.TierCache,
 		DiskDir: t.TempDir(),
+		Token:   s.cfg.Auth.Token,
 	})
-	daemonAddr, daemon := startTier(t, cacheAddr, cachetier.Config{Tier: cachetier.TierDaemon})
+	daemonAddr, daemon := startTier(t, cacheAddr, cachetier.Config{Tier: cachetier.TierDaemon, Token: s.cfg.Auth.Token})
 
 	blobs := blobsOf(t, reader, base)
 	oids := make([]string, 0, len(blobs))
@@ -469,7 +553,7 @@ func TestDaemonChainedToCache(t *testing.T) {
 	direct, err := reader.GetObjects(s.ctx, oids)
 	require.NoError(t, err)
 
-	first, err := daemonHandle(t, s, daemonAddr, exampleTokens["planner"]).GetObjects(s.ctx, oids)
+	first, err := daemonHandle(t, s, daemonAddr, exampleKeys["planner"].privateKeyPath).GetObjects(s.ctx, oids)
 	require.NoError(t, err)
 	requireSameObjects(t, direct, first)
 	require.NotZero(t, daemon.Stats().ObjectMisses)
@@ -477,10 +561,10 @@ func TestDaemonChainedToCache(t *testing.T) {
 
 	// A fresh daemon has an empty memory cache. Its misses are served by the
 	// cache tier, so the cache tier must report hits.
-	freshAddr, fresh := startTier(t, cacheAddr, cachetier.Config{Tier: cachetier.TierDaemon})
+	freshAddr, fresh := startTier(t, cacheAddr, cachetier.Config{Tier: cachetier.TierDaemon, Token: s.cfg.Auth.Token})
 	cacheHitsBefore := cacheTier.Stats().ObjectHits
 
-	second, err := daemonHandle(t, s, freshAddr, exampleTokens["planner"]).GetObjects(s.ctx, oids)
+	second, err := daemonHandle(t, s, freshAddr, exampleKeys["planner"].privateKeyPath).GetObjects(s.ctx, oids)
 	require.NoError(t, err)
 	requireSameObjects(t, direct, second)
 	require.Greater(t, cacheTier.Stats().ObjectHits, cacheHitsBefore, "the cache tier must serve the fresh daemon")
@@ -494,7 +578,7 @@ func daemonHandle(t *testing.T, s gitalyStack, addr, token string) *sdk.Repo {
 
 	opts := []sdk.DialOption{sdk.WithStorage(s.storage)}
 	if token != "" {
-		opts = append(opts, sdk.WithAgentToken(token))
+		opts = append(opts, sdk.WithAgentKey(token))
 	}
 	conn, err := sdk.Dial(s.ctx, addr, opts...)
 	require.NoError(t, err)
@@ -528,7 +612,7 @@ func TestTwentyConcurrentLands(t *testing.T) {
 	t.Parallel()
 
 	const workers = 20
-	graft, tokens := workerGraft(workers)
+	graft, tokens := workerGraft(t, workers)
 	s := startGitaly(t, unbatched(graft), sharedTestToken)
 	base := writeMain(t, s, map[string]string{"README.md": "concurrent\n"})
 
@@ -593,15 +677,18 @@ func TestTwentyConcurrentLands(t *testing.T) {
 }
 
 // workerGraft returns a standalone configuration with n worker agents. The
-// workers may update main; nobody else may. Every other branch is open.
-func workerGraft(n int) (config.Graft, map[string]string) {
+// workers may update main; nobody else may. Every other branch is open. The
+// returned map holds the private key file of every worker.
+func workerGraft(t *testing.T, n int) (config.Graft, map[string]string) {
+	t.Helper()
+
 	tokens := map[string]string{}
 	var agents []config.GraftAgent
 	for i := 0; i < n; i++ {
 		name := workerName(i)
-		token := name + "-secret-for-tests"
-		tokens[name] = token
-		agents = append(agents, config.GraftAgent{Name: name, Token: token})
+		privateKeyPath, publicKey := testhelper.AgentKeyFiles(t)
+		tokens[name] = privateKeyPath
+		agents = append(agents, config.GraftAgent{Name: name, PublicKey: publicKey})
 	}
 
 	return config.Graft{
@@ -627,8 +714,8 @@ func TestReadThroughDaemonHasHits(t *testing.T) {
 		"lib.go":    "package lib\n",
 	})
 
-	daemonAddr, daemon := startTier(t, s.addr, cachetier.Config{Tier: cachetier.TierDaemon})
-	repo := daemonHandle(t, s, daemonAddr, exampleTokens["planner"])
+	daemonAddr, daemon := startTier(t, s.addr, cachetier.Config{Tier: cachetier.TierDaemon, Token: s.cfg.Auth.Token})
+	repo := daemonHandle(t, s, daemonAddr, exampleKeys["planner"].privateKeyPath)
 
 	blobs := blobsOf(t, repo, "main")
 	require.Len(t, blobs, 3)
@@ -654,7 +741,7 @@ func TestBlameAndHistory(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
-	repo := s.repoAs(t, exampleTokens["planner"])
+	repo := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 
 	// The README changes in the first, second and third commits. The fourth
 	// commit does not touch it.
@@ -745,7 +832,7 @@ func TestChangesetLogHasAllLands(t *testing.T) {
 	const lands = 9
 	s := startExampleUnbatched(t)
 	base := writeMain(t, s, map[string]string{"README.md": "log\n"})
-	planner := s.repoAs(t, exampleTokens["planner"])
+	planner := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 
 	tip := base
 	for i := 0; i < lands; i++ {
@@ -782,7 +869,7 @@ func TestWatchReceivesLiveUpdate(t *testing.T) {
 
 	s := startExampleUnbatched(t)
 	base := writeMain(t, s, map[string]string{"README.md": "watch\n"})
-	planner := s.repoAs(t, exampleTokens["planner"])
+	planner := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
 
 	commit, err := commitFile(s.ctx, planner, "planner", "watch/topic", base, "watched.txt", "live\n")
 	require.NoError(t, err)
@@ -851,8 +938,8 @@ func TestPolicyDeniesProtectedBranch(t *testing.T) {
 
 	s := startExample(t)
 	base := writeMain(t, s, map[string]string{"README.md": "policy\n"})
-	planner := s.repoAs(t, exampleTokens["planner"])
-	builder := s.repoAs(t, exampleTokens["builder"])
+	planner := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
+	builder := s.repoAs(t, exampleKeys["builder"].privateKeyPath)
 
 	// The planner may update main.
 	plannerCommit, err := commitFile(s.ctx, planner, "planner", "planner/policy", base, "planner.txt", "ok\n")
@@ -871,7 +958,7 @@ func TestPolicyDeniesProtectedBranch(t *testing.T) {
 	landErr, ok := sdk.LandError(err)
 	require.True(t, ok, "the denial must carry a UserLandError: %v", err)
 	require.NotNil(t, landErr.GetAccessCheck(), "the denial must be an access check")
-	require.Equal(t, "builder", landErr.GetAccessCheck().GetUserId(), "the identity of the token is the acting user")
+	require.Equal(t, "builder", landErr.GetAccessCheck().GetUserId(), "the identity of the agent is the acting user")
 	require.Contains(t, landErr.GetAccessCheck().GetErrorMessage(), "refs/heads/main")
 
 	require.Equal(t, mainBefore, s.git(t, "rev-parse", "refs/heads/main"), "a denied land must leave main unchanged")
@@ -887,17 +974,17 @@ func TestPolicyDeniesProtectedBranch(t *testing.T) {
 }
 
 // TestPolicyUsesTokenIdentity pins the behaviour that the policy and the
-// changeset actor come from the identity of the token. The builder's token
+// changeset actor come from the identity of the agent. The builder's request
 // names planner as the acting user, and the land on main must still be denied
 // to builder: in standalone mode the pre-receive access check decides on the
-// agent that authenticated the request, not on the client-sent gl_id.
+// agent whose key signed the request, not on the client-sent gl_id.
 func TestPolicyUsesTokenIdentity(t *testing.T) {
 	t.Parallel()
 
 	s := startExample(t)
 	base := writeMain(t, s, map[string]string{"README.md": "impersonation\n"})
-	planner := s.repoAs(t, exampleTokens["planner"])
-	builder := s.repoAs(t, exampleTokens["builder"])
+	planner := s.repoAs(t, exampleKeys["planner"].privateKeyPath)
+	builder := s.repoAs(t, exampleKeys["builder"].privateKeyPath)
 
 	plannerCommit, err := commitFile(s.ctx, planner, "planner", "planner/impersonation", base, "planner.txt", "ok\n")
 	require.NoError(t, err)
@@ -918,9 +1005,9 @@ func TestPolicyUsesTokenIdentity(t *testing.T) {
 }
 
 // TestChangesetActorUsesTokenIdentity checks that the changeset log records the
-// identity of the token as the actor, even when the client sends another
-// agent's name as its acting user. The builder's token commits and lands on a
-// feature branch with User.ID set to planner. Every commit_files and land
+// identity of the agent as the actor, even when the client sends another
+// agent's name as its acting user. The builder's key signs commits and lands
+// on a feature branch with User.ID set to planner. Every commit_files and land
 // changeset must name builder as the actor. The feature branch is open to the
 // builder, so the policy does not decide here; the policy side is pinned by
 // TestPolicyUsesTokenIdentity. Covers WP5.
@@ -929,7 +1016,7 @@ func TestChangesetActorUsesTokenIdentity(t *testing.T) {
 
 	s := startExample(t)
 	base := writeMain(t, s, map[string]string{"README.md": "actor\n"})
-	builder := s.repoAs(t, exampleTokens["builder"])
+	builder := s.repoAs(t, exampleKeys["builder"].privateKeyPath)
 	impersonated := sdk.User{ID: "planner", Name: "planner", Email: "planner@example.com"}
 
 	commit, err := builder.CommitFiles(s.ctx, sdk.CommitOptions{
@@ -978,8 +1065,8 @@ func TestWritesThroughTiers(t *testing.T) {
 
 	cacheAddr, _ := startTier(t, s.addr, cachetier.Config{Tier: cachetier.TierCache, DiskDir: t.TempDir()})
 	daemonAddr, _ := startTier(t, cacheAddr, cachetier.Config{Tier: cachetier.TierDaemon})
-	planner := daemonHandle(t, s, daemonAddr, exampleTokens["planner"])
-	builder := daemonHandle(t, s, daemonAddr, exampleTokens["builder"])
+	planner := daemonHandle(t, s, daemonAddr, exampleKeys["planner"].privateKeyPath)
+	builder := daemonHandle(t, s, daemonAddr, exampleKeys["builder"].privateKeyPath)
 
 	plannerCommit, err := commitFile(s.ctx, planner, "planner", "planner/tiers", base, "tiers.txt", "through the tiers\n")
 	require.NoError(t, err)
@@ -1033,13 +1120,68 @@ func TestTierTokenWidensAccess(t *testing.T) {
 	require.Equal(t, codes.Unauthenticated, sdk.Code(err), "got %v", err)
 }
 
-// dialAgent returns a raw gRPC connection whose requests carry a v2 token
-// signed with an agent token, for RPCs that the SDK does not wrap.
-func (s gitalyStack) dialAgent(t *testing.T, token string) *grpc.ClientConn {
+// dialTamperedSignature returns a raw gRPC connection whose requests carry a
+// signature that was made for another method. The server must refuse them.
+func (s gitalyStack) dialTamperedSignature(t *testing.T, privateKeyPath string) *grpc.ClientConn {
+	t.Helper()
+
+	raw, err := os.ReadFile(privateKeyPath)
+	require.NoError(t, err)
+	key, err := agentkey.ParsePrivateKey(raw)
+	require.NoError(t, err)
+	signer := agentkey.NewSigner(key)
+
+	sign := func(ctx context.Context, method string, req any) context.Context {
+		timestamp := time.Now().Unix()
+		nonce, err := agentkey.Nonce()
+		require.NoError(t, err)
+		value, err := agentkey.Sign(key, agentkey.Payload(timestamp, nonce, "/gitaly.OtherService/Other", agentkey.BodyHash(req)))
+		require.NoError(t, err)
+
+		return metadata.AppendToOutgoingContext(ctx,
+			agentkey.KeyMetadata, signer.Fingerprint(),
+			agentkey.TimestampMetadata, strconv.FormatInt(timestamp, 10),
+			agentkey.NonceMetadata, nonce,
+			agentkey.SignatureMetadata, value,
+		)
+	}
+
+	conn, err := client.DialContext(s.ctx, s.addr, client.WithGrpcOptions([]grpc.DialOption{
+		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoker(sign(ctx, method, req), method, req, reply, cc, opts...)
+		}),
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return conn
+}
+
+// dialToken returns a raw gRPC connection whose requests carry the given
+// bearer token, for RPCs that the SDK does not wrap.
+func (s gitalyStack) dialToken(t *testing.T, token string) *grpc.ClientConn {
 	t.Helper()
 
 	conn, err := client.DialContext(s.ctx, s.addr, client.WithGrpcOptions([]grpc.DialOption{
 		grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(token)),
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return conn
+}
+
+// dialAgent returns a raw gRPC connection whose requests are signed with the
+// private key of an agent, for RPCs that the SDK does not wrap.
+func (s gitalyStack) dialAgent(t *testing.T, privateKeyPath string) *grpc.ClientConn {
+	t.Helper()
+
+	signer, err := sdk.AgentSigner(privateKeyPath)
+	require.NoError(t, err)
+
+	conn, err := client.DialContext(s.ctx, s.addr, client.WithGrpcOptions([]grpc.DialOption{
+		grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+		grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
 	}))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })

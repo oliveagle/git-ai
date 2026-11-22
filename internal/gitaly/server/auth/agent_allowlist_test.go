@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -206,18 +205,16 @@ func TestAgentAllowlist_SDKAndCLIPaths(t *testing.T) {
 		require.True(t, allowlist.mayCall(fullMethod), "agent must be able to call %s", fullMethod)
 	}
 
-	unary, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), true)
+	agents, a, _ := testAgents(t)
+	unary, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
-	agentAuth := "Bearer " + agentASecret
 	for _, fullMethod := range sdkAndCLIAgentRPCs {
 		t.Run(fullMethod, func(t *testing.T) {
 			t.Parallel()
 
-			ctx := contextWithAuthorization(t, agentAuth)
-
 			unaryCalled := false
-			_, err := unary(ctx, nil, &grpc.UnaryServerInfo{FullMethod: fullMethod},
+			_, err := unary(signedAgentContext(t, a, fullMethod), nil, &grpc.UnaryServerInfo{FullMethod: fullMethod},
 				func(context.Context, any) (any, error) {
 					unaryCalled = true
 					return nil, nil
@@ -226,7 +223,7 @@ func TestAgentAllowlist_SDKAndCLIPaths(t *testing.T) {
 			require.True(t, unaryCalled)
 
 			streamCalled := false
-			err = stream(nil, fakeServerStream{ctx: ctx}, &grpc.StreamServerInfo{FullMethod: fullMethod},
+			err = stream(nil, fakeServerStream{ctx: signedAgentContext(t, a, fullMethod)}, &grpc.StreamServerInfo{FullMethod: fullMethod},
 				func(any, grpc.ServerStream) error {
 					streamCalled = true
 					return nil
@@ -242,7 +239,8 @@ func TestAgentAllowlist_SDKAndCLIPaths(t *testing.T) {
 func TestAgentAllowlist_StreamDenied(t *testing.T) {
 	t.Parallel()
 
-	_, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), true)
+	agents, a, _ := testAgents(t)
+	_, stream, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -255,7 +253,7 @@ func TestAgentAllowlist_StreamDenied(t *testing.T) {
 		t.Run(tc.method, func(t *testing.T) {
 			t.Parallel()
 
-			ctx := contextWithAuthorization(t, "Bearer "+agentASecret)
+			ctx := signedAgentContext(t, a, tc.method)
 			called := false
 			err := stream(nil, fakeServerStream{ctx: ctx}, &grpc.StreamServerInfo{FullMethod: tc.method},
 				func(any, grpc.ServerStream) error {
@@ -277,7 +275,8 @@ func TestAgentAllowlist_ExtraRPCs(t *testing.T) {
 
 	const extra = "/gitaly.RepositoryService/RepositorySize"
 
-	unary, _, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), []string{extra}, true)
+	agents, _, b := testAgents(t)
+	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents, AgentRPCs: []string{extra}}, true)
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
@@ -293,7 +292,7 @@ func TestAgentAllowlist_ExtraRPCs(t *testing.T) {
 			t.Parallel()
 
 			called := false
-			_, err := unary(contextWithAuthorization(t, "Bearer "+agentBSecret), nil,
+			_, err := unary(signedAgentContext(t, b, tc.method), nil,
 				&grpc.UnaryServerInfo{FullMethod: tc.method},
 				func(context.Context, any) (any, error) {
 					called = true
@@ -306,7 +305,7 @@ func TestAgentAllowlist_ExtraRPCs(t *testing.T) {
 	}
 
 	// The extra RPCs apply to the agents only; the shared token is not restricted.
-	sharedUnary, _, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(), nil, true)
+	sharedUnary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{Agents: agents}, true)
 	require.NoError(t, err)
 
 	called := false
@@ -383,10 +382,13 @@ func TestNewAgentAllowlist_Validation(t *testing.T) {
 func TestInterceptorsWithAgentRPCs_InvalidConfigFailsOnBothServers(t *testing.T) {
 	t.Parallel()
 
+	agents, _, _ := testAgents(t)
 	for _, external := range []bool{true, false} {
-		for _, agents := range [][]config.GraftAgent{nil, testAgents()} {
-			_, _, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{}, agents,
-				[]string{gitalypb.RepositoryService_WriteRef_FullMethodName}, external)
+		for _, agents := range [][]config.GraftAgent{nil, agents} {
+			_, _, err := Interceptors(gitalycfgauth.Config{}, Config{
+				Agents:    agents,
+				AgentRPCs: []string{gitalypb.RepositoryService_WriteRef_FullMethodName},
+			}, external)
 			require.ErrorContains(t, err, "may never be called by an agent")
 		}
 	}
@@ -398,8 +400,11 @@ func TestInterceptorsWithAgentRPCs_InvalidConfigFailsOnBothServers(t *testing.T)
 func TestAgentAllowlist_ConcurrentDecisions(t *testing.T) {
 	t.Parallel()
 
-	unary, _, err := InterceptorsWithAgentRPCs(gitalycfgauth.Config{Token: sharedSecretTest}, testAgents(),
-		[]string{"/gitaly.RepositoryService/RepositorySize"}, true)
+	agents, a, _ := testAgents(t)
+	unary, _, err := Interceptors(gitalycfgauth.Config{Token: sharedSecretTest}, Config{
+		Agents:    agents,
+		AgentRPCs: []string{"/gitaly.RepositoryService/RepositorySize"},
+	}, true)
 	require.NoError(t, err)
 
 	methods := []struct {
@@ -424,7 +429,7 @@ func TestAgentAllowlist_ConcurrentDecisions(t *testing.T) {
 
 			for j := 0; j < iterations; j++ {
 				m := methods[(i+j)%len(methods)]
-				ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+agentASecret))
+				ctx := signedAgentContext(t, a, m.name)
 
 				_, err := unary(ctx, nil, &grpc.UnaryServerInfo{FullMethod: m.name},
 					func(context.Context, any) (any, error) { return nil, nil })

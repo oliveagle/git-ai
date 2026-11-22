@@ -23,18 +23,21 @@ package sdk
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"strings"
 	"sync"
 	"testing"
 
+	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
 	"github.com/feder-cr/git-ai/internal/gitaly/service/setup"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
@@ -71,9 +74,8 @@ func specCode(err error) codes.Code { return status.Code(err) }
 // sdk package's existing test helper that starts a testserver and returns a
 // connected *Repo and the repository's on-disk path.
 //
-// Harness wiring (gate): the server runs with one per-agent token for each
-// spec actor, and the review RPCs are allowed for agents. withSpecActor marks
-// the context, and a client interceptor sends that actor's token.
+// Harness wiring (gate): the review RPCs are allowed for agents, and
+// withSpecActor marks the context with the actor that the requests name.
 func newSpecRepo(t *testing.T) (*Repo, string) {
 	t.Helper()
 
@@ -81,8 +83,8 @@ func newSpecRepo(t *testing.T) (*Repo, string) {
 	cfg := testcfg.Build(t)
 	cfg.Auth.Token = "spec-shared-secret" // repository setup authenticates with it
 	cfg.Graft.Agents = []config.GraftAgent{
-		{Name: specAuthor, Token: specActorToken(specAuthor)},
-		{Name: specReviewer, Token: specActorToken(specReviewer)},
+		{Name: specAuthor, PublicKey: specAuthorKey.publicKey},
+		{Name: specReviewer, PublicKey: specReviewerKey.publicKey},
 	}
 	cfg.Graft.AgentRPCs = []string{
 		gitalypb.ReviewService_CreateReview_FullMethodName,
@@ -101,10 +103,18 @@ func newSpecRepo(t *testing.T) (*Repo, string) {
 
 	client, err := Dial(ctx, addr, WithStorage(cfg.Storages[0].Name), WithGRPCOptions(
 		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-			return invoker(specActorOutgoing(ctx), method, req, reply, cc, opts...)
+			signer := specActorSigner(ctx)
+			if signer == nil {
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}
+			return signer.UnaryInterceptor()(ctx, method, req, reply, cc, invoker, opts...)
 		}),
 		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-			return streamer(specActorOutgoing(ctx), desc, cc, method, opts...)
+			signer := specActorSigner(ctx)
+			if signer == nil {
+				return streamer(ctx, desc, cc, method, opts...)
+			}
+			return signer.StreamInterceptor()(ctx, desc, cc, method, streamer, opts...)
 		}),
 	))
 	if err != nil {
@@ -125,15 +135,53 @@ func specCfg(repoPath string) config.Cfg {
 	return cfg.(config.Cfg)
 }
 
+// specActor is an actor of the spec tests: the agent name, and the key that
+// signs its requests.
+type specActor struct {
+	name      string
+	signer    *agentkey.Signer
+	publicKey string
+}
+
+// specActors are the actors of the spec tests. The key pairs are fixed for the
+// package, so that every server the tests start knows them.
+var specActors = map[string]*specActor{
+	specAuthor:   newSpecActor(specAuthor),
+	specReviewer: newSpecActor(specReviewer),
+}
+
+var (
+	specAuthorKey   = specActors[specAuthor]
+	specReviewerKey = specActors[specReviewer]
+)
+
+// newSpecActor returns an actor with a fresh key pair.
+func newSpecActor(name string) *specActor {
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		panic(err)
+	}
+
+	return &specActor{
+		name:      name,
+		signer:    agentkey.NewSigner(signer),
+		publicKey: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))),
+	}
+}
+
 type specActorKey struct{}
 
-func specActorToken(name string) string { return "spec-token-" + name }
-
-func specActorOutgoing(ctx context.Context) context.Context {
-	if name, ok := ctx.Value(specActorKey{}).(string); ok {
-		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+specActorToken(name))
+func specActorSigner(ctx context.Context) *agentkey.Signer {
+	name, ok := ctx.Value(specActorKey{}).(string)
+	if !ok {
+		return nil
 	}
-	return ctx
+	return specActors[name].signer
 }
 
 // withSpecActor attaches an identity actor to ctx (see newSpecRepo).

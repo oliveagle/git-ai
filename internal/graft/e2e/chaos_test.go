@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
+	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
 )
@@ -122,10 +123,11 @@ func chaosAgentName(i int) string {
 	return workerName(i)
 }
 
-// chaosGraft returns the configuration of the scenario and the tokens of its
-// agents. The workers may land on the protected branches, the outsider may
-// not, and every agent may land on the open branch. A resolver is configured,
-// so the requests with ResolveConflicts set resolve their overlapping changes.
+// chaosGraft returns the configuration of the scenario and the private key
+// files of its agents. The workers may land on the protected branches, the
+// outsider may not, and every agent may land on the open branch. A resolver is
+// configured, so the requests with ResolveConflicts set resolve their
+// overlapping changes.
 func chaosGraft(t *testing.T) (config.Graft, map[string]string) {
 	t.Helper()
 
@@ -133,9 +135,9 @@ func chaosGraft(t *testing.T) (config.Graft, map[string]string) {
 	agents := make([]config.GraftAgent, 0, chaosAgents)
 	for i := 0; i < chaosAgents; i++ {
 		name := chaosAgentName(i)
-		token := name + "-secret-for-tests"
-		tokens[name] = token
-		agents = append(agents, config.GraftAgent{Name: name, Token: token})
+		privateKeyPath, publicKey := testhelper.AgentKeyFiles(t)
+		tokens[name] = privateKeyPath
+		agents = append(agents, config.GraftAgent{Name: name, PublicKey: publicKey})
 	}
 
 	graft := config.Graft{
@@ -260,7 +262,7 @@ func runChaosRequest(ctx context.Context, repo *sdk.Repo, req chaosRequest) (*sd
 func chaosExternalWriter(ctx context.Context, t *testing.T, s gitalyStack, rnd *rand.Rand) int {
 	t.Helper()
 
-	client := gitalypb.NewOperationServiceClient(s.dialAgent(t, sharedTestToken))
+	client := gitalypb.NewOperationServiceClient(s.dialToken(t, sharedTestToken))
 	repo := &gitalypb.Repository{StorageName: s.storage, RelativePath: s.relPath}
 	user := &gitalypb.User{GlId: "user-external", Name: []byte("external writer"), Email: []byte("external@example.com")}
 

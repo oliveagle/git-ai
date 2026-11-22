@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync/atomic"
 
 	"google.golang.org/grpc"
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/client"
+	"github.com/feder-cr/git-ai/internal/graft/agentkey"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 )
 
@@ -20,8 +22,9 @@ const DefaultStorage = "default"
 type DialOption func(*dialConfig)
 
 type dialConfig struct {
-	token           string
-	agentToken      string
+	token string
+	// agentKey is the path of the private key of the agent.
+	agentKey        string
 	storage         string
 	objectBatchSize int
 	grpcOpts        []grpc.DialOption
@@ -42,10 +45,13 @@ func WithToken(token string) DialOption {
 	return func(c *dialConfig) { c.token = token }
 }
 
-// WithAgentToken authenticates every request with a per-agent token
-// (a [[graft.agent]] entry), sent as a plain bearer token.
-func WithAgentToken(token string) DialOption {
-	return func(c *dialConfig) { c.agentToken = token }
+// WithAgentKey authenticates every request with the SSH key of an agent (a
+// [[graft.agent]] entry): the path of its private key. Every request carries
+// a signature of the method and of the request, which the server verifies
+// with the public key of the agent. The identity of the caller is the agent
+// the key belongs to (doc/graft/PLAN14.md).
+func WithAgentKey(privateKeyPath string) DialOption {
+	return func(c *dialConfig) { c.agentKey = privateKeyPath }
 }
 
 // WithStorage selects the storage that Client.Repo addresses. Defaults to
@@ -86,8 +92,8 @@ func Dial(ctx context.Context, address string, opts ...DialOption) (*Client, err
 		opt(&cfg)
 	}
 
-	if cfg.token != "" && cfg.agentToken != "" {
-		return nil, errors.New("sdk: WithToken and WithAgentToken are mutually exclusive")
+	if cfg.token != "" && cfg.agentKey != "" {
+		return nil, errors.New("sdk: WithToken and WithAgentKey are mutually exclusive")
 	}
 	if cfg.storage == "" {
 		cfg.storage = DefaultStorage
@@ -97,8 +103,15 @@ func Dial(ctx context.Context, address string, opts ...DialOption) (*Client, err
 	switch {
 	case cfg.token != "":
 		grpcOpts = append(grpcOpts, grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(cfg.token)))
-	case cfg.agentToken != "":
-		grpcOpts = append(grpcOpts, grpc.WithPerRPCCredentials(bearerCredentials{token: cfg.agentToken}))
+	case cfg.agentKey != "":
+		signer, err := AgentSigner(cfg.agentKey)
+		if err != nil {
+			return nil, err
+		}
+		grpcOpts = append(grpcOpts,
+			grpc.WithChainUnaryInterceptor(signer.UnaryInterceptor()),
+			grpc.WithChainStreamInterceptor(signer.StreamInterceptor()),
+		)
 	}
 
 	conn, err := client.DialContext(ctx, address, client.WithGrpcOptions(grpcOpts))
@@ -161,13 +174,19 @@ func (c *Client) Repo(relativePath string) *Repo {
 	return &Repo{client: c, relativePath: relativePath}
 }
 
-// bearerCredentials sends a plain bearer token, as used for agent tokens.
-type bearerCredentials struct {
-	token string
-}
+// AgentSigner loads the private key of an agent and returns the signer that
+// signs its requests. It is exported for the callers that dial the server
+// themselves.
+func AgentSigner(path string) (*agentkey.Signer, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("sdk: read the private key of the agent: %w", err)
+	}
 
-func (bearerCredentials) RequireTransportSecurity() bool { return false }
+	signer, err := agentkey.ParsePrivateKey(raw)
+	if err != nil {
+		return nil, fmt.Errorf("sdk: %w", err)
+	}
 
-func (c bearerCredentials) GetRequestMetadata(context.Context, ...string) (map[string]string, error) {
-	return map[string]string{"authorization": "Bearer " + c.token}, nil
+	return agentkey.NewSigner(signer), nil
 }

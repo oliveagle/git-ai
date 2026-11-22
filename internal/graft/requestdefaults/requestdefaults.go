@@ -7,7 +7,7 @@
 // gitaly.User message reachable from the request (including users nested in
 // header messages and oneofs, such as UserCommitFilesRequest.header.user) and
 // in every string field named gl_id or gl_username. They are filled when empty.
-// The identity fields of a caller authenticated with an agent token
+// The identity fields of a caller authenticated with an agent's SSH key
 // (SourceAgent) are always set to the agent name, even when the client sent
 // another value: the standalone access policy, the Git hooks and the changeset
 // log read these fields, so an agent must not be able to claim another actor's

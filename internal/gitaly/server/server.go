@@ -133,7 +133,13 @@ func (s *GitalyServerFactory) New(external, secure bool, opts ...Option) (*grpc.
 
 	logMatcher := gitalylog.NewLogMatcher()
 
-	authUnaryInterceptor, authStreamInterceptor, err := auth.InterceptorsWithAgentRPCs(s.cfg.Auth, s.cfg.Graft.Agents, s.cfg.Graft.AgentRPCs, external)
+	authUnaryInterceptor, authStreamInterceptor, err := auth.Interceptors(s.cfg.Auth, auth.Config{
+		Agents:                s.cfg.Graft.Agents,
+		AgentRPCs:             s.cfg.Graft.AgentRPCs,
+		AdminToken:            s.cfg.Graft.AdminToken,
+		AdminTokenFile:        s.cfg.Graft.AdminTokenFile,
+		RequireAuthentication: s.cfg.Graft.RequiresAuthentication(),
+	}, external)
 	if err != nil {
 		return nil, fmt.Errorf("configuring authentication: %w", err)
 	}

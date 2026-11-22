@@ -44,11 +44,14 @@ func setupOperationsServiceWithCfg(
 ) (context.Context, config.Cfg, gitalypb.OperationServiceClient) {
 	testcfg.BuildGitalySSH(tb, cfg)
 	testcfg.BuildGitalyHooks(tb, cfg)
+	// A Graft server refuses anonymous callers (doc/graft/PLAN14.md): the test
+	// server gets the shared token unless the test configures a credential.
+	testcfg.RequireCredential(&cfg)
 
 	serverSocketPath := runOperationServiceServer(tb, cfg, options...)
 	cfg.SocketPath = serverSocketPath
 
-	client, conn := newOperationClient(tb, serverSocketPath)
+	client, conn := newOperationClient(tb, cfg)
 	tb.Cleanup(func() { conn.Close() })
 
 	md := testcfg.GitalyServersMetadataFromCfg(tb, cfg)
@@ -64,11 +67,14 @@ func setupOperationsService(
 
 	testcfg.BuildGitalySSH(tb, cfg)
 	testcfg.BuildGitalyHooks(tb, cfg)
+	// A Graft server refuses anonymous callers (doc/graft/PLAN14.md): the test
+	// server gets the shared token unless the test configures a credential.
+	testcfg.RequireCredential(&cfg)
 
 	serverSocketPath := runOperationServiceServer(tb, cfg, options...)
 	cfg.SocketPath = serverSocketPath
 
-	client, conn := newOperationClient(tb, serverSocketPath)
+	client, conn := newOperationClient(tb, cfg)
 	tb.Cleanup(func() { conn.Close() })
 
 	md := testcfg.GitalyServersMetadataFromCfg(tb, cfg)
@@ -113,8 +119,13 @@ func runOperationServiceServerWithLanes(tb testing.TB, cfg config.Cfg, lanes *la
 // hand in a test is not.
 var operationServerHooks sync.Map
 
-func newOperationClient(tb testing.TB, serverSocketPath string) (gitalypb.OperationServiceClient, *grpc.ClientConn) {
-	conn, err := client.New(testhelper.Context(tb), serverSocketPath)
+func newOperationClient(tb testing.TB, cfg config.Cfg) (gitalypb.OperationServiceClient, *grpc.ClientConn) {
+	dialOptions := []grpc.DialOption{client.UnaryInterceptor(), client.StreamInterceptor()}
+	if token := cfg.Auth.GetToken(); token != "" {
+		dialOptions = append(dialOptions, grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(token)))
+	}
+
+	conn, err := client.New(testhelper.Context(tb), cfg.SocketPath, client.WithGrpcOptions(dialOptions))
 	if err != nil {
 		tb.Fatal(err)
 	}

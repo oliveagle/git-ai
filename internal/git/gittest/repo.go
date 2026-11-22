@@ -191,8 +191,9 @@ func CreateRepository(tb testing.TB, ctx context.Context, cfg config.Cfg, config
 			if _, err := client.RemoveRepository(context.TODO(), &gitalypb.RemoveRepositoryRequest{
 				Repository: repository,
 			}); err != nil {
-				if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
-					// The tests may delete the repository, so this is not a failure.
+				if st, ok := status.FromError(err); ok && (st.Code() == codes.NotFound || st.Code() == codes.FailedPrecondition) {
+					// The tests may delete the repository, and a Graft server refuses
+					// a removal (archiving replaces it), so this is not a failure.
 					return
 				}
 

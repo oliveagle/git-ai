@@ -15,7 +15,8 @@ import (
 // graft binary against a real server in authoritative mode, as the quickstart
 // does: the repository is created with its initial commit and a second branch,
 // registered in the storage core, and an agent then clones it and lands a
-// change. An agent token cannot create a repository.
+// change. An agent, which authenticates with its signed SSH key, cannot create
+// a repository.
 func TestRepoCreateWithTheCLI(t *testing.T) {
 	t.Parallel()
 
@@ -31,7 +32,7 @@ func TestRepoCreateWithTheCLI(t *testing.T) {
 		"GRAFT_AUTHOR="+workerName(0)+" <"+workerName(0)+"@example.com>",
 	)
 	operator := append(append([]string{}, base...), "GRAFT_TOKEN="+sharedTestToken)
-	agent := append(append([]string{}, base...), "GRAFT_TOKEN="+n.tokens[workerName(0)])
+	agent := append(append([]string{}, base...), "GRAFT_AGENT_KEY="+n.tokens[workerName(0)])
 
 	// An agent may never create a repository.
 	var stderr bytes.Buffer

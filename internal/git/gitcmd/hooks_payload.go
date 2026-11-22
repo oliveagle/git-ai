@@ -133,7 +133,7 @@ type ChangelogMeta struct {
 	// Actor is the authenticated identity that performs the updates. Empty when
 	// there is none, in which case the recording hook falls back to the user ID.
 	Actor string `json:"actor,omitempty"`
-	// Agent is true when Actor was authenticated with a per-agent token. The
+	// Agent is true when Actor was authenticated with an agent's SSH key. The
 	// standalone access policy then decides on Actor instead of the
 	// client-supplied user ID, so an agent cannot act as another one.
 	Agent bool `json:"agent,omitempty"`
