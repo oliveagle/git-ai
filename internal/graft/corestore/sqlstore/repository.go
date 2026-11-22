@@ -23,10 +23,21 @@ type repoState struct {
 	logSeq       uint64
 	nextReviewID int64
 	createdAt    time.Time
+	// archived tells that writes are frozen; readClosed tells that cleanup has
+	// closed reads too (doc/graft/PLAN13.md).
+	archived     bool
+	archivedAt   time.Time
+	archivedBy   string
+	readClosed   bool
+	readClosedAt time.Time
+	readClosedBy string
+	purgeAfter   time.Time
 }
 
-// repoColumns are the columns read by selectRepository, in order.
-const repoColumns = "repo_id, storage, relative_path, object_format, head_seq, log_seq, next_review_id, created_at"
+// repoColumns are the columns read by selectRepository, in order. The last
+// five hold the lifecycle state of the repository; they are NULL when it is
+// live.
+const repoColumns = "repo_id, storage, relative_path, object_format, head_seq, log_seq, next_review_id, created_at, archived_at, archived_by, read_closed_at, read_closed_by, purge_after"
 
 // selectRepository reads the repository matching where. With lock, Postgres
 // locks the row until the end of the transaction, which serializes the
@@ -64,8 +75,14 @@ func scanRepoState(scan func(...any) error) (repoState, error) {
 		headSeq, logSeq       int64
 		nextReviewID          int64
 		createdRaw            any
+		archivedRaw           any
+		archivedBy            sql.NullString
+		readClosedRaw         any
+		readClosedBy          sql.NullString
+		purgeAfterRaw         any
 	)
-	if err := scan(&r.id, &storage, &relativePath, &r.objectFormat, &headSeq, &logSeq, &nextReviewID, &createdRaw); err != nil {
+	if err := scan(&r.id, &storage, &relativePath, &r.objectFormat, &headSeq, &logSeq, &nextReviewID, &createdRaw,
+		&archivedRaw, &archivedBy, &readClosedRaw, &readClosedBy, &purgeAfterRaw); err != nil {
 		return repoState{}, err
 	}
 
@@ -79,6 +96,34 @@ func scanRepoState(scan func(...any) error) (repoState, error) {
 	r.headSeq = uint64(headSeq)
 	r.logSeq = uint64(logSeq)
 	r.nextReviewID = nextReviewID
+
+	// The lifecycle state is set when the repository is archived; the five
+	// columns are NULL otherwise.
+	if archivedRaw != nil {
+		archivedAt, err := scanTime(archivedRaw)
+		if err != nil {
+			return repoState{}, err
+		}
+		r.archived = true
+		r.archivedAt = archivedAt
+		r.archivedBy = archivedBy.String
+		if purgeAfterRaw != nil {
+			purgeAfter, err := scanTime(purgeAfterRaw)
+			if err != nil {
+				return repoState{}, err
+			}
+			r.purgeAfter = purgeAfter
+		}
+		if readClosedRaw != nil {
+			readClosedAt, err := scanTime(readClosedRaw)
+			if err != nil {
+				return repoState{}, err
+			}
+			r.readClosed = true
+			r.readClosedAt = readClosedAt
+			r.readClosedBy = readClosedBy.String
+		}
+	}
 
 	return r, nil
 }
@@ -98,6 +143,13 @@ func toRepository(r repoState) corestore.Repository {
 		HeadSeq:      r.headSeq,
 		LogSeq:       r.logSeq,
 		CreatedAt:    r.createdAt,
+		Archived:     r.archived,
+		ArchivedAt:   r.archivedAt,
+		ArchivedBy:   r.archivedBy,
+		ReadClosed:   r.readClosed,
+		ReadClosedAt: r.readClosedAt,
+		ReadClosedBy: r.readClosedBy,
+		PurgeAfter:   r.purgeAfter,
 	}
 }
 
@@ -464,7 +516,10 @@ func (s *Store) DeleteRepository(ctx context.Context, key corestore.RepoKey) (bo
 
 // ListRepositories implements corestore.MetaStore.
 func (s *Store) ListRepositories(ctx context.Context, storage string) ([]corestore.Repository, error) {
-	query := "SELECT " + repoColumns + " FROM graft_repositories WHERE head_seq > 0"
+	// The archived repositories are frozen: the background maintenance does
+	// not checkpoint them and does not collect their packs
+	// (doc/graft/PLAN13.md, ARCHIVE RULE).
+	query := "SELECT " + repoColumns + " FROM graft_repositories WHERE head_seq > 0 AND archived_at IS NULL"
 	var args []any
 	if storage != "" {
 		query += " AND storage = ?"

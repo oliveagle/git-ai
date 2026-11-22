@@ -194,6 +194,28 @@ var sqliteMigrations = []*migrate.Migration{
 			`DROP TABLE graft_land_identities`,
 		},
 	},
+	{
+		// The lifecycle of a repository (doc/graft/PLAN13.md): archive freezes
+		// writes; cleanup closes reads and starts its observation period; purge
+		// is the only delete. The state is on the row of the repository: it is
+		// read with every read of the repository, and the write path refuses a
+		// change of an archived one.
+		Id: "20261117000000_graft_storage_archive",
+		Up: []string{
+			`ALTER TABLE graft_repositories ADD COLUMN archived_at TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN archived_by TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN read_closed_at TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN read_closed_by TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN purge_after TEXT`,
+		},
+		Down: []string{
+			`ALTER TABLE graft_repositories DROP COLUMN purge_after`,
+			`ALTER TABLE graft_repositories DROP COLUMN read_closed_by`,
+			`ALTER TABLE graft_repositories DROP COLUMN read_closed_at`,
+			`ALTER TABLE graft_repositories DROP COLUMN archived_by`,
+			`ALTER TABLE graft_repositories DROP COLUMN archived_at`,
+		},
+	},
 }
 
 // notOwnedPackKeyMessage is the error of the trigger that refuses a changeset
@@ -388,6 +410,24 @@ var postgresMigrations = []*migrate.Migration{
 		},
 		Down: []string{
 			`DROP TABLE graft_land_identities`,
+		},
+	},
+	{
+		// See the SQLite migration of the same ID.
+		Id: "20261117000000_graft_storage_archive",
+		Up: []string{
+			`ALTER TABLE graft_repositories ADD COLUMN archived_at TIMESTAMPTZ`,
+			`ALTER TABLE graft_repositories ADD COLUMN archived_by TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN read_closed_at TIMESTAMPTZ`,
+			`ALTER TABLE graft_repositories ADD COLUMN read_closed_by TEXT`,
+			`ALTER TABLE graft_repositories ADD COLUMN purge_after TIMESTAMPTZ`,
+		},
+		Down: []string{
+			`ALTER TABLE graft_repositories DROP COLUMN purge_after`,
+			`ALTER TABLE graft_repositories DROP COLUMN read_closed_by`,
+			`ALTER TABLE graft_repositories DROP COLUMN read_closed_at`,
+			`ALTER TABLE graft_repositories DROP COLUMN archived_by`,
+			`ALTER TABLE graft_repositories DROP COLUMN archived_at`,
 		},
 	},
 }

@@ -50,21 +50,41 @@ func execSQL(t *testing.T, ctx context.Context, s *sqlstore.Store, query string,
 	t.Helper()
 
 	if s.Dialect() == sqlstore.Postgres {
-		var b strings.Builder
-		n := 0
-		for _, r := range query {
-			if r == '?' {
-				n++
-				fmt.Fprintf(&b, "$%d", n)
-				continue
-			}
-			b.WriteRune(r)
-		}
-		query = b.String()
+		query = postgresPlaceholders(query)
 	}
 
 	_, err := s.DB().ExecContext(ctx, query, args...)
 	require.NoError(t, err)
+}
+
+// queryID runs a query that returns one integer, with "?" placeholders
+// directly on the database of the store.
+func queryID(t *testing.T, ctx context.Context, s *sqlstore.Store, query string, args ...any) int64 {
+	t.Helper()
+
+	if s.Dialect() == sqlstore.Postgres {
+		query = postgresPlaceholders(query)
+	}
+
+	var id int64
+	require.NoError(t, s.DB().QueryRowContext(ctx, query, args...).Scan(&id))
+	return id
+}
+
+// postgresPlaceholders rewrites the "?" placeholders of a query into the
+// numbered ones of Postgres.
+func postgresPlaceholders(query string) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range query {
+		if r == '?' {
+			n++
+			fmt.Fprintf(&b, "$%d", n)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // timeValue returns t as the dialect stores times.
@@ -73,6 +93,34 @@ func timeValue(s *sqlstore.Store, t time.Time) any {
 		return t.UTC().Format(time.RFC3339Nano)
 	}
 	return t.UTC()
+}
+
+// insertV010Repository inserts the row of a repository as v0.1.0 wrote it and
+// returns its ID. The repository has three changesets (head sequence 3).
+func insertV010Repository(t *testing.T, ctx context.Context, s *sqlstore.Store, key corestore.RepoKey) int64 {
+	t.Helper()
+
+	return queryID(t, ctx, s, `
+		INSERT INTO graft_repositories (storage, relative_path, object_format, head_seq, log_seq, next_review_id, created_at)
+		VALUES (?, ?, 'sha1', 3, 0, 1, ?)
+		RETURNING repo_id
+	`, key.Storage, key.RelativePath, timeValue(s, time.Now()))
+}
+
+// insertV010Changeset inserts a changeset of the repository as v0.1.0 wrote
+// it, with the reference it changed.
+func insertV010Changeset(t *testing.T, ctx context.Context, s *sqlstore.Store, repoID int64, seq int, packKey string, old, new corestore.Target) {
+	t.Helper()
+
+	execSQL(t, ctx, s, `
+		INSERT INTO graft_changesets (repo_id, seq, operation, actor, node_id, pack_key, pack_bytes, forced, created_at)
+		VALUES (?, ?, 'test', 'tester', 'node-a', ?, 1, ?, ?)
+	`, repoID, seq, packKey, true, timeValue(s, time.Now()))
+
+	execSQL(t, ctx, s, `
+		INSERT INTO graft_changeset_refs (repo_id, seq, ordinal, name, old_target, new_target)
+		VALUES (?, ?, 0, ?, ?, ?)
+	`, repoID, seq, []byte("refs/heads/main"), string(old), string(new))
 }
 
 // headRepo registers a repository and commits n changesets on refs/heads/main,
@@ -122,36 +170,41 @@ func TestV010DatabaseMigrates(t *testing.T) {
 			dsn := coretest.DatabaseURL(t, dialect)
 
 			// A database as v0.1.0 left it: one pack object shared by changesets 1
-			// and 3 (content-addressed dedup), and no owned-key trigger yet.
+			// and 3 (content-addressed dedup), and no owned-key trigger yet. The
+			// rows are written with SQL, as v0.1.0 wrote them: the schema of
+			// today reads the archive columns that v0.1.0 did not have.
 			old, err := sqlstore.OpenV010(ctx, dsn)
 			require.NoError(t, err)
-			repo, _, err := old.RegisterRepository(ctx, testKey("v010"), "sha1", corestore.InitialState{})
-			require.NoError(t, err)
-			shared, other := legacyKey(repo.ID, "shared"), legacyKey(repo.ID, "other")
-			for i, key := range []string{shared, other, shared} {
-				_, err := commitPack(ctx, old, repo.ID, force("refs/heads/main", oid(i+1)), key)
-				require.NoError(t, err)
+			key := testKey("v010")
+			repoID := insertV010Repository(t, ctx, old, key)
+			shared, other := legacyKey(repoID, "shared"), legacyKey(repoID, "other")
+			for i, packKey := range []string{shared, other, shared} {
+				insertV010Changeset(t, ctx, old, repoID, i+1, packKey, oid(i), oid(i+1))
 			}
+			execSQL(t, ctx, old, `
+				INSERT INTO graft_refs (repo_id, name, target, seq)
+				VALUES (?, ?, ?, 3)
+			`, repoID, []byte("refs/heads/main"), string(oid(3)))
 			require.NoError(t, old.Close())
 
-			// The current binary applies migration 2 at Open.
+			// The current binary applies the missing migrations at Open.
 			s := openStore(t, ctx, dsn)
 
-			changesets, err := s.ListChangesets(ctx, repo.ID, 0, 10)
+			changesets, err := s.ListChangesets(ctx, repoID, 0, 10)
 			require.NoError(t, err)
 			require.Len(t, changesets, 3)
 			require.Equal(t, []string{shared, other, shared},
 				[]string{changesets[0].PackKey, changesets[1].PackKey, changesets[2].PackKey}, "legacy rows stay readable")
 
-			st, err := s.GCSnapshot(ctx, repo.ID)
+			st, err := s.GCSnapshot(ctx, repoID)
 			require.NoError(t, err)
 			require.Equal(t, map[string]uint64{shared: 3, other: 2}, st.Packs, "a shared key is live up to its greatest sequence")
 			require.Empty(t, st.Checkpoints)
 			require.Empty(t, st.Orphans)
 
-			_, err = commitPack(ctx, s, repo.ID, force("refs/heads/main", oid(9)), legacyKey(repo.ID, "new"))
+			_, err = commitPack(ctx, s, repoID, force("refs/heads/main", oid(9)), legacyKey(repoID, "new"))
 			require.ErrorContains(t, err, sqlstore.NotOwnedPackKeyMessage)
-			_, err = commitPack(ctx, s, repo.ID, force("refs/heads/main", oid(9)), ownedKey(repo.ID, "new"))
+			_, err = commitPack(ctx, s, repoID, force("refs/heads/main", oid(9)), ownedKey(repoID, "new"))
 			require.NoError(t, err)
 		})
 	}

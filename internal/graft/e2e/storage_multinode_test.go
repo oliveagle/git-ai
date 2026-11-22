@@ -25,7 +25,7 @@ func TestStorageWriteOnOneNodeReadOnAnother(t *testing.T) {
 	t.Parallel()
 
 	forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-		graft, tokens := workerGraft(2)
+		graft, tokens := workerGraft(t, 2)
 		cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 		a := cluster.addNode(t)
 		b := cluster.addNode(t)
@@ -110,7 +110,7 @@ func runConcurrentLandsAcrossNodes(t *testing.T, dialect sqlstore.Dialect, nodes
 	t.Helper()
 
 	workers := 4 * nodes
-	graft, tokens := workerGraft(workers)
+	graft, tokens := workerGraft(t, workers)
 	if !batched {
 		graft = unbatched(graft)
 	}
@@ -224,7 +224,7 @@ func TestStorageFreshNodeHydrates(t *testing.T) {
 	t.Parallel()
 
 	forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-		graft, tokens := workerGraft(2)
+		graft, tokens := workerGraft(t, 2)
 		cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 		a := cluster.addNode(t)
 
@@ -280,16 +280,17 @@ func TestStorageFreshNodeHydrates(t *testing.T) {
 	})
 }
 
-// TestStorageCreateOnOneNodeRemoveOnAnother creates a repository on node A,
-// lets node B cache it, and removes it on B. The database forgets it, A's
-// cached copy is treated as the stale cache of a removed repository (moved
+// TestStorageCreateOnOneNodePurgeOnAnother creates a repository on node A,
+// lets node B cache it, and purges it on B. The database forgets it, A's
+// cached copy is treated as the stale cache of a purged repository (moved
 // away, reported missing), and the repository can be created again with a new
-// ID that both nodes serve.
-func TestStorageCreateOnOneNodeRemoveOnAnother(t *testing.T) {
+// ID that both nodes serve. A repository is never removed directly: it is
+// archived and then purged by the super admin (doc/graft/PLAN13.md).
+func TestStorageCreateOnOneNodePurgeOnAnother(t *testing.T) {
 	t.Parallel()
 
 	forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-		graft, tokens := workerGraft(1)
+		graft, tokens := workerGraft(t, 1)
 		cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 		a := cluster.addNode(t)
 		b := cluster.addNode(t)
@@ -316,8 +317,7 @@ func TestStorageCreateOnOneNodeRemoveOnAnother(t *testing.T) {
 			return resp.GetExists()
 		}
 
-		_, err = repositoriesOn(b).RemoveRepository(b.ctx, &gitalypb.RemoveRepositoryRequest{Repository: b.repository(rel)})
-		require.NoError(t, err)
+		b.purge(t, rel)
 
 		_, err = b.core.Meta.GetRepository(b.ctx, corestore.KeyOf(b.repository(rel)))
 		require.ErrorIs(t, err, corestore.ErrRepositoryNotFound, "the database forgets the repository")

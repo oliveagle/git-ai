@@ -104,7 +104,33 @@ type ReviewInsert struct {
 	MaxOpen int
 }
 
+// ErrArchiveRetention is returned when an archived repository may not be
+// purged yet: its archive retention has not passed. It carries the time the
+// repository may be purged at.
+type ErrArchiveRetention struct {
+	// PurgeAfter is the database time from which the repository may be purged.
+	PurgeAfter time.Time
+}
+
+// Error implements the error interface.
+func (e *ErrArchiveRetention) Error() string {
+	return "storage core: the repository is archived until " + e.PurgeAfter.UTC().Format(time.RFC3339)
+}
+
 var (
+	// ErrRepositoryArchived is returned when a write would change an archived
+	// repository: it is frozen until an operator takes it out of the archive
+	// or a super admin purges it (doc/graft/PLAN13.md, ARCHIVE RULE).
+	ErrRepositoryArchived = errors.New("storage core: the repository is archived")
+	// ErrRepositoryNotArchived is returned when a repository that is not
+	// archived is taken out of the archive or cleanup is started on it.
+	ErrRepositoryNotArchived = errors.New("storage core: the repository is not archived")
+	// ErrRepositoryNotReadClosed is returned when cleanup has not closed the
+	// reads of an archived repository yet.
+	ErrRepositoryNotReadClosed = errors.New("storage core: the repository is archived and still readable")
+	// ErrRepositoryCleanupStarted is returned when cleanup is started again or
+	// an unarchive is attempted after reads were closed.
+	ErrRepositoryCleanupStarted = errors.New("storage core: the cleanup of the repository has started")
 	// ErrTooManyOpenReviews is returned by InsertReview for an open review
 	// beyond ReviewInsert.MaxOpen.
 	ErrTooManyOpenReviews = errors.New("storage core: too many open reviews")
@@ -130,15 +156,50 @@ type MetaStore interface {
 	// false, writing nothing, when the repository was not known.
 	DeleteRepository(ctx context.Context, key RepoKey) (bool, error)
 	// ListRepositories returns the repositories of the storage whose import is
-	// complete (head sequence > 0), ascending by ID; every storage's when storage
-	// is empty.
+	// complete (head sequence > 0) and that are not archived, ascending by ID;
+	// every storage's when storage is empty.
 	ListRepositories(ctx context.Context, storage string) ([]Repository, error)
+
+	// ArchiveRepository freezes the repository: it keeps its row, its name and
+	// its objects, and no update may change it any more. It remains readable
+	// until cleanup starts. The archive state of the row holds the time of the
+	// archive and the identity that archived it, both on the database clock.
+	// It returns ErrRepositoryNotFound for an unknown key and
+	// ErrRepositoryArchived when the repository is archived already.
+	ArchiveRepository(ctx context.Context, key RepoKey, archivedBy string) (Repository, error)
+	// StartRepositoryCleanup is the admin-only first step of deletion: it
+	// refuses an archived repository whose archive retention has not passed,
+	// closes its reads, and starts the observation period. All three decisions
+	// and the update are one transaction on the database clock. It returns
+	// ErrRepositoryNotFound, ErrRepositoryNotArchived, *ErrArchiveRetention
+	// while the archive age is too small, and ErrRepositoryCleanupStarted when
+	// cleanup has started already.
+	StartRepositoryCleanup(ctx context.Context, key RepoKey, closedBy string, archiveRetention, observation time.Duration) (Repository, error)
+	// UnarchiveRepository takes an archived repository out of the archive: it
+	// is writable again. It returns ErrRepositoryNotFound for an unknown key,
+	// ErrRepositoryNotArchived when the repository is not archived, and
+	// ErrRepositoryCleanupStarted after cleanup has closed its reads.
+	UnarchiveRepository(ctx context.Context, key RepoKey) (Repository, error)
+	// ListArchivedRepositories returns the archived repositories of the storage
+	// (of every storage when it is empty), ascending by ID.
+	ListArchivedRepositories(ctx context.Context, storage string) ([]Repository, error)
+	// PurgeRepository deletes an archived repository whose cleanup observation
+	// has passed: its row goes from the database, and its tombstone makes the
+	// garbage collector delete its objects object_expiration later. The
+	// observation is checked on the database clock, in the transaction of the
+	// deletion. It returns ErrRepositoryNotFound for an unknown key,
+	// ErrRepositoryNotArchived when the repository is not archived,
+	// ErrRepositoryNotReadClosed when cleanup has not started, and
+	// *ErrArchiveRetention when the observation has not passed yet.
+	PurgeRepository(ctx context.Context, key RepoKey) (Repository, error)
 
 	// CommitChangeset checks every update against the current references and
 	// records the changeset, the reference changes and the changelog entries
 	// in one transaction (see the CAS table of doc/graft/PLAN6.md). It returns
 	// *ErrRefConflict, writing nothing, when an expectation fails and Force is
-	// not set, and ErrRepositoryNotFound for an unknown repository. Unless Force
+	// not set, and ErrRepositoryNotFound for an unknown repository. It returns
+	// ErrRepositoryArchived, writing nothing, for an archived repository: it is
+	// frozen (doc/graft/PLAN13.md, ARCHIVE RULE). Unless Force
 	// is set, a changeset that deletes or moves the keep-around reference of a
 	// commit that an open review uses as its head or base is refused with
 	// ErrReviewRootInUse (doc/graft/PLAN7.md, REVIEW ROOTS RULE); shadow mode,

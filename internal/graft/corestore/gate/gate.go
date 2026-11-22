@@ -12,7 +12,8 @@
 //     FailedPrecondition before its handler runs.
 //   - CreateRepository runs its handler (with the reftable backend), then
 //     registers the new repository with a first changeset holding its HEAD.
-//   - RemoveRepository deletes the database row first, then runs its handler.
+//   - RemoveRepository is refused: a repository is archived and frozen, never
+//     removed (doc/graft/PLAN13.md).
 //   - Every other RPC catches the local repository up (Freshener.EnsureFresh)
 //     before its handler runs. For a streaming RPC this happens on the first
 //     RecvMsg, which carries the request.
@@ -21,7 +22,7 @@
 //     database key is the relative path as given, so two spellings of one
 //     directory would otherwise be two repositories in the database.
 //
-// Stale caches: a repository removed on another node leaves the local copies
+// Stale caches: a repository purged on another node leaves the local copies
 // of the other nodes behind. A local repository that has a watermark (so the
 // storage core wrote it: it was created, imported or hydrated here) while the
 // database no longer has its key is such a stale cache. The catch-up moves it
@@ -30,8 +31,14 @@
 // EnsureFresh reports it as "not imported", then lets the handler answer as for
 // any missing repository. A local repository without a
 // watermark was never in the storage core: it stays untracked
-// (FailedPrecondition). CreateRepository, RemoveRepository and the moves of
+// (FailedPrecondition). CreateRepository and the moves of
 // stale caches of one repository are serialized on the node.
+//
+// The lifecycle (doc/graft/PLAN13.md): an archived repository is frozen. No
+// mutator may change it, and the gate refuses them with FailedPrecondition
+// before they run. It remains readable until cleanup starts; then the same
+// gate refuses every accessor too, while the lifecycle RPCs themselves stay
+// available through their passthrough scope.
 //
 // Shadow history (doc/graft/PLAN6.md, LOCK AND HISTORY RULE): shadow mode
 // writes the file changelog, not the database one. A tracked repository whose
@@ -143,6 +150,12 @@ func (g *Gate) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		if !scoped {
 			return handler(ctx, req)
 		}
+		if info.FullMethod == removeRepositoryMethod {
+			// A repository is archived, never removed: the removal would
+			// destroy its history at once, with no undo
+			// (doc/graft/PLAN13.md).
+			return nil, g.refuseRemoval(ctx)
+		}
 		if err := checkAllowed(info.FullMethod, mi); err != nil {
 			return nil, err
 		}
@@ -155,12 +168,13 @@ func (g *Gate) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		if err := checkCanonical(repo); err != nil {
 			return nil, err
 		}
+		if err := g.checkLifecycle(ctx, mi, repo); err != nil {
+			return nil, err
+		}
 
 		switch info.FullMethod {
 		case createRepositoryMethod:
 			return g.createRepository(ctx, req, repo, handler)
-		case removeRepositoryMethod:
-			return g.removeRepository(ctx, req, repo, handler)
 		default:
 			if err := g.ensureFresh(ctx, repo); err != nil {
 				return nil, err
@@ -215,6 +229,9 @@ func (s *firstRecvStream) RecvMsg(m any) error {
 		return nil
 	}
 	if err := checkCanonical(repo); err != nil {
+		return err
+	}
+	if err := s.gate.checkLifecycle(s.ServerStream.Context(), s.mi, repo); err != nil {
 		return err
 	}
 	return s.gate.ensureFresh(s.ServerStream.Context(), repo)
@@ -596,38 +613,47 @@ func (g *Gate) register(ctx context.Context, repo *gitalypb.Repository) (coresto
 	return registered, nil
 }
 
-// removeRepository deletes the database row first, then runs the handler. A
-// repository that was tracked and has no local copy on this node is removed
-// successfully; an untracked one is just removed locally.
+// refuseRemoval refuses the removal of a repository and records it: the
+// removal of a repository destroys its history at once, and a mistake is not
+// recoverable. The archive is the way to retire a repository
+// (doc/graft/PLAN13.md).
+func (g *Gate) refuseRemoval(ctx context.Context) error {
+	g.logger.WithField("method", removeRepositoryMethod).WarnContext(ctx,
+		"storage core: the removal of a repository was refused: a repository is archived, never removed")
+	return structerr.NewFailedPrecondition("removing a repository is not supported: " +
+		"archive it instead (graft storage archive), and let a super admin purge it once the archive retention has passed (graft storage purge)")
+}
+
+// checkLifecycle refuses a write on an archived repository and any read after
+// cleanup has closed the reads (doc/graft/PLAN13.md). Maintenance is a write
+// for this purpose.
 //
-// The gate cannot stop a hydration of the repository that is already running
-// on this node: it may rename its copy into place after the handler removed
-// the directory. Such a copy has a watermark and its key is no longer in the
-// database, so it is a stale cache: it is moved away here when it is already
-// back, and otherwise by the next request that reaches it (see dropStale).
-func (g *Gate) removeRepository(ctx context.Context, req any, repo *gitalypb.Repository, handler grpc.UnaryHandler) (any, error) {
-	path, err := g.repoPath(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
-	unlock := g.lock(path)
-	defer unlock()
-
-	deleted, err := g.core.Meta.DeleteRepository(ctx, corestore.KeyOf(repo))
-	if err != nil {
-		return nil, structerr.NewUnavailable("storage core: delete repository: %w", err)
+// The check reads the row of the repository, which the write path checks
+// again when it commits the changeset: the write check here is early (the
+// mutator does not run at all), the check there is the one that counts (it is
+// in the transaction of the changeset).
+func (g *Gate) checkLifecycle(ctx context.Context, mi protoregistry.MethodInfo, repo *gitalypb.Repository) error {
+	record, err := g.core.Meta.GetRepository(ctx, corestore.KeyOf(repo))
+	switch {
+	case errors.Is(err, corestore.ErrRepositoryNotFound):
+		// The database does not know the repository: the handler answers for a
+		// missing repository.
+		return nil
+	case err != nil:
+		return structerr.NewUnavailable("storage core: read the repository: %w", err)
 	}
 
-	resp, err := handler(ctx, req)
-	if err != nil && deleted && status.Code(err) == codes.NotFound {
-		resp, err = &gitalypb.RemoveRepositoryResponse{}, nil
+	if record.Archived && (mi.Operation == protoregistry.OpMutator || mi.Operation == protoregistry.OpMaintenance) {
+		return structerr.NewFailedPrecondition("the repository %s is archived: it is frozen and no update may change it. "+
+			"An operator must take it out of the archive (graft storage unarchive) before it can be changed",
+			record.Key.String())
 	}
-	if err == nil && deleted {
-		if _, staleErr := g.dropStaleLocked(ctx, repo, path); staleErr != nil {
-			g.logger.WithError(staleErr).WarnContext(ctx, "storage core: checking for a stale cache after removing a repository")
-		}
+	if record.ReadClosed {
+		return structerr.NewFailedPrecondition("the repository %s is in cleanup: its reads are closed for the observation period, "+
+			"and a super admin can purge it with graft storage purge after that period",
+			record.Key.String())
 	}
-	return resp, err
+	return nil
 }
 
 // repoPath returns the path of the local repository, whether it exists or not.

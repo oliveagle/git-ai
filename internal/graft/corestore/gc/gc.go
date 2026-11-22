@@ -6,8 +6,8 @@
 //   - the objects under the repository's pack prefix that no row references,
 //     once the collector itself observed them unreferenced at least gc_grace
 //     earlier on the database clock (PACK OWNERSHIP RULE);
-//   - every object of a removed repository, once its tombstone is gc_grace
-//     old.
+//   - every object of a removed repository, once its tombstone is at least
+//     object_expiration old (never younger than gc_grace).
 //
 // Every decision of a run comes from one database snapshot (GCSnapshot) and the
 // proofs of PLAN7; the bucket's times are never read. Deleting a missing key is
@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/log"
@@ -309,17 +310,19 @@ func (c *Collector) CollectRepository(ctx context.Context, repoID int64, dryRun 
 }
 
 // CollectRemoved reclaims the bucket prefixes of the tombstones of the storage
-// (every storage when empty) that are at least gc_grace old, then deletes the
-// tombstones (change F). A writer whose record read found a removed repository
-// did so before removed_at and uploads only until t_r + W, so no upload arrives
-// in the prefix after the sweep. A crash after a partial deletion leaves the
+// (every storage when empty) that are at least object_expiration old, then
+// deletes the tombstones (change F). That expiration is never below gc_grace,
+// so the writer safety window of PLAN7 still holds. It is the application-side
+// cleanup deadline: an OSS lifecycle rule can use the same period to move
+// objects to a low-frequency storage class before this final deletion. A crash after a partial deletion leaves the
 // tombstone; the next run finishes it.
 func (c *Collector) CollectRemoved(ctx context.Context, storage string, dryRun bool) (Report, error) {
 	if err := c.validTimes(); err != nil {
 		return Report{}, err
 	}
 
-	removed, err := c.core.Meta.ListRemovedRepositories(ctx, storage, c.core.GCGrace)
+	objectExpiration := maxDuration(c.core.ObjectExpiration, c.core.GCGrace)
+	removed, err := c.core.Meta.ListRemovedRepositories(ctx, storage, objectExpiration)
 	if err != nil {
 		return Report{}, errDatabase(err)
 	}
@@ -499,4 +502,12 @@ func errDatabase(err error) error {
 // errBucket maps a bucket error of a collection.
 func errBucket(err error) error {
 	return structerr.NewUnavailable("storage core: bucket: %w", err)
+}
+
+// maxDuration returns the later of two non-negative durations.
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
 }

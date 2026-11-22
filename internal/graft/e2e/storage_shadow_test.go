@@ -68,7 +68,7 @@ func TestStorageShadowModeBudgetOverrun(t *testing.T) {
 				const ref = "refs/heads/budget"
 				who := workerName(0)
 
-				graft, tokens := workerGraft(1)
+				graft, tokens := workerGraft(t, 1)
 				logger := testhelper.NewLogger(t)
 				logs := testhelper.AddLoggerHook(logger)
 				cluster := newStorageCluster(t, dialect, corestore.ModeShadow, graft)
@@ -165,7 +165,7 @@ func TestStorageShadowModeBenchmarkHasNoDivergence(t *testing.T) {
 		const private, shared = 40, 10
 		const branch = "bench-shadow"
 
-		graft, tokens := workerGraft(private + shared)
+		graft, tokens := workerGraft(t, private+shared)
 		logger := testhelper.NewLogger(t)
 		logs := testhelper.AddLoggerHook(logger)
 		cluster := newStorageCluster(t, dialect, corestore.ModeShadow, graft)

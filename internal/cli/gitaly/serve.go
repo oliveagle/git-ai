@@ -51,6 +51,7 @@ import (
 	_ "github.com/feder-cr/git-ai/internal/graft/derived/graph" // registers the graph warmer
 	"github.com/feder-cr/git-ai/internal/graft/eager"
 	"github.com/feder-cr/git-ai/internal/graft/landlane"
+	"github.com/feder-cr/git-ai/internal/graft/lifecycle"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/graft/resolver"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
@@ -643,6 +644,9 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 	var (
 		storageSyncer corestore.Freshener
 		storageGate   *gate.Gate
+		// The lifecycle guard refuses the removal of a repository in every
+		// mode (doc/graft/PLAN13.md, ARCHIVE RULE).
+		lifecycleGuard *lifecycle.Guard
 	)
 	if storageCore.Enabled() {
 		if storageCore.Authoritative() {
@@ -696,6 +700,11 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 
 		logger.WithField("mode", string(storageCore.Mode)).WithField("node_id", storageCore.NodeID).Info("graft storage core enabled")
 	}
+
+	// A Graft server never removes a repository: it archives it, a super admin
+	// starts cleanup after the archive retention, and only after the cleanup
+	// observation may that admin purge it (doc/graft/PLAN13.md).
+	lifecycleGuard = lifecycle.New(logger)
 
 	postReceiveRegistry := hook.NewPostReceiveRegistry()
 	hookManager := hook.NewManager(
@@ -807,6 +816,12 @@ func run(appCtx *cli.Command, cfg config.Cfg, logger log.Logger, policySignals c
 		opts := []server.Option{
 			server.WithUnaryInterceptor(bm.UnaryInterceptor()),
 			server.WithStreamInterceptor(bm.StreamInterceptor()),
+		}
+		if lifecycleGuard != nil {
+			opts = append(opts,
+				server.WithUnaryInterceptor(lifecycleGuard.UnaryInterceptor()),
+				server.WithStreamInterceptor(lifecycleGuard.StreamInterceptor()),
+			)
 		}
 		if storageGate != nil {
 			opts = append(opts,

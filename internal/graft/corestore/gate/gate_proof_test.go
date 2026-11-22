@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -52,6 +53,9 @@ func startNode(t *testing.T, core *corestore.Core) node {
 	require.True(t, core.Authoritative())
 
 	cfg := testcfg.Build(t)
+	// A Graft server refuses anonymous callers: the node and its clients use
+	// the shared operator token.
+	cfg.Auth.Token = "test-shared-token"
 	cfg.Graft.Standalone = true
 	testcfg.BuildGitalySSH(t, cfg)
 	testcfg.BuildGitalyHooks(t, cfg)
@@ -583,13 +587,6 @@ func proofCases() map[string]func(t *testing.T, n node, s seed) {
 			require.NoError(t, err)
 			n.requireSameRefs(t, other)
 		},
-		"/gitaly.RepositoryService/RemoveRepository": func(t *testing.T, n node, s seed) {
-			_, err := gitalypb.NewRepositoryServiceClient(n.conn).RemoveRepository(n.ctx, &gitalypb.RemoveRepositoryRequest{Repository: s.repo})
-			require.NoError(t, err)
-			_, err = n.core.Meta.GetRepository(n.ctx, corestore.KeyOf(s.repo))
-			require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
-			require.NoDirExists(t, s.path)
-		},
 		"/gitaly.SSHService/SSHReceivePack": func(t *testing.T, n node, s seed) {
 			child := n.commit(t, s, s.base, "pushed over ssh", gittest.TreeEntry{Path: "a", Mode: "100644", Content: "ssh\n"})
 			request := n.receivePackRequest(t, s, "refs/heads/ssh-pushed", child)
@@ -745,8 +742,9 @@ func TestGateProofAllowlist(t *testing.T) {
 
 // TestGateProofNodes runs two nodes on one database and bucket: a write on
 // one node is seen by an accessor on the other, a repository created on one
-// node cannot be created again on the other, and it can be removed from a
-// node that never served it.
+// node cannot be created again on the other, and removing a repository is
+// refused on either node: a repository is archived and frozen, then purged by
+// a super admin, never removed (doc/graft/PLAN13.md).
 func TestGateProofNodes(t *testing.T) {
 	t.Parallel()
 
@@ -802,13 +800,34 @@ func TestGateProofNodes(t *testing.T) {
 			require.Equal(t, codes.AlreadyExists, status.Code(err), "%v", err)
 			require.NoDirExists(t, b.cfg.Storages[0].Path+"/"+other.GetRelativePath())
 
-			// B never served it, but removes it from the database.
-			_, err = gitalypb.NewRepositoryServiceClient(b.conn).RemoveRepository(b.ctx, &gitalypb.RemoveRepositoryRequest{Repository: other})
+			// B never served it, and the removal is refused: a repository is
+			// archived, never removed. The row and the accessor stay.
+			for _, n := range []node{a, b} {
+				repo := &gitalypb.Repository{StorageName: n.cfg.Storages[0].Name, RelativePath: other.GetRelativePath()}
+				_, err = gitalypb.NewRepositoryServiceClient(n.conn).RemoveRepository(n.ctx, &gitalypb.RemoveRepositoryRequest{Repository: repo})
+				require.Equal(t, codes.FailedPrecondition, status.Code(err), "%v", err)
+				require.Contains(t, status.Convert(err).Message(), "archive it instead")
+			}
+			_, err = a.core.Meta.GetRepository(a.ctx, corestore.KeyOf(other))
+			require.NoError(t, err, "the repository row stays")
+			exists, err := gitalypb.NewRepositoryServiceClient(b.conn).RepositoryExists(b.ctx, &gitalypb.RepositoryExistsRequest{Repository: other})
 			require.NoError(t, err)
-			_, err = b.core.Meta.GetRepository(b.ctx, corestore.KeyOf(other))
-			require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
-			_, err = gitalypb.NewRefServiceClient(b.conn).FindBranch(b.ctx, &gitalypb.FindBranchRequest{Repository: other, Name: []byte("main")})
-			require.Equal(t, codes.NotFound, status.Code(err), "%v", err)
+			require.True(t, exists.GetExists(), "the repository is still there")
+
+			// The archive keeps reads. Cleanup closes them, while the storage
+			// state RPC stays available for the operator.
+			key := corestore.KeyOf(s.repo)
+			_, err = a.core.Meta.ArchiveRepository(a.ctx, key, "operator")
+			require.NoError(t, err)
+			_, err = gitalypb.NewRefServiceClient(b.conn).FindBranch(b.ctx, &gitalypb.FindBranchRequest{Repository: repoB, Name: []byte("main")})
+			require.NoError(t, err, "an archived repository remains readable")
+			_, err = a.core.Meta.StartRepositoryCleanup(a.ctx, key, "admin", time.Nanosecond, 7*24*time.Hour)
+			require.NoError(t, err)
+			_, err = gitalypb.NewRefServiceClient(b.conn).FindBranch(b.ctx, &gitalypb.FindBranchRequest{Repository: repoB, Name: []byte("main")})
+			require.Equal(t, codes.FailedPrecondition, status.Code(err), "%v", err)
+			require.Contains(t, status.Convert(err).Message(), "reads are closed")
+			_, err = gitalypb.NewStorageCoreServiceClient(b.conn).GetStorageState(b.ctx, &gitalypb.GetStorageStateRequest{Repository: repoB})
+			require.NoError(t, err, "the lifecycle RPC remains available")
 		})
 	}
 }
@@ -822,6 +841,16 @@ func TestGateProofRejections(t *testing.T) {
 	n := startNode(t, coretest.Open(t, coretest.Options{}))
 	s := n.newSeed(t)
 	repoClient := gitalypb.NewRepositoryServiceClient(n.conn)
+
+	t.Run("removal is refused", func(t *testing.T) {
+		_, err := repoClient.RemoveRepository(n.ctx, &gitalypb.RemoveRepositoryRequest{Repository: s.repo})
+		require.Equal(t, codes.FailedPrecondition, status.Code(err), "%v", err)
+		require.Contains(t, status.Convert(err).Message(), "archive it instead")
+		require.DirExists(t, s.path, "the removal must not touch the repository")
+		_, err = n.core.Meta.GetRepository(n.ctx, corestore.KeyOf(s.repo))
+		require.NoError(t, err, "the row stays")
+		n.requireSameRefs(t, s.repo)
+	})
 
 	t.Run("unary mutator outside the allowlist", func(t *testing.T) {
 		_, err := repoClient.ReplicateRepository(n.ctx, &gitalypb.ReplicateRepositoryRequest{Repository: s.repo, Source: s.repo})

@@ -34,6 +34,9 @@ func graftTestCfg(t *testing.T) Cfg {
 			Duration: duration.Duration(10 * time.Minute),
 		},
 	}
+	// A Graft server refuses anonymous callers, so a valid configuration needs a
+	// credential: this file exercises the GitLab and policy checks.
+	cfg.Auth.Token = "test-shared-token"
 	require.NoError(t, cfg.Sanitize())
 
 	return cfg
@@ -173,6 +176,55 @@ func TestGraft_Validate_StandaloneSkipsGitlabSecret(t *testing.T) {
 
 	// The deprecated Validate runs validateGitlabSecret, which must not fail in standalone mode.
 	require.NoError(t, cfg.Validate())
+}
+
+func TestGraft_Validate_RequiresCredential(t *testing.T) {
+	t.Parallel()
+
+	// The storage core makes a server a Graft server too, so it needs a
+	// credential even without standalone mode.
+	require.True(t, Graft{Storage: GraftStorage{Mode: "shadow"}}.RequiresAuthentication())
+
+	// So do a configured agent and the super admin's secret: a server with an
+	// agent must not let anonymous callers write what the agent may write.
+	agent := GraftAgent{Name: "planner", PublicKey: "ssh-ed25519 AAAA"}
+	require.True(t, Graft{Agents: []GraftAgent{agent}}.RequiresAuthentication())
+	require.True(t, Graft{AdminToken: "secret"}.RequiresAuthentication())
+	require.True(t, Graft{AdminTokenFile: "/etc/graft/admin-token"}.RequiresAuthentication())
+
+	for _, tc := range []struct {
+		desc       string
+		standalone bool
+		agent      bool
+		token      string
+		expectErr  bool
+	}{
+		{desc: "standalone without a credential", standalone: true, expectErr: true},
+		{desc: "standalone with the shared token", standalone: true, token: "secret"},
+		{desc: "an agent without a credential", agent: true, expectErr: true},
+		{desc: "an agent with the shared token", agent: true, token: "secret"},
+		{desc: "an upstream Gitaly without a credential is unchanged"},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := graftTestCfg(t)
+			cfg.Graft.Standalone = tc.standalone
+			if tc.agent {
+				cfg.Graft.Agents = []GraftAgent{agent}
+			}
+			cfg.Auth.Token = tc.token
+			cfg.Gitlab = Gitlab{URL: "https://gitlab.example.com", Secret: "secret"}
+
+			for _, err := range []error{cfg.Validate(), cfg.ValidateV2()} {
+				if tc.expectErr {
+					require.ErrorContains(t, err, "auth.token must be set")
+					continue
+				}
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestGraft_ValidatePolicy(t *testing.T) {

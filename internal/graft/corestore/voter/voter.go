@@ -82,6 +82,7 @@ const (
 	resultConflict  = "conflict"
 	resultSkipped   = "skipped"
 	resultError     = "error"
+	resultArchived  = "archived"
 )
 
 // Voter commits reference transactions to the storage core.
@@ -417,10 +418,23 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 		}
 		return structerr.NewFailedPrecondition("storage core: repository is not imported into the storage core")
 	}
+	if errors.Is(err, corestore.ErrRepositoryArchived) {
+		// The repository was archived between the read of the record above and
+		// the commit of the changeset: the row is locked in the transaction of
+		// the commit, so the check and the decision are one.
+		result = resultArchived
+		return structerr.NewFailedPrecondition("storage core: the repository is archived: it is frozen and no update may change it")
+	}
 	if errors.Is(err, corestore.ErrReviewRootInUse) {
 		// Only non-forced (authoritative) changesets are refused.
 		result = resultConflict
 		return structerr.NewFailedPrecondition("%w", err)
+	}
+	if record.Archived {
+		// An archived repository is frozen: no update may change it
+		// (doc/graft/PLAN13.md, ARCHIVE RULE).
+		result = resultArchived
+		return structerr.NewFailedPrecondition("storage core: the repository %s is archived: it is frozen and no update may change it", record.Key.String())
 	}
 	if err != nil {
 		return v.unavailable(err)
@@ -508,6 +522,13 @@ func (v *Voter) prepare(ctx context.Context, payload gitcmd.HooksPayload, change
 			return nil
 		}
 		return structerr.NewFailedPrecondition("storage core: repository is not imported into the storage core")
+	}
+	if errors.Is(err, corestore.ErrRepositoryArchived) {
+		// The repository was archived between the read of the record above and
+		// the commit of the changeset: the row is locked in the transaction of
+		// the commit, so the check and the decision are one.
+		result = resultArchived
+		return structerr.NewFailedPrecondition("storage core: the repository is archived: it is frozen and no update may change it")
 	}
 	if err != nil {
 		return v.unavailable(err)

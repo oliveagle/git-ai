@@ -2,9 +2,20 @@ package sdk
 
 import (
 	"context"
+	"time"
 
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// protoTime converts a protocol buffer timestamp to a time. An unset
+// timestamp is the zero time, not the Unix epoch.
+func protoTime(ts *timestamppb.Timestamp) time.Time {
+	if ts == nil {
+		return time.Time{}
+	}
+	return ts.AsTime()
+}
 
 // StorageImport is the outcome of importing a repository into the storage core.
 //
@@ -44,6 +55,16 @@ type StorageState struct {
 	AppliedSequence uint64 `json:"applied_sequence"`
 	// NodeID is the name of the node in the database.
 	NodeID string `json:"node_id"`
+	// Archived is true when the repository is archived: it is frozen, and only
+	// a super admin may purge it after cleanup (doc/graft/PLAN13.md).
+	Archived bool `json:"archived"`
+	// PurgeAfter is when the super admin may purge the repository. It is unset
+	// until cleanup starts.
+	PurgeAfter time.Time `json:"purge_after,omitempty"`
+	// ReadClosed is true after cleanup started: reads are refused too.
+	ReadClosed bool `json:"read_closed"`
+	// ReadClosedAt is when cleanup closed the reads.
+	ReadClosedAt time.Time `json:"read_closed_at,omitempty"`
 }
 
 // StorageDivergence is a reference whose local value differs from the database.
@@ -112,6 +133,10 @@ func (r *Repo) StorageState(ctx context.Context) (*StorageState, error) {
 		HeadSequence:    resp.GetHeadSequence(),
 		AppliedSequence: resp.GetAppliedSequence(),
 		NodeID:          resp.GetNodeId(),
+		Archived:        resp.GetArchived(),
+		PurgeAfter:      protoTime(resp.GetPurgeAfter()),
+		ReadClosed:      resp.GetReadClosed(),
+		ReadClosedAt:    protoTime(resp.GetReadClosedAt()),
 	}, nil
 }
 
@@ -284,4 +309,139 @@ func (c *Client) StorageGCRemoved(ctx context.Context, storage string, dryRun bo
 // storageCore returns the storage core service client on the connection of the client.
 func (r *Repo) storageCore() gitalypb.StorageCoreServiceClient {
 	return gitalypb.NewStorageCoreServiceClient(r.client.conn)
+}
+
+// StorageArchive is the outcome of archiving a repository.
+type StorageArchive struct {
+	// ArchivedAt is the time of the archive, on the database clock.
+	ArchivedAt time.Time `json:"archived_at"`
+	// ArchivedBy is the identity that archived the repository.
+	ArchivedBy string `json:"archived_by"`
+}
+
+// StorageCleanup is the outcome of starting cleanup: reads are closed from
+// ReadClosedAt and purge becomes possible from PurgeAfter.
+type StorageCleanup struct {
+	// ReadClosedAt is when cleanup closed the reads, on the database clock.
+	ReadClosedAt time.Time `json:"read_closed_at"`
+	// ReadClosedBy is the super-admin identity that started cleanup.
+	ReadClosedBy string `json:"read_closed_by"`
+	// PurgeAfter ends the observation period.
+	PurgeAfter time.Time `json:"purge_after"`
+}
+
+// StorageArchivedRepository is an archived repository.
+type StorageArchivedRepository struct {
+	// StorageName is the name of the storage of the repository.
+	StorageName string `json:"storage_name"`
+	// RelativePath is the path of the repository in the storage.
+	RelativePath string `json:"relative_path"`
+	// RepositoryID is the database ID of the repository.
+	RepositoryID int64 `json:"repository_id"`
+	// ArchivedAt is the time of the archive, on the database clock.
+	ArchivedAt time.Time `json:"archived_at"`
+	// ArchivedBy is the identity that archived the repository.
+	ArchivedBy string `json:"archived_by"`
+	// ReadClosedAt is when cleanup closed the reads, zero before cleanup.
+	ReadClosedAt time.Time `json:"read_closed_at"`
+	// ReadClosedBy is the super-admin identity that started cleanup.
+	ReadClosedBy string `json:"read_closed_by"`
+	// PurgeAfter ends the observation period, zero before cleanup starts.
+	PurgeAfter time.Time `json:"purge_after"`
+}
+
+// StoragePurge is the outcome of purging an archived repository.
+type StoragePurge struct {
+	// RepositoryID is the database ID of the purged repository.
+	RepositoryID int64 `json:"repository_id"`
+}
+
+// StorageArchive freezes the repository: it keeps its row, its name and its
+// objects, and no update may change it any more. It remains readable until
+// StorageStartCleanup. It fails with FailedPrecondition when the storage core
+// is off or not authoritative.
+func (r *Repo) StorageArchive(ctx context.Context) (*StorageArchive, error) {
+	resp, err := r.storageCore().ArchiveRepository(ctx, &gitalypb.ArchiveRepositoryRequest{
+		Repository: r.repository(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &StorageArchive{
+		ArchivedAt: protoTime(resp.GetArchivedAt()),
+		ArchivedBy: resp.GetArchivedBy(),
+	}, nil
+}
+
+// StorageStartCleanup is the admin-only first step of deletion: it closes the
+// reads of an archived repository and starts the observation period. It needs
+// the super admin's token.
+func (r *Repo) StorageStartCleanup(ctx context.Context) (*StorageCleanup, error) {
+	resp, err := r.storageCore().StartRepositoryCleanup(ctx, &gitalypb.StartRepositoryCleanupRequest{
+		Repository: r.repository(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &StorageCleanup{
+		ReadClosedAt: protoTime(resp.GetReadClosedAt()),
+		ReadClosedBy: resp.GetReadClosedBy(),
+		PurgeAfter:   protoTime(resp.GetPurgeAfter()),
+	}, nil
+}
+
+// StorageUnarchive takes an archived repository out of the archive: it is
+// writable again. It fails with FailedPrecondition when the storage core is
+// off or not authoritative, and with NotFound when the repository is not
+// archived.
+func (r *Repo) StorageUnarchive(ctx context.Context) error {
+	_, err := r.storageCore().UnarchiveRepository(ctx, &gitalypb.UnarchiveRepositoryRequest{
+		Repository: r.repository(),
+	})
+	return err
+}
+
+// StorageArchived returns the archived repositories of the storage. An empty
+// storage is the client's storage (WithStorage). It fails with
+// FailedPrecondition when the storage core is off or not authoritative.
+func (c *Client) StorageArchived(ctx context.Context, storage string) ([]StorageArchivedRepository, error) {
+	if storage == "" {
+		storage = c.storage
+	}
+	resp, err := gitalypb.NewStorageCoreServiceClient(c.conn).ListArchivedRepositories(ctx, &gitalypb.ListArchivedRepositoriesRequest{
+		StorageName: storage,
+	})
+	if err != nil {
+		return nil, err
+	}
+	repos := make([]StorageArchivedRepository, 0, len(resp.GetRepositories()))
+	for _, r := range resp.GetRepositories() {
+		repos = append(repos, StorageArchivedRepository{
+			StorageName:  r.GetStorageName(),
+			RelativePath: r.GetRelativePath(),
+			RepositoryID: r.GetRepositoryId(),
+			ArchivedAt:   protoTime(r.GetArchivedAt()),
+			ArchivedBy:   r.GetArchivedBy(),
+			ReadClosedAt: protoTime(r.GetReadClosedAt()),
+			ReadClosedBy: r.GetReadClosedBy(),
+			PurgeAfter:   protoTime(r.GetPurgeAfter()),
+		})
+	}
+	return repos, nil
+}
+
+// StoragePurge deletes an archived repository whose cleanup observation has
+// passed: its objects go from the bucket object_expiration later. Only the
+// super admin may call it, with the super admin's token. It fails with
+// FailedPrecondition when the storage core is off or not authoritative, when
+// the caller is not the super admin, and when the observation has not passed
+// yet.
+func (r *Repo) StoragePurge(ctx context.Context) (*StoragePurge, error) {
+	resp, err := r.storageCore().PurgeRepository(ctx, &gitalypb.PurgeRepositoryRequest{
+		Repository: r.repository(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &StoragePurge{RepositoryID: resp.GetRepositoryId()}, nil
 }

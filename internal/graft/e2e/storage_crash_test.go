@@ -25,7 +25,7 @@ import (
 func TestStorageCrashInjection(t *testing.T) {
 	for _, dialect := range coretest.Dialects() {
 		t.Run(string(dialect), func(t *testing.T) {
-			graft, tokens := workerGraft(1)
+			graft, tokens := workerGraft(t, 1)
 			cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 			a := cluster.addNode(t)
 			b := cluster.addNode(t)

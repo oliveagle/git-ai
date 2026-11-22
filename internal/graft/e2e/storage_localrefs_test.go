@@ -62,7 +62,7 @@ type realNode struct {
 func newRealNode(t *testing.T, configure ...func(*config.GraftStorage)) *realNode {
 	t.Helper()
 
-	graft, tokens := workerGraft(1)
+	graft, tokens := workerGraft(t, 1)
 	cfg := testcfg.Build(t)
 	cfg.Auth.Token = sharedTestToken
 	cfg.Graft = unbatched(graft)
@@ -261,7 +261,7 @@ func (n *realNode) repoPath(relPath string) string {
 func (n *realNode) agent(t *testing.T, relPath string) *sdk.Repo {
 	t.Helper()
 
-	conn, err := sdk.Dial(n.ctx, n.clientCfg.SocketPath, sdk.WithStorage(n.cfg.Storages[0].Name), sdk.WithAgentToken(n.tokens[workerName(0)]))
+	conn, err := sdk.Dial(n.ctx, n.clientCfg.SocketPath, sdk.WithStorage(n.cfg.Storages[0].Name), sdk.WithAgentKey(n.tokens[workerName(0)]))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn.Repo(relPath)

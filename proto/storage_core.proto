@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package gitaly;
 
+import "google/protobuf/timestamp.proto";
 import "lint.proto";
 import "shared.proto";
 
@@ -79,6 +80,62 @@ service StorageCoreService {
       scope_level: STORAGE
     };
   }
+
+  // ArchiveRepository freezes a repository: it stays in the database and in
+  // the object storage, remains readable, and no update may change it any
+  // more. A super admin starts deletion with StartRepositoryCleanup after
+  // archive_retention. The server never removes a repository directly:
+  // RemoveRepository is refused. It fails with FailedPrecondition when the
+  // storage core is off or not authoritative, and with NotFound when the
+  // repository is not tracked.
+  rpc ArchiveRepository(ArchiveRepositoryRequest) returns (ArchiveRepositoryResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // UnarchiveRepository takes an archived repository out of the archive: it is
+  // writable again. It fails after StartRepositoryCleanup closed the reads.
+  // It fails with FailedPrecondition when the storage core is off or not
+  // authoritative, and with NotFound when the repository is not archived.
+  rpc UnarchiveRepository(UnarchiveRepositoryRequest) returns (UnarchiveRepositoryResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // ListArchivedRepositories returns the archived repositories of a storage,
+  // with their cleanup state. It fails with FailedPrecondition
+  // when the storage core is off or not authoritative.
+  rpc ListArchivedRepositories(ListArchivedRepositoriesRequest) returns (ListArchivedRepositoriesResponse) {
+    option (op_type) = {
+      op:          ACCESSOR
+      scope_level: STORAGE
+    };
+  }
+
+  // StartRepositoryCleanup is the admin-only first step of deletion: it closes
+  // the reads of an archived repository and starts an observation period of at
+  // least graft.storage.cleanup_observation (seven days). It fails when the
+  // archive retention has not passed or cleanup has started already.
+  rpc StartRepositoryCleanup(StartRepositoryCleanupRequest) returns (StartRepositoryCleanupResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // PurgeRepository deletes an archived repository whose cleanup observation
+  // has passed: its row goes from the database, and the garbage collector
+  // deletes its objects object_expiration later. Only a super admin may call
+  // it, and only after StartRepositoryCleanup closed its reads. It fails with
+  // FailedPrecondition when the storage core is off or not authoritative, when
+  // the caller is not a super admin, and when the observation has not passed
+  // yet.
+  rpc PurgeRepository(PurgeRepositoryRequest) returns (PurgeRepositoryResponse) {
+    option (op_type) = {
+      op: MUTATOR
+    };
+  }
 }
 
 // ImportRepositoryRequest is the request of ImportRepository.
@@ -123,6 +180,16 @@ message GetStorageStateResponse {
   uint64 applied_sequence = 5;
   // node_id is this node's name in the database.
   string node_id = 6;
+  // archived is true when the repository is archived: it is frozen, and only
+  // a super admin may delete it after cleanup.
+  bool archived = 7;
+  // purge_after is the database time from which a super admin may purge the
+  // repository; it is unset until cleanup starts.
+  google.protobuf.Timestamp purge_after = 8;
+  // read_closed is true after cleanup started: reads are refused too.
+  bool read_closed = 9;
+  // read_closed_at is the database time when cleanup closed the reads.
+  google.protobuf.Timestamp read_closed_at = 10;
 }
 
 // VerifyRepositoryRequest is the request of VerifyRepository.
@@ -242,4 +309,96 @@ message CollectRemovedRepositoriesResponse {
   // database's allocator that have objects in the bucket (a database restored
   // from an older backup). They are never touched.
   uint32 ids_ahead_of_allocator = 7;
+}
+
+// ArchiveRepositoryRequest is the request of ArchiveRepository.
+message ArchiveRepositoryRequest {
+  // repository is the repository to archive.
+  Repository repository = 1 [(target_repository)=true];
+}
+
+// ArchiveRepositoryResponse is the response of ArchiveRepository.
+message ArchiveRepositoryResponse {
+  // archived_at is the database time of the archive.
+  google.protobuf.Timestamp archived_at = 1;
+  // archived_by is the identity that archived the repository.
+  string archived_by = 2;
+  // purge_after is unset until cleanup starts.
+  google.protobuf.Timestamp purge_after = 3;
+}
+
+// StartRepositoryCleanupRequest is the request of StartRepositoryCleanup.
+message StartRepositoryCleanupRequest {
+  // repository is the archived repository whose reads are to be closed.
+  Repository repository = 1 [(target_repository)=true];
+}
+
+// StartRepositoryCleanupResponse is the response of StartRepositoryCleanup.
+message StartRepositoryCleanupResponse {
+  // read_closed_at is the database time when the reads were closed.
+  google.protobuf.Timestamp read_closed_at = 1;
+  // read_closed_by is the super-admin identity that started the cleanup.
+  string read_closed_by = 2;
+  // purge_after is the database time from which a super admin may purge the
+  // repository; it ends the observation period.
+  google.protobuf.Timestamp purge_after = 3;
+}
+
+// UnarchiveRepositoryRequest is the request of UnarchiveRepository.
+message UnarchiveRepositoryRequest {
+  // repository is the archived repository to take out of the archive.
+  Repository repository = 1 [(target_repository)=true];
+}
+
+// UnarchiveRepositoryResponse is the response of UnarchiveRepository.
+message UnarchiveRepositoryResponse {
+}
+
+// ListArchivedRepositoriesRequest is the request of
+// ListArchivedRepositories.
+message ListArchivedRepositoriesRequest {
+  // storage_name is the storage whose archived repositories are listed. When
+  // it is empty, the archived repositories of every storage are listed.
+  string storage_name = 1 [(storage)=true];
+}
+
+// ArchivedRepository is an archived repository.
+message ArchivedRepository {
+  // storage_name is the name of the storage of the repository.
+  string storage_name = 1;
+  // relative_path is the path of the repository in the storage.
+  string relative_path = 2;
+  // repository_id is the database ID of the repository.
+  int64 repository_id = 3;
+  // archived_at is the database time of the archive.
+  google.protobuf.Timestamp archived_at = 4;
+  // archived_by is the identity that archived the repository.
+  string archived_by = 5;
+  // read_closed_at is the database time when cleanup closed the reads; unset
+  // while the repository is still readable.
+  google.protobuf.Timestamp read_closed_at = 6;
+  // read_closed_by is the super-admin identity that started the cleanup.
+  string read_closed_by = 7;
+  // purge_after is the database time from which a super admin may purge the
+  // repository; unset until cleanup starts.
+  google.protobuf.Timestamp purge_after = 8;
+}
+
+// ListArchivedRepositoriesResponse is the response of
+// ListArchivedRepositories.
+message ListArchivedRepositoriesResponse {
+  // repositories are the archived repositories, ascending by repository ID.
+  repeated ArchivedRepository repositories = 1;
+}
+
+// PurgeRepositoryRequest is the request of PurgeRepository.
+message PurgeRepositoryRequest {
+  // repository is the archived repository to purge.
+  Repository repository = 1 [(target_repository)=true];
+}
+
+// PurgeRepositoryResponse is the response of PurgeRepository.
+message PurgeRepositoryResponse {
+  // repository_id is the database ID of the purged repository.
+  int64 repository_id = 1;
 }

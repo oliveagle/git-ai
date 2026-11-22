@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	gitalyauth "github.com/feder-cr/git-ai/auth"
 	"github.com/feder-cr/git-ai/internal/featureflag"
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/git/localrepo"
@@ -26,6 +27,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gitops"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/voter"
+	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/log"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
@@ -120,6 +122,11 @@ func (c *storageCluster) addNode(t *testing.T) storageNode {
 	cfg.Auth.Token = sharedTestToken
 	cfg.Graft = c.graft
 	cfg.Graft.Standalone = true
+	// The archive and purge tests delete a repository the safe way: it is
+	// archived and purged at once. A real deployment keeps it frozen for
+	// months instead (doc/graft/PLAN13.md).
+	cfg.Graft.Storage.ArchiveRetention = "1ns"
+	cfg.Graft.AdminToken = adminTestToken
 	testcfg.BuildGitalySSH(t, cfg)
 	testcfg.BuildGitalyHooks(t, cfg)
 
@@ -175,10 +182,10 @@ func (n storageNode) handle(t *testing.T, relPath string, auth sdk.DialOption) *
 	return conn.Repo(relPath)
 }
 
-// agent returns a handle whose requests carry an agent token.
+// agent returns a handle whose requests carry an agent key.
 func (n storageNode) agent(t *testing.T, relPath, token string) *sdk.Repo {
 	t.Helper()
-	return n.handle(t, relPath, sdk.WithAgentToken(token))
+	return n.handle(t, relPath, sdk.WithAgentKey(token))
 }
 
 // operator returns a handle whose requests carry the shared token, as the
@@ -186,6 +193,38 @@ func (n storageNode) agent(t *testing.T, relPath, token string) *sdk.Repo {
 func (n storageNode) operator(t *testing.T, relPath string) *sdk.Repo {
 	t.Helper()
 	return n.handle(t, relPath, sdk.WithToken(sharedTestToken))
+}
+
+// purge archives the repository, closes its reads, and purges it after the
+// test moves the observation deadline into the past. This follows the only
+// deletion path (doc/graft/PLAN13.md). The archive retention is a nanosecond;
+// the seven-day cleanup observation is not shortened.
+func (n storageNode) purge(t *testing.T, relPath string) {
+	t.Helper()
+
+	conn, err := client.New(n.ctx, n.cfg.SocketPath, client.WithGrpcOptions([]grpc.DialOption{
+		client.UnaryInterceptor(),
+		client.StreamInterceptor(),
+		grpc.WithPerRPCCredentials(gitalyauth.RPCCredentialsV2(adminTestToken)),
+	}))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	storageCore := gitalypb.NewStorageCoreServiceClient(conn)
+	repo := n.repository(relPath)
+	_, err = storageCore.ArchiveRepository(n.setupCtx, &gitalypb.ArchiveRepositoryRequest{Repository: repo})
+	require.NoError(t, err)
+	_, err = storageCore.StartRepositoryCleanup(n.setupCtx, &gitalypb.StartRepositoryCleanupRequest{Repository: repo})
+	require.NoError(t, err)
+	key := corestore.KeyOf(repo)
+	when := time.Now().UTC().Add(-time.Minute)
+	if n.core.Meta.(*sqlstore.Store).Dialect() == sqlstore.SQLite {
+		n.exec(t, "UPDATE graft_repositories SET purge_after = ? WHERE storage = ? AND relative_path = ?", when.Format(time.RFC3339Nano), key.Storage, key.RelativePath)
+	} else {
+		n.exec(t, "UPDATE graft_repositories SET purge_after = ? WHERE storage = ? AND relative_path = ?", when, key.Storage, key.RelativePath)
+	}
+	_, err = storageCore.PurgeRepository(n.setupCtx, &gitalypb.PurgeRepositoryRequest{Repository: repo})
+	require.NoError(t, err)
 }
 
 // conn returns a raw connection with the shared token, for RPCs that the SDK

@@ -23,7 +23,7 @@ func TestStorageLandIdentity(t *testing.T) {
 			t.Parallel()
 
 			forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-				graft, tokens := workerGraft(2)
+				graft, tokens := workerGraft(t, 2)
 				if !batched {
 					graft = unbatched(graft)
 				}

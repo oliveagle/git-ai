@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,9 +15,11 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/service/setup"
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
+	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
+	"github.com/feder-cr/git-ai/proto/go/gitalypb"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
@@ -26,6 +30,7 @@ func TestCLIStorageAgainstServer(t *testing.T) {
 	ctx := testhelper.Context(t)
 	cfg := testcfg.Build(t)
 	cfg.Graft.Standalone = true
+	testcfg.RequireCredential(&cfg)
 	core := coretest.Open(t, coretest.Options{Mode: corestore.ModeShadow})
 	addr := testserver.RunGitalyServer(t, cfg, setup.RegisterAll, testserver.WithGraftStorage(core))
 
@@ -107,6 +112,7 @@ func TestCLIStorageMaintenanceAgainstServer(t *testing.T) {
 	ctx := testhelper.Context(t)
 	cfg := testcfg.Build(t)
 	cfg.Graft.Standalone = true
+	testcfg.RequireCredential(&cfg)
 	core := coretest.Open(t, coretest.Options{Mode: corestore.ModeAuthoritative})
 	addr := testserver.RunGitalyServer(t, cfg, setup.RegisterAll, testserver.WithGraftStorage(core))
 
@@ -267,8 +273,92 @@ func TestStorageVerifyJSONKeepsNonUTF8Names(t *testing.T) {
 	require.Equal(t, "2222222222222222222222222222222222222222", verify.Divergences[1].DatabaseTarget)
 }
 
+// setPurgeAfterForCLI moves the cleanup deadline into the past, as waiting for
+// the seven-day observation period does.
+func setPurgeAfterForCLI(t *testing.T, core *corestore.Core, repo *gitalypb.Repository, when time.Time) error {
+	t.Helper()
+	store, ok := core.Meta.(*sqlstore.Store)
+	require.True(t, ok)
+	key := corestore.KeyOf(repo)
+	query, args := "UPDATE graft_repositories SET purge_after = ? WHERE storage = ? AND relative_path = ?", []any{when.UTC().Format(time.RFC3339Nano), key.Storage, key.RelativePath}
+	if store.Dialect() == sqlstore.Postgres {
+		query, args = "UPDATE graft_repositories SET purge_after = $1 WHERE storage = $2 AND relative_path = $3", []any{when.UTC(), key.Storage, key.RelativePath}
+	}
+	_, err := store.DB().ExecContext(context.Background(), query, args...)
+	return err
+}
+
 func TestStorageTargetText(t *testing.T) {
 	require.Equal(t, "absent", storageTargetText(""))
 	require.Equal(t, "ref:refs/heads/main", storageTargetText("ref:refs/heads/main"))
 	require.Equal(t, "1111111111111111111111111111111111111111", storageTargetText("1111111111111111111111111111111111111111"))
+}
+
+// TestCLIStorageArchiveLifecycle drives the archive of a repository through the
+// CLI: archive, state, archived, unarchive, and the purge of a super admin. A
+// repository is never removed, and the shared token may not purge one
+// (doc/graft/PLAN13.md).
+func TestCLIStorageArchiveLifecycle(t *testing.T) {
+	ctx := testhelper.Context(t)
+	cfg := testcfg.Build(t)
+	cfg.Graft.Standalone = true
+	testcfg.RequireCredential(&cfg)
+	cfg.Graft.AdminToken = "admin-secret"
+	// The test purges at once; a real deployment keeps the archive for months.
+	cfg.Graft.Storage.ArchiveRetention = "1ns"
+	core := coretest.Open(t, coretest.Options{Mode: corestore.ModeAuthoritative})
+	addr := testserver.RunGitalyServer(t, cfg, setup.RegisterAll, testserver.WithGraftStorage(core))
+
+	repo, repoPath := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{SkipCreationViaService: true})
+	gittest.WriteCommit(t, cfg, repoPath, gittest.WithBranch("main"))
+	server := []string{"-address", addr, "-storage", repo.GetStorageName()}
+	target := append(append([]string{}, server...), "-repo", repo.GetRelativePath())
+	cli := func(args ...string) (int, string, string) {
+		return runCLI(t, append(append([]string{"storage"}, args...), target...)...)
+	}
+
+	code, _, stderr := cli("import")
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := cli("archive")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "archived by shared at ")
+	require.Contains(t, stdout, "reads remain open")
+
+	code, stdout, stderr = cli("state")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "archived\ttrue\n")
+	require.Contains(t, stdout, "reads\topen\n")
+
+	code, stdout, stderr = runCLI(t, append([]string{"storage", "archived"}, server...)...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, repo.GetRelativePath())
+
+	// Cleanup and purge require the explicit super-admin credential.
+	code, _, stderr = cli("purge")
+	require.Equal(t, exitUsage, code)
+	require.Contains(t, stderr, "GRAFT_ADMIN_TOKEN")
+	args := append([]string{"storage", "cleanup-start"}, append(target, "-admin-token", "admin-secret")...)
+	code, stdout, stderr = runCLI(t, args...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "reads closed by admin")
+	require.Contains(t, stdout, "may be purged from ")
+	require.NoError(t, setPurgeAfterForCLI(t, core, repo, time.Now().UTC().Add(-time.Minute)))
+
+	// Cleanup is irreversible: the shared token cannot reopen the repository.
+	code, _, stderr = cli("unarchive")
+	require.Equal(t, exitError, code)
+	require.Contains(t, stderr, "cleanup of the repository has started")
+	code, stdout, _ = cli("state")
+	require.Contains(t, stdout, "read_closed_at\t")
+
+	time.Sleep(2 * time.Millisecond)
+	code, stdout, stderr = runCLI(t, append(append([]string{"storage", "purge"}, target...), "-admin-token", "admin-secret")...)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "purged: repository ID ")
+
+	code, stdout, stderr = cli("state")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "tracked\tfalse\n")
+	require.NoDirExists(t, repoPath)
 }

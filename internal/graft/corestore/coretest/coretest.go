@@ -141,8 +141,9 @@ type Options struct {
 	// GCGrace and GCMargin are the garbage collection times; zero means the
 	// production defaults (1h and 5m). A test of the writers' deadline sets them
 	// short.
-	GCGrace  time.Duration
-	GCMargin time.Duration
+	GCGrace          time.Duration
+	GCMargin         time.Duration
+	ObjectExpiration time.Duration
 	// ShadowTimeout is the shadow budget of a transaction; zero means the
 	// production default (5s).
 	ShadowTimeout time.Duration
@@ -170,6 +171,11 @@ func Open(tb testing.TB, opts Options) *corestore.Core {
 	if opts.GCGrace == 0 {
 		opts.GCGrace = time.Hour
 	}
+	if opts.ObjectExpiration == 0 {
+		// Most tests already age tombstones past gc_grace; keep the same clock
+		// unless a test asks for the production-style long expiration.
+		opts.ObjectExpiration = opts.GCGrace
+	}
 	if opts.GCMargin == 0 {
 		opts.GCMargin = 5 * time.Minute
 	}
@@ -186,14 +192,15 @@ func Open(tb testing.TB, opts Options) *corestore.Core {
 	require.NoError(tb, err)
 
 	core := &corestore.Core{
-		Mode:          opts.Mode,
-		NodeID:        opts.NodeID,
-		Meta:          meta,
-		Blobs:         blobs,
-		SyncTimeout:   10 * time.Second,
-		ShadowTimeout: opts.ShadowTimeout,
-		GCGrace:       opts.GCGrace,
-		GCMargin:      opts.GCMargin,
+		Mode:             opts.Mode,
+		NodeID:           opts.NodeID,
+		Meta:             meta,
+		Blobs:            blobs,
+		SyncTimeout:      10 * time.Second,
+		ShadowTimeout:    opts.ShadowTimeout,
+		GCGrace:          opts.GCGrace,
+		GCMargin:         opts.GCMargin,
+		ObjectExpiration: opts.ObjectExpiration,
 	}
 	tb.Cleanup(func() { _ = core.Close() })
 

@@ -34,6 +34,14 @@ func (s *server) GetStorageState(ctx context.Context, req *gitalypb.GetStorageSt
 		resp.Tracked = true
 		resp.RepositoryId = record.ID
 		resp.HeadSequence = record.HeadSeq
+		if record.Archived {
+			resp.Archived = true
+			resp.ReadClosed = record.ReadClosed
+			if record.ReadClosed {
+				resp.ReadClosedAt = timestampOrNil(record.ReadClosedAt)
+			}
+			resp.PurgeAfter = timestampOrNil(record.PurgeAfter)
+		}
 	case errors.Is(err, corestore.ErrRepositoryNotFound):
 		// Untracked: there is no head and no watermark of this repository.
 		return resp, nil

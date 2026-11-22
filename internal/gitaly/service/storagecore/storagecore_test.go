@@ -25,7 +25,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gitops"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	reviewstore "github.com/feder-cr/git-ai/internal/graft/review/store"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
@@ -50,6 +49,13 @@ type harness struct {
 // server starts.
 func setup(t *testing.T, mode corestore.Mode, dialect sqlstore.Dialect, adjust ...func(*corestore.Core)) *harness {
 	t.Helper()
+	return setupWithConfig(t, mode, dialect, nil, adjust...)
+}
+
+// setupWithConfig is setup with configure applied to the configuration before
+// the server starts, for tests that change the server's settings.
+func setupWithConfig(t *testing.T, mode corestore.Mode, dialect sqlstore.Dialect, configure func(*config.Cfg), adjust ...func(*corestore.Core)) *harness {
+	t.Helper()
 
 	ctx := testhelper.Context(t)
 	cfg := testcfg.Build(t)
@@ -69,6 +75,14 @@ func setup(t *testing.T, mode corestore.Mode, dialect sqlstore.Dialect, adjust .
 	if mode == corestore.ModeAuthoritative {
 		cfg.Graft.Standalone = true
 	}
+	if mode != corestore.ModeOff {
+		// A Graft server refuses anonymous callers: the storage core is served
+		// only with a credential (doc/graft/PLAN14.md).
+		testcfg.RequireCredential(&cfg)
+	}
+	if configure != nil {
+		configure(&cfg)
+	}
 	// The server's own reference writes (the review roots that a checkpoint
 	// backfills) go through the reference-transaction hook and its HookService,
 	// as in production: without the hook binary git would skip it and write
@@ -80,9 +94,7 @@ func setup(t *testing.T, mode corestore.Mode, dialect sqlstore.Dialect, adjust .
 		gitalypb.RegisterHookServiceServer(srv, hook.NewServer(deps))
 	}, testserver.WithGraftStorage(core))
 
-	conn, err := client.New(ctx, cfg.SocketPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { testhelper.MustClose(t, conn) })
+	conn := gittest.DialService(t, ctx, cfg)
 
 	return &harness{
 		t:        t,

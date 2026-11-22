@@ -52,7 +52,7 @@ func (n storageNode) longAgo() any {
 // too.
 func TestStorageGCAcrossNodes(t *testing.T) {
 	forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-		graft, tokens := workerGraft(1)
+		graft, tokens := workerGraft(t, 1)
 		cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 		a := cluster.addNode(t)
 		b := cluster.addNode(t)
@@ -134,9 +134,8 @@ func TestStorageGCAcrossNodes(t *testing.T) {
 		require.Equal(t, uint32(1), res.OrphansDeleted)
 		require.False(t, bucketPacks(t, cluster.bucketURL)[orphanKey])
 
-		// A removed repository's objects go once its tombstone is gc_grace old.
-		_, err = gitalypb.NewRepositoryServiceClient(a.conn(t)).RemoveRepository(a.setupCtx, &gitalypb.RemoveRepositoryRequest{Repository: a.repository(rel)})
-		require.NoError(t, err)
+		// A purged repository's objects go once its tombstone is gc_grace old.
+		a.purge(t, rel)
 		client, err := sdk.Dial(a.ctx, a.cfg.SocketPath, sdk.WithStorage(a.cfg.Storages[0].Name), sdk.WithToken(sharedTestToken))
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -163,7 +162,7 @@ func TestStorageGCAcrossNodes(t *testing.T) {
 // nothing: a node that joins afterwards still has it.
 func TestStorageCheckpointBackfillsReviewRoots(t *testing.T) {
 	forEachStorageDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
-		graft, tokens := workerGraft(1)
+		graft, tokens := workerGraft(t, 1)
 		cluster := newStorageCluster(t, dialect, corestore.ModeAuthoritative, unbatched(graft))
 		a := cluster.addNode(t)
 

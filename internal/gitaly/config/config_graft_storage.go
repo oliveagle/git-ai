@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -68,6 +69,24 @@ type GraftStorage struct {
 	// before it must renew it (Go duration). Empty means
 	// DefaultGraftStorageLeaseTTL.
 	LeaseTTL string `json:"lease_ttl" toml:"lease_ttl,omitempty"`
+	// ArchiveRetention is how long an archived repository is kept readable,
+	// frozen, before a super admin may start its cleanup. It is a Go duration,
+	// or a number of days with the "d" suffix ("180d"). Empty means
+	// DefaultGraftStorageArchiveRetention (180 days). Cleanup is the only way
+	// to delete a repository (doc/graft/PLAN13.md).
+	ArchiveRetention string `json:"archive_retention" toml:"archive_retention,omitempty"`
+	// CleanupObservation is how long a repository is kept with its reads
+	// closed before a super admin may purge it. It is a Go duration, or a
+	// number of days with the "d" suffix ("14d"). Empty means
+	// DefaultGraftStorageCleanupObservation (7 days). Smaller values are
+	// refused (doc/graft/PLAN13.md).
+	CleanupObservation string `json:"cleanup_observation" toml:"cleanup_observation,omitempty"`
+	// ObjectExpiration is how long the objects of a purged repository are kept
+	// before garbage collection deletes them. This is the time available to an
+	// external OSS lifecycle rule that first moves them to a low-frequency
+	// storage class. It is a Go duration, or a number of days with the "d"
+	// suffix ("30d"). Empty means DefaultGraftStorageObjectExpiration.
+	ObjectExpiration string `json:"object_expiration" toml:"object_expiration,omitempty"`
 }
 
 // Values of GraftStorage.Checkpoints and GraftStorage.GC.
@@ -151,6 +170,16 @@ func (s GraftStorage) validateMaintenance() error {
 		}
 	}
 
+	if _, err := s.ArchiveRetentionOrDefault(); err != nil {
+		return err
+	}
+	if _, err := s.CleanupObservationOrDefault(); err != nil {
+		return err
+	}
+	if _, err := s.ObjectExpirationOrDefault(); err != nil {
+		return err
+	}
+
 	if _, err := s.MaintenanceIntervalOrDefault(); err != nil {
 		return err
 	}
@@ -164,6 +193,18 @@ func (s GraftStorage) validateMaintenance() error {
 }
 
 const (
+	// DefaultGraftStorageArchiveRetention is the default
+	// GraftStorage.ArchiveRetention: six months, the time an archived
+	// repository is kept before a super admin may purge it.
+	DefaultGraftStorageArchiveRetention = 180 * 24 * time.Hour
+	// DefaultGraftStorageCleanupObservation is the default
+	// GraftStorage.CleanupObservation: the minimum time a repository is kept
+	// read-closed before a super admin may purge it.
+	DefaultGraftStorageCleanupObservation = 7 * 24 * time.Hour
+	// DefaultGraftStorageObjectExpiration is the default
+	// GraftStorage.ObjectExpiration: the retention of a purged repository's
+	// objects before the storage core garbage-collects them.
+	DefaultGraftStorageObjectExpiration = 30 * 24 * time.Hour
 	// DefaultGraftStorageSyncTimeout is the default GraftStorage.SyncTimeout.
 	DefaultGraftStorageSyncTimeout = 10 * time.Second
 	// DefaultGraftStorageShadowTimeout is the default GraftStorage.ShadowTimeout.
@@ -185,6 +226,66 @@ func (s GraftStorage) SyncTimeoutOrDefault() (time.Duration, error) {
 // ShadowTimeoutOrDefault parses ShadowTimeout, applying the default.
 func (s GraftStorage) ShadowTimeoutOrDefault() (time.Duration, error) {
 	return positiveDurationOrDefault("shadow_timeout", s.ShadowTimeout, DefaultGraftStorageShadowTimeout)
+}
+
+// ArchiveRetentionOrDefault parses ArchiveRetention, applying the default.
+func (s GraftStorage) ArchiveRetentionOrDefault() (time.Duration, error) {
+	retention, err := durationOrDays("archive_retention", s.ArchiveRetention)
+	if err != nil {
+		return 0, err
+	}
+	if retention == 0 {
+		return DefaultGraftStorageArchiveRetention, nil
+	}
+	return retention, nil
+}
+
+// CleanupObservationOrDefault parses CleanupObservation and refuses a value
+// below its seven-day floor.
+func (s GraftStorage) CleanupObservationOrDefault() (time.Duration, error) {
+	observation, err := durationOrDays("cleanup_observation", s.CleanupObservation)
+	if err != nil {
+		return 0, err
+	}
+	if observation == 0 {
+		observation = DefaultGraftStorageCleanupObservation
+	}
+	if observation < DefaultGraftStorageCleanupObservation {
+		return 0, fmt.Errorf("graft storage: cleanup_observation %s is below the required %s", observation, DefaultGraftStorageCleanupObservation)
+	}
+	return observation, nil
+}
+
+// ObjectExpirationOrDefault parses ObjectExpiration, applying the default.
+func (s GraftStorage) ObjectExpirationOrDefault() (time.Duration, error) {
+	expiration, err := durationOrDays("object_expiration", s.ObjectExpiration)
+	if err != nil {
+		return 0, err
+	}
+	if expiration == 0 {
+		return DefaultGraftStorageObjectExpiration, nil
+	}
+	return expiration, nil
+}
+
+// durationOrDays parses a positive Go duration or positive number of days. A
+// zero return means that value was empty.
+func durationOrDays(name, value string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	if days, ok := strings.CutSuffix(value, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("graft storage: invalid %s %q (want a positive number of days or a positive Go duration)", name, value)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("graft storage: invalid %s %q (want a positive number of days or a positive Go duration)", name, value)
+	}
+	return d, nil
 }
 
 // GCGraceOrDefault parses GCGrace, applying the default.

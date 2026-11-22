@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"time"
 	"unicode/utf8"
 
 	"github.com/feder-cr/git-ai/internal/graft/workspace"
@@ -15,10 +16,10 @@ import (
 )
 
 // storageSynopsis is the command line of graft storage.
-const storageSynopsis = "usage: graft storage import|state|verify|checkpoint|gc [-repo R] [--connectivity] [--dry-run] [--removed] [--json]"
+const storageSynopsis = "usage: graft storage import|state|verify|checkpoint|archive|unarchive|archived|cleanup-start|purge|gc [-repo R] [--connectivity] [--dry-run] [--removed] [--json]"
 
 // storageUsage lists the subcommands of graft storage.
-const storageUsage = "storage requires a subcommand: import, state, verify, checkpoint or gc (" + storageSynopsis + ")"
+const storageUsage = "storage requires a subcommand: import, state, verify, checkpoint, archive, unarchive, archived, cleanup-start, purge or gc (" + storageSynopsis + ")"
 
 // storageFlags holds the flags of graft storage. Each subcommand reads only
 // some of them, as its help text says, and rejects the others (checkUsed).
@@ -63,6 +64,9 @@ func cmdStorage(ctx context.Context, out io.Writer, o *options, f *storageFlags,
 			return err
 		}
 	}
+	if o.adminToken != "" && !slices.Contains([]string{"cleanup-start", "purge"}, sub) {
+		return usagef("storage %s does not take --admin-token: -admin-token is only for cleanup-start and purge", sub)
+	}
 	switch sub {
 	case "import":
 		return storageImport(ctx, out, o, f, rest)
@@ -72,6 +76,16 @@ func cmdStorage(ctx context.Context, out io.Writer, o *options, f *storageFlags,
 		return storageVerify(ctx, out, o, f, rest)
 	case "checkpoint":
 		return storageCheckpoint(ctx, out, o, f, rest)
+	case "archive":
+		return storageArchive(ctx, out, o, f, rest)
+	case "unarchive":
+		return storageUnarchive(ctx, out, o, f, rest)
+	case "archived":
+		return storageArchived(ctx, out, o, f, rest)
+	case "cleanup-start":
+		return storageCleanupStart(ctx, out, o, f, rest)
+	case "purge":
+		return storagePurge(ctx, out, o, f, rest)
 	case "gc":
 		return storageGC(ctx, out, o, f, rest)
 	}
@@ -81,11 +95,16 @@ func cmdStorage(ctx context.Context, out io.Writer, o *options, f *storageFlags,
 // storageSubcommandFlags are the subcommand-specific flags each subcommand
 // reads.
 var storageSubcommandFlags = map[string][]string{
-	"import":     nil,
-	"state":      nil,
-	"verify":     {"connectivity"},
-	"checkpoint": nil,
-	"gc":         {"dry-run", "removed"},
+	"import":        nil,
+	"state":         nil,
+	"verify":        {"connectivity"},
+	"checkpoint":    nil,
+	"archive":       nil,
+	"unarchive":     nil,
+	"archived":      nil,
+	"cleanup-start": nil,
+	"purge":         nil,
+	"gc":            {"dry-run", "removed"},
 }
 
 // checkUsed rejects a subcommand-specific flag that the subcommand sub does not
@@ -205,23 +224,19 @@ func openStorageClient(ctx context.Context, o *options) (*sdk.Client, error) {
 	var t target
 	if root, err := workspaceRoot(o); err == nil {
 		if meta, err := workspace.ReadMeta(root); err == nil {
-			t = target{Address: pick(o.address, meta.Address), Token: o.token, Storage: pick(o.storage, meta.Storage), Repo: meta.Repo, User: o.user}
+			t = target{Address: pick(o.address, meta.Address), Token: o.token, AgentKey: o.agentKey, Storage: pick(o.storage, meta.Storage), Repo: meta.Repo, User: o.user}
 		}
 	}
 	if t.Address == "" {
 		if o.address == "" {
 			return nil, usagef("storage gc --removed needs a workspace or -address")
 		}
-		t = target{Address: o.address, Token: o.token, Storage: o.storage, User: o.user}
+		t = target{Address: o.address, Token: o.token, AgentKey: o.agentKey, Storage: o.storage, User: o.user}
 	}
 
 	// A storage-wide command names no repository, which the workspace backend
 	// requires: the client is dialed with the same options.
-	opts := []sdk.DialOption{sdk.WithStorage(pick(t.Storage, defaultStorage))}
-	if t.Token != "" {
-		opts = append(opts, sdk.WithToken(t.Token))
-	}
-	client, err := sdk.Dial(ctx, t.Address, opts...)
+	client, err := sdk.Dial(ctx, t.Address, dialOptions(t)...)
 	if err != nil {
 		return nil, err
 	}
@@ -277,6 +292,15 @@ func storageState(ctx context.Context, out io.Writer, o *options, f *storageFlag
 	fmt.Fprintf(out, "head_sequence\t%d\n", st.HeadSequence)
 	fmt.Fprintf(out, "applied_sequence\t%d\n", st.AppliedSequence)
 	fmt.Fprintf(out, "node_id\t%s\n", displayText(st.NodeID))
+	fmt.Fprintf(out, "archived\t%t\n", st.Archived)
+	if st.Archived {
+		if st.ReadClosed {
+			fmt.Fprintf(out, "read_closed_at\t%s\n", st.ReadClosedAt.UTC().Format(time.RFC3339))
+			fmt.Fprintf(out, "purge_after\t%s\n", st.PurgeAfter.UTC().Format(time.RFC3339))
+		} else {
+			fmt.Fprintln(out, "reads\topen")
+		}
+	}
 	return nil
 }
 
@@ -324,6 +348,147 @@ func storageVerify(ctx context.Context, out io.Writer, o *options, f *storageFla
 		return errors.New("storage verify: connectivity check failed")
 	}
 	return nil
+}
+
+// storageArchive freezes the repository: it is kept, frozen and readable, and
+// no update may change it any more. The server never removes a repository, so
+// this is the way to retire one.
+func storageArchive(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("storage archive takes flags only: archive [-repo R] [--json]")
+	}
+	repo, err := openStorage(ctx, o, f)
+	if err != nil {
+		return err
+	}
+	res, err := repo.StorageArchive(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, res)
+	}
+	fmt.Fprintf(out, "archived by %s at %s: writes are refused and reads remain open until cleanup starts\n",
+		displayText(res.ArchivedBy), res.ArchivedAt.UTC().Format(time.RFC3339))
+	return nil
+}
+
+// storageCleanupStart closes the reads of an archived repository and starts
+// its observation period. It is the admin-only first step of deletion.
+func storageCleanupStart(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("storage cleanup-start takes flags only: cleanup-start [-repo R] [--json]")
+	}
+	repo, err := openStorageAdmin(ctx, o, f)
+	if err != nil {
+		return err
+	}
+	res, err := repo.StorageStartCleanup(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, res)
+	}
+	fmt.Fprintf(out, "reads closed by %s at %s: it may be purged from %s\n",
+		displayText(res.ReadClosedBy), res.ReadClosedAt.UTC().Format(time.RFC3339), res.PurgeAfter.UTC().Format(time.RFC3339))
+	return nil
+}
+
+// storageUnarchive takes an archived repository out of the archive: it is
+// writable again.
+func storageUnarchive(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("storage unarchive takes flags only: unarchive [-repo R] [--json]")
+	}
+	repo, err := openStorage(ctx, o, f)
+	if err != nil {
+		return err
+	}
+	if err := repo.StorageUnarchive(ctx); err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, struct{}{})
+	}
+	fmt.Fprintln(out, "unarchived: the repository is writable again")
+	return nil
+}
+
+// storageArchived lists the archived repositories of the storage: the ones
+// that are frozen and waiting for the super admin to purge them.
+func storageArchived(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("storage archived takes flags only: archived [-storage S] [--json]")
+	}
+	if f.repo != "" {
+		return usagef("storage archived lists the archived repositories of a storage and takes no -repo")
+	}
+	client, err := openStorageClient(ctx, o)
+	if err != nil {
+		return err
+	}
+	repos, err := client.StorageArchived(ctx, "")
+	if err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, repos)
+	}
+	for _, r := range repos {
+		state := "reads open"
+		if !r.ReadClosedAt.IsZero() {
+			state = "read closed; purgeable from " + r.PurgeAfter.UTC().Format(time.RFC3339)
+		}
+		fmt.Fprintf(out, "%s\tarchived at %s by %s\t%s\n",
+			displayText(r.StorageName+":"+r.RelativePath),
+			r.ArchivedAt.UTC().Format(time.RFC3339), displayText(r.ArchivedBy), state)
+	}
+	return nil
+}
+
+// storagePurge deletes an archived repository whose cleanup observation has
+// passed. It needs the explicit super-admin token: it is the one operation
+// that destroys a repository.
+func storagePurge(ctx context.Context, out io.Writer, o *options, f *storageFlags, args []string) error {
+	if len(args) != 0 {
+		return usagef("storage purge takes flags only: purge [-repo R] [--json]")
+	}
+	repo, err := openStorageAdmin(ctx, o, f)
+	if err != nil {
+		return err
+	}
+	res, err := repo.StoragePurge(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	if o.jsonOut {
+		return writeStorageJSON(out, res)
+	}
+	fmt.Fprintf(out, "purged: repository ID %d; the garbage collector deletes its objects after object_expiration\n", res.RepositoryID)
+	return nil
+}
+
+// openStorageAdmin returns a repository handle that authenticates only with the
+// explicit super-admin token. An agent key must never sign cleanup or purge.
+func openStorageAdmin(ctx context.Context, o *options, f *storageFlags) (*sdk.Repo, error) {
+	if o.adminToken == "" {
+		return nil, usagef("storage cleanup and purge need -admin-token or GRAFT_ADMIN_TOKEN")
+	}
+	t, _, err := reviewTarget(o, &reviewFlags{repo: f.repo})
+	if err != nil {
+		return nil, err
+	}
+	t.AdminToken = o.adminToken
+	backend, err := backendFactory(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	sb, ok := backend.(*sdkBackend)
+	if !ok {
+		return nil, errors.New("storage: the backend cannot reach the storage core")
+	}
+	return sb.repo, nil
 }
 
 // openStorage returns the repository handle of a storage command. The server

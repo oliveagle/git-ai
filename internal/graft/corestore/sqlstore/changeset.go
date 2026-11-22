@@ -103,6 +103,12 @@ func (s *Store) commitChangeset(ctx context.Context, tx *sql.Tx, repo *repoState
 		return corestore.CommitResult{}, err
 	}
 
+	// An archived repository is frozen: the row is locked here, so the check
+	// and the changeset are one decision (doc/graft/PLAN13.md, ARCHIVE RULE).
+	if repo.archived {
+		return corestore.CommitResult{}, corestore.ErrRepositoryArchived
+	}
+
 	names := make([]string, len(in.Updates))
 	for i, u := range in.Updates {
 		names[i] = u.Name

@@ -101,6 +101,11 @@ type Core struct {
 	// runs in shadow mode too.
 	GCGrace  time.Duration
 	GCMargin time.Duration
+	// ObjectExpiration is the minimum age of a removed repository's tombstone
+	// before its bucket prefix is deleted. It leaves time for an external OSS
+	// lifecycle rule to move those objects to a lower-cost storage class before
+	// their final deletion.
+	ObjectExpiration time.Duration
 	// RefAdmission orders the local reference writers of the node and
 	// RefDurability defers the durability of their writes to a durable step
 	// (doc/graft/PLAN7.md, LOCAL REFERENCE WRITES RULE). Both are set in

@@ -42,6 +42,10 @@ func Open(ctx context.Context, cfg config.GraftStorage) (*corestore.Core, error)
 	if err != nil {
 		return nil, err
 	}
+	objectExpiration, err := cfg.ObjectExpirationOrDefault()
+	if err != nil {
+		return nil, err
+	}
 
 	nodeID := cfg.NodeID
 	if nodeID == "" {
@@ -62,13 +66,14 @@ func Open(ctx context.Context, cfg config.GraftStorage) (*corestore.Core, error)
 	}
 
 	return &corestore.Core{
-		Mode:          mode,
-		NodeID:        nodeID,
-		Meta:          meta,
-		Blobs:         blobs,
-		SyncTimeout:   syncTimeout,
-		ShadowTimeout: shadowTimeout,
-		GCGrace:       gcGrace,
-		GCMargin:      gcMargin,
+		Mode:             mode,
+		NodeID:           nodeID,
+		Meta:             meta,
+		Blobs:            blobs,
+		SyncTimeout:      syncTimeout,
+		ShadowTimeout:    shadowTimeout,
+		GCGrace:          gcGrace,
+		GCMargin:         gcMargin,
+		ObjectExpiration: objectExpiration,
 	}, nil
 }

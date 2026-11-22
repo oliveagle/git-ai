@@ -21,7 +21,6 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gitops"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/voter"
-	"github.com/feder-cr/git-ai/internal/grpc/client"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/internal/testhelper/testcfg"
 	"github.com/feder-cr/git-ai/internal/testhelper/testserver"
@@ -36,6 +35,7 @@ func TestAuthoritativeServer(t *testing.T) {
 		ctx := testhelper.Context(t)
 		cfg := testcfg.Build(t)
 		cfg.Graft.Standalone = true
+		testcfg.RequireCredential(&cfg)
 		testcfg.BuildGitalyHooks(t, cfg)
 
 		core := coretest.Open(t, coretest.Options{Mode: corestore.ModeAuthoritative, Dialect: dialect})
@@ -45,9 +45,7 @@ func TestAuthoritativeServer(t *testing.T) {
 		)
 		cfg.SocketPath = addr
 
-		conn, err := client.New(ctx, addr)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = conn.Close() })
+		conn := gittest.DialService(t, ctx, cfg)
 		operations := gitalypb.NewOperationServiceClient(conn)
 
 		repoProto, repoPath := gittest.CreateRepository(t, ctx, cfg)
@@ -216,6 +214,7 @@ func TestAuthoritativeConcurrentCommitFiles(t *testing.T) {
 		ctx := testhelper.Context(t)
 		cfg := testcfg.Build(t)
 		cfg.Graft.Standalone = true
+		testcfg.RequireCredential(&cfg)
 		testcfg.BuildGitalyHooks(t, cfg)
 
 		core := coretest.Open(t, coretest.Options{Mode: corestore.ModeAuthoritative, Dialect: dialect})
@@ -225,9 +224,7 @@ func TestAuthoritativeConcurrentCommitFiles(t *testing.T) {
 		)
 		cfg.SocketPath = addr
 
-		conn, err := client.New(ctx, addr)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = conn.Close() })
+		conn := gittest.DialService(t, ctx, cfg)
 		operations := gitalypb.NewOperationServiceClient(conn)
 
 		repoProto, repoPath := gittest.CreateRepository(t, ctx, cfg)
@@ -237,7 +234,7 @@ func TestAuthoritativeConcurrentCommitFiles(t *testing.T) {
 		base := gittest.WriteCommit(t, cfg, repoPath, gittest.WithTreeEntries(
 			gittest.TreeEntry{Path: "base", Mode: "100644", Content: "base\n"},
 		))
-		_, err = operations.UserCreateBranch(ctx, &gitalypb.UserCreateBranchRequest{
+		_, err := operations.UserCreateBranch(ctx, &gitalypb.UserCreateBranchRequest{
 			Repository: repoProto,
 			BranchName: []byte("main"),
 			StartPoint: []byte(base.String()),
@@ -331,6 +328,7 @@ func TestShadowServerFilesBackend(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, dialect sqlstore.Dialect) {
 		ctx := testhelper.Context(t)
 		cfg := testcfg.Build(t)
+		testcfg.RequireCredential(&cfg)
 		testcfg.BuildGitalyHooks(t, cfg)
 
 		logger := testhelper.NewLogger(t)
@@ -343,9 +341,7 @@ func TestShadowServerFilesBackend(t *testing.T) {
 		)
 		cfg.SocketPath = addr
 
-		conn, err := client.New(ctx, addr)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = conn.Close() })
+		conn := gittest.DialService(t, ctx, cfg)
 		refs := gitalypb.NewRefServiceClient(conn)
 
 		repoProto, repoPath := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{SkipCreationViaService: true})
@@ -363,7 +359,7 @@ func TestShadowServerFilesBackend(t *testing.T) {
 		// The references are packed, so that deleting one runs the packed-refs
 		// transaction before the loose one.
 		gittest.Exec(t, cfg, "-C", repoPath, "pack-refs", "--all")
-		_, err = core.Meta.CommitChangeset(ctx, corestore.ChangesetInput{
+		_, err := core.Meta.CommitChangeset(ctx, corestore.ChangesetInput{
 			RepoID: repoID, Updates: updates, Operation: "seed", Actor: "test", NodeID: "node-a",
 		})
 		require.NoError(t, err)

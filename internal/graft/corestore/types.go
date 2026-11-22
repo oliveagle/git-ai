@@ -137,6 +137,27 @@ type Repository struct {
 	// references it is committed before ReadAt + Core.WriteDeadline() on the
 	// database clock (PackUpload.DBDeadline, checked in the commit).
 	ReadAt time.Time
+	// Archived tells that the repository is archived: it is frozen, no update
+	// may change it, and cleanup must start before a super admin can purge it
+	// (doc/graft/PLAN13.md, ARCHIVE RULE).
+	Archived bool
+	// ArchivedAt is the database time of the archive, zero when the
+	// repository is not archived.
+	ArchivedAt time.Time
+	// ArchivedBy is the identity that archived the repository.
+	ArchivedBy string
+	// ReadClosed tells that the cleanup has started: reads are refused as well
+	// as writes. It is true only for an archived repository.
+	ReadClosed bool
+	// ReadClosedAt is the database time when cleanup closed the reads, zero
+	// while the archived repository is still readable.
+	ReadClosedAt time.Time
+	// ReadClosedBy is the super-admin identity that started the cleanup.
+	ReadClosedBy string
+	// PurgeAfter is the database time from which a super admin may purge the
+	// repository; it is set when cleanup starts, and is zero while the
+	// repository is still readable.
+	PurgeAfter time.Time
 }
 
 // Changeset is one recorded changeset of the write-ahead log.

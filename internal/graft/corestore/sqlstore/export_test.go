@@ -3,7 +3,9 @@ package sqlstore
 import (
 	"context"
 	"errors"
+	"time"
 
+	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -12,6 +14,25 @@ import (
 // owned-key trigger.
 func OpenV010(ctx context.Context, dsn string) (*Store, error) {
 	return open(ctx, dsn, 1)
+}
+
+// SetArchivedAtForTest moves the archive time of key to when, as the archive
+// retention passing does, so that cleanup can start without waiting.
+func (s *Store) SetArchivedAtForTest(ctx context.Context, key corestore.RepoKey, when time.Time) error {
+	_, err := s.DB().ExecContext(ctx, s.bind(
+		"UPDATE graft_repositories SET archived_at = ? WHERE storage = ? AND relative_path = ?"),
+		s.timeArg(when), key.Storage, key.RelativePath)
+	return err
+}
+
+// SetPurgeAfterForTest moves the purge time of the read-closed repository of
+// key to when, as the cleanup observation passing does, so that a test can
+// purge it without waiting.
+func (s *Store) SetPurgeAfterForTest(ctx context.Context, key corestore.RepoKey, when time.Time) error {
+	_, err := s.DB().ExecContext(ctx, s.bind(
+		"UPDATE graft_repositories SET purge_after = ? WHERE storage = ? AND relative_path = ?"),
+		s.timeArg(when), key.Storage, key.RelativePath)
+	return err
 }
 
 // SetSnapshotWrittenHook installs fn as the hook that CreateCheckpoint of s

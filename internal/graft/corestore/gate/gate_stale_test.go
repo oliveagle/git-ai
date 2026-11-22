@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -16,6 +17,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/graft/corestore"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/coretest"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/gitops"
+	"github.com/feder-cr/git-ai/internal/graft/corestore/sqlstore"
 	"github.com/feder-cr/git-ai/internal/structerr"
 	"github.com/feder-cr/git-ai/internal/testhelper"
 	"github.com/feder-cr/git-ai/proto/go/gitalypb"
@@ -38,6 +40,28 @@ func staleCopies(t *testing.T, cfg config.Cfg) []string {
 	matches, err := filepath.Glob(filepath.Join(tmp, "graft-stale-*", "repo.git"))
 	require.NoError(t, err)
 	return matches
+}
+
+// purgeReadClosed starts cleanup on an archived repository and moves its
+// observation deadline into the past, as waiting seven days does.
+func purgeReadClosed(ctx context.Context, core *corestore.Core, key corestore.RepoKey) error {
+	_, err := core.Meta.StartRepositoryCleanup(ctx, key, "admin", time.Nanosecond, 7*24*time.Hour)
+	if err != nil {
+		return err
+	}
+	store, ok := core.Meta.(*sqlstore.Store)
+	if !ok {
+		panic("gate tests expect an sqlstore-backed metadata store")
+	}
+	when := time.Now().UTC().Add(-time.Nanosecond)
+	var value any = when.Format(time.RFC3339Nano)
+	query := "UPDATE graft_repositories SET purge_after = ? WHERE storage = ? AND relative_path = ?"
+	args := []any{value, key.Storage, key.RelativePath}
+	if store.Dialect() == sqlstore.Postgres {
+		query, args = "UPDATE graft_repositories SET purge_after = $1 WHERE storage = $2 AND relative_path = $3", []any{when, key.Storage, key.RelativePath}
+	}
+	_, err = store.DB().ExecContext(ctx, query, args...)
+	return err
 }
 
 // registerHead registers repo in the database with a first changeset holding
@@ -202,30 +226,45 @@ func TestGateCreateRepositoryMovesStaleCacheFirst(t *testing.T) {
 // A hydration that read the database before RemoveRepository deleted the row
 // can rename its copy into place after the handler removed the directory. The
 // copy is a stale cache and RemoveRepository moves it away.
-func TestGateRemoveRepositoryDropsReinstalledCache(t *testing.T) {
+// TestGatePurgeDropsReinstalledCache follows the stale-cache rule through the
+// archive lifecycle: a local copy whose watermark names a purged repository is
+// moved aside on the next access, even when a hydration recreated it after the
+// purge (doc/graft/PLAN13.md). The repository is purged through the metadata
+// store, as a super admin does once the archive retention has passed.
+func TestGatePurgeDropsReinstalledCache(t *testing.T) {
 	t.Parallel()
 
 	ctx := testhelper.Context(t)
-	g, cfg, core := newGateEnv(t, corestore.ModeAuthoritative, &fakeFreshener{})
+	g, cfg, core := newGateEnv(t, corestore.ModeAuthoritative, &fakeFreshener{err: errNotImported})
 	repo, path := untrackedRepo(t, ctx, cfg)
 	rec := registerHead(t, ctx, core, repo)
 	require.NoError(t, gitops.WriteWatermark(path, corestore.Watermark{RepoID: rec.ID, Seq: 1}))
 
-	_, err := g.UnaryInterceptor()(ctx, &gitalypb.RemoveRepositoryRequest{Repository: repo},
-		&grpc.UnaryServerInfo{FullMethod: removeRepositoryMethod}, func(context.Context, any) (any, error) {
-			require.NoError(t, os.RemoveAll(path))
-			// The hydration lands now.
-			_, hydrated := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{
-				SkipCreationViaService: true,
-				RelativePath:           repo.GetRelativePath(),
-			})
-			require.NoError(t, gitops.WriteWatermark(hydrated, corestore.Watermark{RepoID: rec.ID, Seq: 1}))
-			return &gitalypb.RemoveRepositoryResponse{}, nil
-		})
+	// The local copy goes away, the operator archives the repository and a
+	// super admin purges it: the row and its history are gone.
+	require.NoError(t, os.RemoveAll(path))
+	_, err := core.Meta.ArchiveRepository(ctx, corestore.KeyOf(repo), "operator")
 	require.NoError(t, err)
-	require.NoDirExists(t, path)
+	require.NoError(t, purgeReadClosed(ctx, core, corestore.KeyOf(repo)))
+	_, err = core.Meta.PurgeRepository(ctx, corestore.KeyOf(repo))
+	require.NoError(t, err)
 	_, err = core.Meta.GetRepository(ctx, corestore.KeyOf(repo))
 	require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
+
+	// A hydration that started before the purge lands afterwards: it writes a
+	// watermark naming the purged row.
+	_, hydrated := gittest.CreateRepository(t, ctx, cfg, gittest.CreateRepositoryConfig{
+		SkipCreationViaService: true,
+		RelativePath:           repo.GetRelativePath(),
+	})
+	require.NoError(t, gitops.WriteWatermark(hydrated, corestore.Watermark{RepoID: rec.ID, Seq: 1}))
+
+	resp, err := g.UnaryInterceptor()(ctx, &gitalypb.RepositoryExistsRequest{Repository: repo},
+		&grpc.UnaryServerInfo{FullMethod: repositoryExistsMethod}, existsHandler(hydrated))
+	require.NoError(t, err)
+	require.False(t, resp.(*gitalypb.RepositoryExistsResponse).GetExists())
+	require.NoDirExists(t, hydrated)
+	require.Len(t, staleCopies(t, cfg), 1, "the stale cache is moved, not deleted in place")
 }
 
 // The database key is the relative path as given, so the gate only accepts
@@ -253,7 +292,6 @@ func TestGateRejectsNonCanonicalOrReservedRelativePath(t *testing.T) {
 			}{
 				{fullMethod: accessorMethod, req: &gitalypb.HasLocalBranchesRequest{Repository: repo}},
 				{fullMethod: createRepositoryMethod, req: &gitalypb.CreateRepositoryRequest{Repository: repo}},
-				{fullMethod: removeRepositoryMethod, req: &gitalypb.RemoveRepositoryRequest{Repository: repo}},
 			} {
 				_, err := g.UnaryInterceptor()(ctx, tc.req, &grpc.UnaryServerInfo{FullMethod: tc.fullMethod},
 					func(context.Context, any) (any, error) {
@@ -263,8 +301,17 @@ func TestGateRejectsNonCanonicalOrReservedRelativePath(t *testing.T) {
 				require.Equal(t, codes.InvalidArgument, status.Code(err), "%s: %v", tc.fullMethod, err)
 			}
 
+			// A removal is refused before the path is looked at: the archive
+			// replaces it whatever the path.
+			_, err := g.UnaryInterceptor()(ctx, &gitalypb.RemoveRepositoryRequest{Repository: repo},
+				&grpc.UnaryServerInfo{FullMethod: removeRepositoryMethod}, func(context.Context, any) (any, error) {
+					require.FailNow(t, "the handler must not run", removeRepositoryMethod)
+					return nil, nil
+				})
+			require.Equal(t, codes.FailedPrecondition, status.Code(err), "%s: %v", removeRepositoryMethod, err)
+
 			stream := &fakeStream{ctx: ctx, msg: &gitalypb.UpdateReferencesRequest{Repository: repo}}
-			err := g.StreamInterceptor()(nil, stream, &grpc.StreamServerInfo{FullMethod: allowedStreamMutator},
+			err = g.StreamInterceptor()(nil, stream, &grpc.StreamServerInfo{FullMethod: allowedStreamMutator},
 				func(srv any, ss grpc.ServerStream) error {
 					return ss.RecvMsg(&gitalypb.UpdateReferencesRequest{})
 				})
@@ -276,7 +323,7 @@ func TestGateRejectsNonCanonicalOrReservedRelativePath(t *testing.T) {
 
 // TestGateStaleCacheAcrossNodes reproduces the gap between the gate and the
 // syncer on two nodes sharing a database and a bucket: after a repository is
-// removed on one node, the other node's cached copy is not reported as an
+// purged on one node, the other node's cached copy is not reported as an
 // untracked repository and does not block creating the repository again.
 func TestGateStaleCacheAcrossNodes(t *testing.T) {
 	t.Parallel()
@@ -299,8 +346,18 @@ func TestGateStaleCacheAcrossNodes(t *testing.T) {
 				require.NoError(t, err)
 				return resp.GetExists()
 			}
+			// purge archives the repository and purges it through the metadata
+			// store, as a super admin does once the archive retention has passed.
+			purge := func(t *testing.T, n node, repo *gitalypb.Repository) {
+				t.Helper()
+				_, err := n.core.Meta.ArchiveRepository(n.ctx, corestore.KeyOf(repo), "operator")
+				require.NoError(t, err)
+				require.NoError(t, purgeReadClosed(n.ctx, n.core, corestore.KeyOf(repo)))
+				_, err = n.core.Meta.PurgeRepository(n.ctx, corestore.KeyOf(repo))
+				require.NoError(t, err)
+			}
 			// cacheOnB creates a repository with a branch on A, makes B hydrate it
-			// and removes it on A.
+			// and purges it on A.
 			cacheOnB := func(t *testing.T) (*gitalypb.Repository, string, int64) {
 				t.Helper()
 				s := a.newSeed(t)
@@ -311,8 +368,7 @@ func TestGateStaleCacheAcrossNodes(t *testing.T) {
 				require.NoError(t, err)
 				require.True(t, ok)
 
-				_, err = gitalypb.NewRepositoryServiceClient(a.conn).RemoveRepository(a.ctx, &gitalypb.RemoveRepositoryRequest{Repository: s.repo})
-				require.NoError(t, err)
+				purge(t, a, s.repo)
 				require.DirExists(t, pathB, "B still has its cached copy")
 				return repoB, pathB, wm.RepoID
 			}
@@ -353,8 +409,7 @@ func TestGateStaleCacheAcrossNodes(t *testing.T) {
 				_, err := gitalypb.NewRepositoryServiceClient(a.conn).CreateRepository(a.ctx, &gitalypb.CreateRepositoryRequest{Repository: repoA})
 				require.NoError(t, err)
 				repoB, _ := repoOn(b, repoA.GetRelativePath())
-				_, err = gitalypb.NewRepositoryServiceClient(b.conn).RemoveRepository(b.ctx, &gitalypb.RemoveRepositoryRequest{Repository: repoB})
-				require.NoError(t, err)
+				purge(t, b, repoB)
 				require.DirExists(t, pathA)
 
 				require.False(t, exists(t, a, repoA))

@@ -22,6 +22,7 @@ import (
 	"github.com/feder-cr/git-ai/internal/gitaly/hook"
 	"github.com/feder-cr/git-ai/internal/gitaly/hook/updateref"
 	"github.com/feder-cr/git-ai/internal/gitaly/server"
+	serverauth "github.com/feder-cr/git-ai/internal/gitaly/server/auth"
 	"github.com/feder-cr/git-ai/internal/gitaly/service"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage"
 	"github.com/feder-cr/git-ai/internal/gitaly/storage/counter"
@@ -35,6 +36,7 @@ import (
 	corestoresyncer "github.com/feder-cr/git-ai/internal/graft/corestore/syncer"
 	"github.com/feder-cr/git-ai/internal/graft/corestore/voter"
 	"github.com/feder-cr/git-ai/internal/graft/landlane"
+	"github.com/feder-cr/git-ai/internal/graft/lifecycle"
 	"github.com/feder-cr/git-ai/internal/graft/policystore"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
@@ -199,6 +201,14 @@ func runGitaly(tb testing.TB, cfg config.Cfg, registrar func(srv *grpc.Server, d
 		}
 	}
 
+	// Test servers use the same lifecycle rule as production: RemoveRepository
+	// is disabled, so tests exercise archive and admin purge instead.
+	lifecycleGuard := lifecycle.New(gsd.logger.WithField("test", tb.Name()))
+	serverOpts = append(serverOpts,
+		server.WithUnaryInterceptor(lifecycleGuard.UnaryInterceptor()),
+		server.WithStreamInterceptor(lifecycleGuard.StreamInterceptor()),
+	)
+
 	if gsd.graftStorageGate != nil {
 		serverOpts = append(serverOpts,
 			server.WithUnaryInterceptor(gsd.graftStorageGate.UnaryInterceptor()),
@@ -279,9 +289,10 @@ func runGitaly(tb testing.TB, cfg config.Cfg, registrar func(srv *grpc.Server, d
 
 func registerHealthServerIfNotRegistered(srv *grpc.Server) {
 	if _, found := srv.GetServiceInfo()["grpc.health.v1.Health"]; !found {
-		// we should register health service as it is used for the health checks
-		// praefect service executes periodically (and on the bootstrap step)
-		healthpb.RegisterHealthServer(srv, health.NewServer())
+		// The health service is answered without authentication, like the
+		// production setup: a server that refuses anonymous callers still
+		// lets an orchestrator probe it.
+		healthpb.RegisterHealthServer(srv, serverauth.UnauthenticatedHealthService{HealthServer: health.NewServer()})
 	}
 }
 

@@ -3,11 +3,14 @@ package gate
 // AuthoritativeMutators are the repository-scoped MUTATOR RPCs that may run
 // in authoritative mode: their reference changes all go through the
 // reference-transaction hook (and so through the voter), or the gate handles
-// them itself (CreateRepository, RemoveRepository). Every other
+// them itself (CreateRepository). Every other
 // repository-scoped mutator is rejected with FailedPrecondition. An entry
 // stays only when an authoritative-mode test proves it (WP56); adding one
 // needs that proof. MAINTENANCE and ACCESSOR RPCs are not listed: they run
 // after EnsureFresh.
+//
+// RemoveRepository is not listed: the server never removes a repository, it
+// archives it (doc/graft/PLAN13.md).
 var AuthoritativeMutators = map[string]struct{}{
 	"/gitaly.OperationService/UserApplyPatch":        {},
 	"/gitaly.OperationService/UserCherryPick":        {},
@@ -31,7 +34,6 @@ var AuthoritativeMutators = map[string]struct{}{
 	"/gitaly.RefService/UpdateReferences":            {},
 	"/gitaly.RepositoryService/WriteRef":             {},
 	"/gitaly.RepositoryService/CreateRepository":     {},
-	"/gitaly.RepositoryService/RemoveRepository":     {},
 	"/gitaly.SSHService/SSHReceivePack":              {},
 	"/gitaly.SmartHTTPService/PostReceivePack":       {},
 	// The Graft review service: its state is in the database in authoritative
