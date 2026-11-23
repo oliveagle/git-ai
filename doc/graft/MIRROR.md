@@ -142,6 +142,7 @@ The commands of the queue:
 | `graft mirror queue remove NAME` | takes the target out of the queue, and out of the mirror policy of the server |
 | `graft mirror queue register NAME` | registers a target the queue already holds with the server, without publishing it |
 | `graft mirror queue idle --idle-interval 1h` | sets the fallback (and, with `--failure-interval`, the failing fallback) of every target, or of the one that is named |
+| `graft mirror queue tier` | sets the fallback by the age of the last change of each repository: active, recent and dormant |
 | `graft mirror queue run` | publishes the targets that are due, and exits |
 | `graft mirror queue worker` | publishes the targets that are due, over and over |
 | `graft mirror task list` | lists the tasks, newest first |
@@ -231,6 +232,23 @@ A queue whose targets were written before the idle interval existed is moved
 by `graft mirror queue idle --idle-interval 1h`, which sets the fallback of
 every target — or of the one it names — and leaves the rest of the target
 alone.
+
+**Different repositories get different intervals.** The stretch of a quiet
+target is per repository and needs no operator, but a queue that holds a
+repository written every hour next to one nobody has opened in a month still
+asks both for the same *first* interval. `graft mirror queue tier` reads the
+same changeset log the events come from and sets the fallback by the age of the
+last change: `--active-within 24h` and `--recent-within 168h` divide the queue
+into active, recent and dormant repositories, and `--active 1h`, `--recent 3h`
+and `--dormant 12h` name the fallback of each tier. It never tightens a target
+the operator declared tighter — a tier whose interval is shorter than the
+declared one leaves the target alone — and a repository whose log cannot be
+read keeps what it has.
+
+The tiers are the operator's estimate of what a repository is worth; the
+stretch is the measurement of what it actually did. Both end up in the same
+number, the longest a target may wait, and the events make sure that number
+never delays a change.
 
 **A failing target stretches too, on its own count.** `--failure-interval` is
 the longest a target waits between two attempts while its last attempt failed.

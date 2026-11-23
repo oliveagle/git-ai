@@ -22,7 +22,7 @@ import (
 )
 
 // mirrorQueueSynopsis is the command line of graft mirror queue.
-const mirrorQueueSynopsis = "usage: graft mirror queue <add|update|remove|register|list|show|enable|disable|idle|run|worker> [flags]"
+const mirrorQueueSynopsis = "usage: graft mirror queue <add|update|remove|register|list|show|enable|disable|idle|tier|run|worker> [flags]"
 
 // mirrorQueueUsage lists the subcommands of graft mirror queue.
 const mirrorQueueUsage = "mirror queue requires a subcommand: " + mirrorQueueSynopsis
@@ -225,6 +225,8 @@ func cmdMirrorQueue(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		return mirrorQueueShow(ctx, out, o, f, q, args[1:])
 	case "idle":
 		return mirrorQueueIdle(ctx, out, o, f, q, args[1:])
+	case "tier":
+		return mirrorQueueTier(ctx, out, o, f, q, args[1:])
 	case "run":
 		return mirrorQueueRun(ctx, out, o, f, q, args[1:])
 	case "worker":
@@ -650,6 +652,177 @@ func mirrorQueueIdle(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 			t.Name, pick(mirrorQueueIdleInterval(t), t.Interval.String()), pick(mirrorQueueFailureInterval(t), pick(mirrorQueueIdleInterval(t), t.Interval.String())))
 	}
 	return nil
+}
+
+// mirrorQueueTier sets the idle interval of every target by how long ago the
+// repository of the target last changed: a repository that changed today is
+// worth looking at often, and a repository nobody has touched in a week is not
+// worth a round trip an hour. It is the operator's answer to a queue where one
+// interval was asked of every repository, and it reads the same changeset log
+// the events come from, so the tiers follow what the server actually recorded.
+func mirrorQueueTier(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
+	if len(args) > 1 {
+		return usagef("mirror queue tier takes at most the name of one target")
+	}
+	if q.tierActive <= 0 || q.tierRecent <= 0 || q.tierDormant <= 0 {
+		return usagef("mirror queue tier requires --active, --recent and --dormant, each a positive duration")
+	}
+	if q.tierRecentWithin <= q.tierActiveWithin {
+		return usagef("mirror queue tier requires --recent-within to be longer than --active-within")
+	}
+	store, err := mirrorQueueStore(q)
+	if err != nil {
+		return err
+	}
+	queue, err := store.Load()
+	if err != nil {
+		return err
+	}
+
+	// The age of the last change of every repository, read once per repository
+	// and shared by its targets.
+	clients := map[string]*sdk.Client{}
+	defer func() {
+		for _, c := range clients {
+			_ = c.Close()
+		}
+	}()
+	ages := map[string]time.Duration{}
+	now := time.Now()
+	for _, t := range queue.Targets {
+		if len(args) == 1 && t.Name != args[0] {
+			continue
+		}
+		key := mirrorQueueRepoKey(o, t)
+		if _, done := ages[key]; done {
+			continue
+		}
+		address := pick(t.Address, o.address)
+		if address == "" {
+			ages[key] = -1
+			continue
+		}
+		client, ok := clients[address]
+		if !ok {
+			dialed, err := sdk.Dial(ctx, address, dialOptions(target{
+				Address: address,
+				Token:   o.token,
+				Storage: pick(t.Storage, o.storage),
+			})...)
+			if err != nil {
+				ages[key] = -1
+				continue
+			}
+			client = dialed
+			clients[address] = client
+		}
+		last, err := mirrorQueueLastChange(ctx, client.Repo(t.Repository))
+		if err != nil || last.IsZero() {
+			// A log that cannot be read, or one that holds no entry, says
+			// nothing about activity: the target keeps the tier it has.
+			ages[key] = -1
+			continue
+		}
+		ages[key] = now.Sub(last)
+	}
+
+	var changed []*mirrorqueue.Target
+	counts := map[string]int{}
+	if err := store.Update(func(queue *mirrorqueue.Queue) error {
+		for _, target := range queue.Targets {
+			if len(args) == 1 && target.Name != args[0] {
+				continue
+			}
+			key := mirrorQueueRepoKey(o, target)
+			age, known := ages[key]
+			if !known || age < 0 {
+				counts["kept"]++
+				continue
+			}
+			idle, tier := mirrorQueueTierFor(age, q)
+			if idle <= target.Interval {
+				counts["kept"]++
+				continue
+			}
+			if target.IdleInterval == idle {
+				counts[tier]++
+				continue
+			}
+			target.IdleInterval = idle
+			target.UpdatedAt = now
+			changed = append(changed, target)
+			counts[tier]++
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if o.jsonOut {
+		list := make([]mirrorQueueTarget, 0, len(changed))
+		for _, t := range changed {
+			list = append(list, mirrorQueueTargetJSON(t))
+		}
+		return mirrorQueueWriteJSON(out, list)
+	}
+	tiers := []string{"active", "recent", "dormant", "kept"}
+	parts := make([]string, 0, len(tiers))
+	for _, tier := range tiers {
+		if counts[tier] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[tier], tier))
+		}
+	}
+	fmt.Fprintf(out, "the mirror queue tiers %d target(s): %s\n", len(changed), strings.Join(parts, ", "))
+	for _, t := range changed {
+		fmt.Fprintf(out, "  %s (%s): %s at most between two publications\n", t.Name, mirrorQueueRepoAge(ages[mirrorQueueRepoKey(o, t)]), mirrorQueueIdleInterval(t))
+	}
+	return nil
+}
+
+// mirrorQueueTierFor names the tier of a repository by the age of its last
+// change, and the idle interval that tier asks for: the shortest interval that
+// is not shorter than the declared one, so that a tier never tightens a target
+// the operator set tighter.
+func mirrorQueueTierFor(age time.Duration, q *mirrorQueueFlags) (time.Duration, string) {
+	switch {
+	case age <= q.tierActiveWithin:
+		return q.tierActive, "active"
+	case age <= q.tierRecentWithin:
+		return q.tierRecent, "recent"
+	default:
+		return q.tierDormant, "dormant"
+	}
+}
+
+// mirrorQueueRepoAge prints an age for a report: the next whole unit down, so
+// that the operator reads how old the last change is without a nanosecond.
+func mirrorQueueRepoAge(age time.Duration) string {
+	switch {
+	case age < 0:
+		return "unknown age"
+	case age < time.Minute:
+		return "less than a minute"
+	case age < time.Hour:
+		return fmt.Sprintf("%dm", int(age.Minutes()))
+	case age < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(age.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(age.Hours()/24))
+	}
+}
+
+// mirrorQueueLastChange is the time of the newest entry of the changeset log,
+// the same log the events of the queue come from. It is the zero time for a
+// repository whose log is empty.
+func mirrorQueueLastChange(ctx context.Context, repo *sdk.Repo) (time.Time, error) {
+	tail, err := mirrorQueueChangesetTail(ctx, repo)
+	if err != nil || tail == 0 {
+		return time.Time{}, err
+	}
+	entries, err := repo.Changesets(ctx, tail-1, 1)
+	if err != nil || len(entries) == 0 {
+		return time.Time{}, err
+	}
+	return entries[0].GetRecordedAt().AsTime(), nil
 }
 
 // mirrorQueueRun publishes the targets that are due, and exits. It is the
@@ -1317,6 +1490,15 @@ type mirrorQueueFlags struct {
 	// hold the run — and with it the schedule and the events of every other
 	// target — for as long as its own client keeps waiting.
 	taskTimeout time.Duration
+	// tierActive, tierRecent and tierDormant are the idle intervals that
+	// mirror queue tier gives a repository by how long ago it last changed,
+	// and tierActiveWithin and tierRecentWithin are the ages that divide the
+	// three tiers.
+	tierActive       time.Duration
+	tierRecent       time.Duration
+	tierDormant      time.Duration
+	tierActiveWithin time.Duration
+	tierRecentWithin time.Duration
 	// idleInterval is the longest a quiet target waits between two
 	// publications. Zero leaves the interval fixed.
 	idleInterval time.Duration

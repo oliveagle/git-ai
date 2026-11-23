@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/feder-cr/git-ai/sdk"
 )
@@ -157,6 +158,11 @@ func mirrorCommand() command {
 			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
 			fs.DurationVar(&q.idleInterval, "idle-interval", -1, "longest a quiet target waits between publications, such as 1h (default: the interval is fixed; requires --interval)")
 			fs.DurationVar(&q.failureInterval, "failure-interval", -1, "longest a failing target waits between two attempts, such as 30m (default: the idle interval, or the interval)")
+			fs.DurationVar(&q.tierActive, "active", time.Hour, "idle interval of mirror queue tier for a repository that changed within --active-within")
+			fs.DurationVar(&q.tierRecent, "recent", 3*time.Hour, "idle interval of mirror queue tier for a repository that changed within --recent-within")
+			fs.DurationVar(&q.tierDormant, "dormant", 12*time.Hour, "idle interval of mirror queue tier for a repository that changed longer ago")
+			fs.DurationVar(&q.tierActiveWithin, "active-within", 24*time.Hour, "how recently a repository changed to be tiered active")
+			fs.DurationVar(&q.tierRecentWithin, "recent-within", 7*24*time.Hour, "how recently a repository changed to be tiered recent")
 			fs.DurationVar(&q.taskTimeout, "task-timeout", defaultTaskTimeout, "how long one publication may take before the run gives up on it (0: wait forever)")
 			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
 			fs.IntVar(&q.concurrency, "concurrency", defaultQueueConcurrency, "how many tasks of the queue run at the same time")

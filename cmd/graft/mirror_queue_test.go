@@ -540,3 +540,74 @@ func TestMirrorQueueDoesNotReplayTheNewestChangeOfARepository(t *testing.T) {
 	require.Contains(t, stdout, "no mirror target is due")
 	require.NotContains(t, stdout, "on a change")
 }
+
+// TestMirrorQueueTierSetsTheFallbackByActivity checks the tiers: the idle
+// interval of a target follows the age of the last change of its repository,
+// so that a queue holding a busy repository next to a dormant one does not ask
+// the same interval of both.
+func TestMirrorQueueTierSetsTheFallbackByActivity(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	// The tier reads the changeset log, so the repository needs one entry: a
+	// seeded repository has none until something lands.
+	landChange(t, env)
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "5m", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	// The repository changed a moment ago, so it is active: the tier sets the
+	// fallback the active tier names.
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "tier", "--queue-file", queue,
+		"-address", env.addr, "--active", "1h", "--recent", "3h", "--dormant", "12h",
+		"--active-within", "24h", "--recent-within", "168h")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "1 active")
+	targets := mirrorQueueTargetState(t, queue, env)
+	require.Equal(t, "1h0m0s", targets[0].IdleInterval)
+
+	// The same repository read as dormant takes the dormant fallback, and the
+	// run reports the target it changed.
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "tier", "--queue-file", queue,
+		"-address", env.addr, "--active", "1h", "--recent", "3h", "--dormant", "12h",
+		"--active-within", "0s", "--recent-within", "1ms")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "1 dormant")
+	targets = mirrorQueueTargetState(t, queue, env)
+	require.Equal(t, "12h0m0s", targets[0].IdleInterval)
+
+	// A second run of the same tier changes nothing.
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "tier", "--queue-file", queue,
+		"-address", env.addr, "--active", "1h", "--recent", "3h", "--dormant", "12h",
+		"--active-within", "0s", "--recent-within", "1ms")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "tiers 0 target(s)")
+}
+
+// TestMirrorQueueTierNeverTightensADeclaredInterval keeps a tier from asking a
+// target for an interval shorter than the one its declaration may honour.
+func TestMirrorQueueTierNeverTightensADeclaredInterval(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	landChange(t, env)
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "6h", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	// The active tier asks for an hour, which is tighter than the six hours
+	// the target declares: the target keeps what it has.
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "tier", "--queue-file", queue,
+		"-address", env.addr, "--active", "1h", "--recent", "3h", "--dormant", "12h",
+		"--active-within", "24h", "--recent-within", "168h")
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "1 kept")
+	targets := mirrorQueueTargetState(t, queue, env)
+	require.Equal(t, "", targets[0].IdleInterval)
+}

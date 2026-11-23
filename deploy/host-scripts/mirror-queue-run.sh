@@ -34,4 +34,13 @@ if [ -z "${GITHUB_TOKEN:-}" ] && [ -r "$token_file" ]; then
   export GITHUB_TOKEN
 fi
 
+# The same environment serves the other subcommands that read or write the
+# queue: the daily tiering runs here, under the same lock as a run, so that a
+# tier of the schedule never races the schedule itself.
+if [ "${1:-}" = "tier" ] || [ "${1:-}" = "idle" ]; then
+  subcommand="$1"
+  shift
+  exec "$ROOT/bin/graft" mirror queue "$subcommand" "$@"
+fi
+
 exec "$ROOT/bin/graft" mirror queue run "$@"
