@@ -97,12 +97,16 @@ func TestTheWritesOfTheStoreReportTheirFailures(t *testing.T) {
 		{
 			name:  "the deleted row of a purge",
 			fault: "DELETE FROM graft_repositories WHERE repo_id = ?",
-			call: func(t *testing.T, store *faultStore, ctx context.Context, _ corestore.Repository) {
+			call: func(t *testing.T, store *faultStore, ctx context.Context, repo corestore.Repository) {
 				_, err := store.ArchiveRepository(ctx, key, "admin")
 				require.NoError(t, err)
 				_, err = store.StartRepositoryCleanup(ctx, key, "admin", time.Nanosecond, time.Nanosecond)
 				require.NoError(t, err)
-				time.Sleep(2 * time.Millisecond)
+				// The observation is over before the purge, whatever the
+				// granularity of the database clock.
+				_, err = store.DB().ExecContext(ctx, store.bind("UPDATE graft_repositories SET purge_after = ? WHERE repo_id = ?"),
+					store.timeArg(time.Now().Add(-time.Hour)), repo.ID)
+				require.NoError(t, err)
 
 				_, err = store.PurgeRepository(ctx, key)
 				require.ErrorContains(t, err, "delete repository")
