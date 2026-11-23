@@ -195,7 +195,7 @@ var sqliteMigrations = []*migrate.Migration{
 		},
 	},
 	{
-		Id: "20261117000000_graft_storage_archive",
+		Id: "20261118000000_graft_storage_archive",
 		Up: []string{
 			`ALTER TABLE graft_repositories ADD COLUMN archived_at TEXT`,
 			`ALTER TABLE graft_repositories ADD COLUMN archived_by TEXT`,
@@ -216,7 +216,7 @@ var sqliteMigrations = []*migrate.Migration{
 		// publication (doc/graft/MIRROR.md). The state is keyed by the
 		// repository, not by its ID: a repository that the storage core does
 		// not track yet still has mirrors.
-		Id: "20261117100000_graft_mirror_state",
+		Id: "20261117000000_graft_mirror_state",
 		Up: []string{
 			`CREATE TABLE graft_mirror_targets (
 				storage       TEXT    NOT NULL,
@@ -443,7 +443,7 @@ var postgresMigrations = []*migrate.Migration{
 	},
 	{
 		// See the SQLite migration of the same ID.
-		Id: "20261117000000_graft_storage_archive",
+		Id: "20261118000000_graft_storage_archive",
 		Up: []string{
 			`ALTER TABLE graft_repositories ADD COLUMN archived_at TIMESTAMPTZ`,
 			`ALTER TABLE graft_repositories ADD COLUMN archived_by TEXT`,
@@ -461,7 +461,7 @@ var postgresMigrations = []*migrate.Migration{
 	},
 	{
 		// See the SQLite migration of the same ID.
-		Id: "20261117100000_graft_mirror_state",
+		Id: "20261117000000_graft_mirror_state",
 		Up: []string{
 			`CREATE TABLE graft_mirror_targets (
 				storage       TEXT        NOT NULL,
