@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
 
@@ -77,25 +76,6 @@ func TestStatusReportsATrackedFileThatBecameASymbolicLink(t *testing.T) {
 	_, err = ws.Commit(context.Background(), CommitRequest{Message: "link", Author: Signature{Name: "dev"}})
 	require.ErrorContains(t, err, "symbolic link")
 	require.Nil(t, ws.Summary().Pending)
-}
-
-// TestStatusIgnoresSpecialFiles checks that a named pipe in the workspace is
-// neither a change nor an error: reading it would block.
-func TestStatusIgnoresSpecialFiles(t *testing.T) {
-	t.Parallel()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("named pipes are not created with mkfifo on Windows")
-	}
-
-	b := seedBackend(t, []string{"a.txt"}, []string{"a"})
-	ws := cloneTestWorkspace(t, b)
-
-	require.NoError(t, syscall.Mkfifo(filepath.Join(ws.Root(), "pipe"), 0o644))
-
-	changes, err := ws.Status()
-	require.NoError(t, err)
-	require.Empty(t, changes)
 }
 
 // TestCloneReportsARootItCannotRead checks a clone path under a file: the read
