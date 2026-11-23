@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -40,10 +41,19 @@ const adminIdentityName = "admin"
 // request must not be replayable much later.
 const signatureWindow = 60 * time.Second
 
-// maxNonces is the number of nonces the server remembers. The oldest entry is
-// dropped when the cache grows over the limit, so that a flood of requests
-// cannot make the server forget the nonces it must refuse.
+// maxNonces is the number of nonces the server remembers. A request is
+// refused when the cache is full of unexpired nonces: evicting one to make
+// room would reopen the replay window the cache exists to close.
 const maxNonces = 100000
+
+// errNonceUsed is returned by nonceCache.add when the nonce was already used:
+// the request is a replay.
+var errNonceUsed = errors.New("nonce already used")
+
+// errNonceCacheFull is returned by nonceCache.add when the cache holds
+// maxNonces unexpired nonces. The request is rejected instead of evicting an
+// unexpired nonce, which would make its captured request replayable again.
+var errNonceCacheFull = errors.New("nonce cache full")
 
 // Config is the Graft part of the authentication configuration of a server.
 type Config struct {
@@ -314,15 +324,20 @@ func (a *authenticator) authenticateAgent(ctx context.Context, signature *agentk
 		return identity.Identity{}, status.Errorf(codes.Unauthenticated, "the signature of agent %q is outside the validity window", cred.name)
 	}
 
-	// The nonce is remembered before the signature is verified, so that a
-	// captured request cannot be replayed even when its signature is broken.
-	if !a.nonces.add(signature.Nonce, now.Add(signatureWindow)) {
-		return identity.Identity{}, status.Errorf(codes.Unauthenticated, "the signature of agent %q was already used", cred.name)
-	}
-
 	payload := agentkey.Payload(signature.Timestamp, signature.Nonce, method, bodyHash)
 	if err := agentkey.Verify(cred.key, payload, signature.Value); err != nil {
 		return identity.Identity{}, status.Errorf(codes.Unauthenticated, "the signature of agent %q is invalid", cred.name)
+	}
+
+	// The nonce is remembered only after the signature is verified: a caller
+	// without the private key cannot consume capacity of the cache by minting
+	// nonces, so an unexpired nonce is never evicted to make room and the
+	// replay window stays closed even under a nonce flood.
+	if err := a.nonces.add(signature.Nonce, now.Add(signatureWindow)); err != nil {
+		if errors.Is(err, errNonceUsed) {
+			return identity.Identity{}, status.Errorf(codes.Unauthenticated, "the signature of agent %q was already used", cred.name)
+		}
+		return identity.Identity{}, status.Errorf(codes.ResourceExhausted, "the nonce cache of agent %q is full", cred.name)
 	}
 
 	return identity.Identity{Name: cred.name, Source: identity.SourceAgent}, nil
@@ -360,16 +375,18 @@ func newNonceCache() *nonceCache {
 	return &nonceCache{nonces: make(map[string]time.Time)}
 }
 
-// add remembers the nonce and reports whether it was new. The entry that
-// expires first is dropped when the cache is full: expired nonces are
-// forgotten first, and an expired nonce of an old request is no longer needed
-// because its timestamp is outside the window.
-func (c *nonceCache) add(nonce string, expiry time.Time) bool {
+// add remembers the nonce. Entries whose expiry has passed are forgotten
+// first: their requests are outside every validity window, so no live request
+// can still carry them. When the cache holds maxNonces unexpired nonces the
+// request is rejected instead of forgetting one: an unexpired nonce of a
+// captured request must stay remembered, or the captured request becomes
+// replayable again.
+func (c *nonceCache) add(nonce string, expiry time.Time) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if _, ok := c.nonces[nonce]; ok {
-		return false
+		return errNonceUsed
 	}
 
 	if len(c.nonces) >= maxNonces {
@@ -381,26 +398,11 @@ func (c *nonceCache) add(nonce string, expiry time.Time) bool {
 		}
 	}
 	if len(c.nonces) >= maxNonces {
-		c.dropOldest()
+		return errNonceCacheFull
 	}
 
 	c.nonces[nonce] = expiry
-	return true
-}
-
-// dropOldest forgets the nonce that expires first. The caller holds the lock.
-func (c *nonceCache) dropOldest() {
-	var oldest string
-	var expires time.Time
-	for nonce, expiry := range c.nonces {
-		if oldest == "" || expiry.Before(expires) {
-			oldest, expires = nonce, expiry
-		}
-	}
-
-	if oldest != "" {
-		delete(c.nonces, oldest)
-	}
+	return nil
 }
 
 // checkAgentMetadata rejects a request of an agent that carries metadata agents
