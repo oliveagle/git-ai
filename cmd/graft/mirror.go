@@ -86,6 +86,15 @@ person asks for it. The worker publishes the targets that are due and waits
 --tick between two looks. The queue run publishes the due targets once and
 exits, which is the run of a cron job.
 
+A run reads the changeset log of every repository the queue publishes, and
+that log is the event the queue waits for: a repository that changed is
+published at once, whatever its interval says, and the interval is the
+fallback for what the log does not see. --idle-interval is the longest a
+quiet target waits between two publications: the delay doubles once per
+run that found the mirror up to date, up to the idle interval, and a change
+puts the target back on its interval. --no-events reads no log, so that the
+schedule is the only trigger.
+
 Every run records a task: what was published, when, and what happened. The
 history is what an operator reads when a mirror stopped moving, and it is
 kept in the same file.`
@@ -143,12 +152,14 @@ func mirrorCommand() command {
 			fs.StringVar(&f.target, "mirror-target", "", "name of the registered mirror target the publication is for (the server records what the mirror holds under it)")
 			fs.DurationVar(&q.interval, "interval", -1, "how often a target of the queue is published, such as 5m (default 5m; 0: only when a person asks for it)")
 			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
+			fs.DurationVar(&q.idleInterval, "idle-interval", -1, "longest a quiet target waits between publications, such as 1h (default: the interval is fixed; requires --interval)")
 			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
 			fs.IntVar(&q.concurrency, "concurrency", defaultQueueConcurrency, "how many tasks of the queue run at the same time")
 			fs.StringVar(&q.queueFile, "queue-file", "", "file the mirror queue is kept in (env GRAFT_MIRROR_QUEUE)")
 			fs.StringVar(&q.target, "target", "", "name of the one target of the queue a command works on")
 			fs.IntVar(&q.limit, "limit", defaultTaskLimit, "how many tasks the task list prints")
 			fs.BoolVar(&q.all, "all", false, "publish every enabled target, not only the ones that are due")
+			fs.BoolVar(&q.noEvents, "no-events", false, "read no changeset log: publish only what the schedule says")
 			fs.BoolVar(&o.jsonOut, "json", false, "print the result as one JSON object")
 		},
 		run: func(ctx context.Context, out io.Writer, o *options, args []string) error {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -48,7 +49,7 @@ func TestMirrorQueuePublishesToItsTarget(t *testing.T) {
 
 	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
 	require.Equal(t, exitOK, code, stderr)
-	require.Contains(t, stdout, "published "+env.relPath+" to "+remote+" (gitee)")
+	require.Contains(t, stdout, "published "+env.relPath+" to "+remote+" (gitee,")
 	require.Equal(t, tip.String(), strings.TrimSpace(string(gittest.Exec(t, env.cfg, "-C", remote, "rev-parse", "refs/heads/main"))))
 
 	// The run is a task of the history, so an operator sees what the queue did.
@@ -364,4 +365,113 @@ func TestMirrorQueueUpdatesATargetInPlace(t *testing.T) {
 	require.Equal(t, exitOK, code, stderr)
 	require.NotContains(t, stderr, "error")
 	require.NotContains(t, stdout, "not published to any mirror target")
+}
+
+// landChange lands a change on the main branch of the repository of the test,
+// through the server, so that the changeset log of the repository records it.
+func landChange(t *testing.T, env serverEnv) {
+	t.Helper()
+
+	dir := filepath.Join(t.TempDir(), "ws")
+	code, _, stderr := runCLI(t, "clone", "-storage", env.storage, env.addr, env.relPath, dir)
+	require.Equal(t, exitOK, code, stderr)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "top.txt"), []byte("changed\n"), 0o644))
+	code, _, stderr = runCLI(t, "commit", "-C", dir, "-author", "Dev <dev@example.com>",
+		"-m", "change top", "-land", "main")
+	require.Equal(t, exitOK, code, stderr)
+}
+
+// mirrorQueueTargetState returns the targets of the queue as the command
+// prints them.
+func mirrorQueueTargetState(t *testing.T, queue string, env serverEnv) []mirrorQueueTarget {
+	t.Helper()
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "list", "--queue-file", queue,
+		"-address", env.addr, "--json")
+	require.Equal(t, exitOK, code, stderr)
+	var targets []mirrorQueueTarget
+	require.NoError(t, json.Unmarshal([]byte(stdout), &targets))
+	return targets
+}
+
+// TestMirrorQueuePublishesOnAChange checks the event side of the queue: a
+// repository that changed is published before its interval has passed,
+// because the changeset log of the repository is the event the queue waits
+// for, and the interval is only the fallback.
+func TestMirrorQueuePublishesOnAChange(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "1h", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "published "+env.relPath)
+
+	// The target waits an hour, so a run publishes nothing.
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "no mirror target is due")
+
+	// The repository changes: the log of the repository moves, and the queue
+	// publishes the change without waiting for the interval.
+	landChange(t, env)
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "published "+env.relPath)
+	require.Contains(t, stdout, "on a change")
+}
+
+// TestMirrorQueueStretchesTheIntervalOfAQuietTarget checks the fallback: a
+// target whose repository did not change waits longer after every run, up to
+// its idle interval, and a change puts it back on its interval.
+func TestMirrorQueueStretchesTheIntervalOfAQuietTarget(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "5m", "--idle-interval", "1h",
+		"--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "published "+env.relPath)
+
+	targets := mirrorQueueTargetState(t, queue, env)
+	require.Len(t, targets, 1)
+	require.Equal(t, "1h0m0s", targets[0].IdleInterval)
+	require.Equal(t, 0, targets[0].QuietRuns)
+
+	// A run that finds the mirror up to date stretches the delay: the
+	// interval of five minutes becomes ten.
+	code, _, stderr = runCLI(t, "mirror", "queue", "run", "--all", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+
+	targets = mirrorQueueTargetState(t, queue, env)
+	require.Len(t, targets, 1)
+	require.Equal(t, 1, targets[0].QuietRuns)
+	next, err := time.Parse(time.RFC3339, targets[0].NextRun)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(10*time.Minute), next, time.Minute)
+
+	// A change puts the target back on its interval: it is active again.
+	landChange(t, env)
+	code, _, stderr = runCLI(t, "mirror", "queue", "run", "--all", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+
+	targets = mirrorQueueTargetState(t, queue, env)
+	require.Len(t, targets, 1)
+	require.Equal(t, 0, targets[0].QuietRuns)
+	next, err = time.Parse(time.RFC3339, targets[0].NextRun)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(5*time.Minute), next, time.Minute)
 }
