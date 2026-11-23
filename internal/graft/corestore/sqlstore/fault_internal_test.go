@@ -795,3 +795,175 @@ func TestTheStoreReportsTheFailureOfEveryQuery(t *testing.T) {
 		})
 	}
 }
+
+// TestTheStoreConvertsTheTimesOfEveryDialect covers the conversion of the
+// times the store reads and writes, and the failure of a value that is no
+// time at all.
+func TestTheStoreConvertsTheTimesOfEveryDialect(t *testing.T) {
+	t.Parallel()
+
+	when := time.Date(2026, 11, 23, 10, 30, 0, 123456789, time.UTC)
+
+	sqlite := &Store{dialect: SQLite}
+	postgres := &Store{dialect: Postgres}
+
+	require.Equal(t, "2026-11-23T10:30:00.123456789Z", sqlite.timeArg(when))
+	require.Equal(t, when, postgres.timeArg(when))
+
+	require.Equal(t, "SELECT ?", sqlite.bind("SELECT ?"))
+	require.Equal(t, "SELECT $1", postgres.bind("SELECT ?"))
+	require.Equal(t, "SELECT $1, $2", postgres.bind("SELECT ?, ?"))
+
+	got, err := scanTime(when)
+	require.NoError(t, err)
+	require.Equal(t, when, got)
+
+	got, err = scanTime("2026-11-23T10:30:00.123456789Z")
+	require.NoError(t, err)
+	require.Equal(t, when, got)
+
+	got, err = scanTime([]byte("2026-11-23T10:30:00.123456789Z"))
+	require.NoError(t, err)
+	require.Equal(t, when, got)
+
+	_, err = scanTime(42)
+	require.Error(t, err)
+
+	_, err = parseSQLiteTime("not a time")
+	require.Error(t, err)
+}
+
+// TestOpenRefusesTheConfigurationsItCannotOpen covers the configurations of
+// the storage core that cannot be opened.
+func TestOpenRefusesTheConfigurationsItCannotOpen(t *testing.T) {
+	t.Parallel()
+
+	ctx := testhelper.Context(t)
+
+	// A database URL that names no dialect.
+	_, err := Open(ctx, "mysql://localhost/db")
+	require.Error(t, err)
+
+	// A pool that cannot serve a query.
+	_, err = OpenWithPool(ctx, "sqlite://"+filepath.Join(t.TempDir(), "meta.db"), Pool{MaxOpenConns: 0})
+	require.Error(t, err)
+
+	// A directory that cannot hold the database.
+	_, err = Open(ctx, "sqlite:///proc/does/not/exist/meta.db")
+	require.Error(t, err)
+}
+
+// TestTheStoreRefusesWhatItCannotDo covers the states of the storage core
+// that a command refuses before it writes anything: a repository that does not
+// exist, a review that is not there, a version that is not the current one and
+// the arguments that make no sense.
+func TestTheStoreRefusesWhatItCannotDo(t *testing.T) {
+	store, ctx := newFaultStore(t)
+	repo := store.register(t, ctx)
+	repoID := repo.ID
+	key := corestore.RepoKey{Storage: "default", RelativePath: "@hashed/x.git"}
+	missing := corestore.RepoKey{Storage: "default", RelativePath: "@hashed/missing.git"}
+
+	t.Run("a repository that does not exist", func(t *testing.T) {
+		_, err := store.ArchiveRepository(ctx, missing, "admin")
+		require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
+
+		_, err = store.StartRepositoryCleanup(ctx, missing, "admin", time.Hour, time.Hour)
+		require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
+
+		_, err = store.UnarchiveRepository(ctx, missing)
+		require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
+
+		_, err = store.PurgeRepository(ctx, missing)
+		require.ErrorIs(t, err, corestore.ErrRepositoryNotFound)
+	})
+
+	t.Run("cleanup times that make no sense", func(t *testing.T) {
+		_, err := store.StartRepositoryCleanup(ctx, key, "admin", 0, time.Hour)
+		require.Error(t, err)
+
+		_, err = store.StartRepositoryCleanup(ctx, key, "admin", time.Hour, -time.Hour)
+		require.Error(t, err)
+	})
+
+	t.Run("an object format the store does not hold", func(t *testing.T) {
+		_, _, err := store.RegisterRepository(ctx, corestore.RepoKey{Storage: "default", RelativePath: "@hashed/z.git"}, "md5", corestore.InitialState{})
+		require.Error(t, err)
+	})
+
+	t.Run("a repository that is registered already", func(t *testing.T) {
+		_, _, err := store.RegisterRepository(ctx, key, "sha1", corestore.InitialState{})
+		require.ErrorIs(t, err, corestore.ErrRepositoryExists)
+	})
+
+	t.Run("a review builder that returns no review", func(t *testing.T) {
+		_, err := store.InsertReview(ctx, repoID, func(string) (*gitalypb.Review, error) {
+			return nil, nil
+		}, corestore.ReviewInsert{})
+		require.Error(t, err)
+	})
+
+	t.Run("a review that is not there", func(t *testing.T) {
+		_, _, err := store.GetReview(ctx, repoID, "1")
+		require.ErrorIs(t, err, corestore.ErrReviewNotFound)
+
+		_, _, err = store.GetReview(ctx, repoID, "not a number")
+		require.ErrorIs(t, err, corestore.ErrReviewNotFound)
+	})
+
+	t.Run("more open reviews than the limit", func(t *testing.T) {
+		_, err := store.InsertReview(ctx, repoID, func(string) (*gitalypb.Review, error) {
+			return &gitalypb.Review{TargetBranch: []byte("main"), Title: []byte("t"), HeadCommitId: "abc"}, nil
+		}, corestore.ReviewInsert{})
+		require.NoError(t, err)
+
+		_, err = store.InsertReview(ctx, repoID, func(string) (*gitalypb.Review, error) {
+			return &gitalypb.Review{TargetBranch: []byte("main"), Title: []byte("t2"), HeadCommitId: "def"}, nil
+		}, corestore.ReviewInsert{MaxOpen: 1})
+		require.ErrorIs(t, err, corestore.ErrTooManyOpenReviews)
+	})
+
+	t.Run("a review of a version that is not the current one", func(t *testing.T) {
+		err := store.UpdateReview(ctx, repoID, "1", 99, &gitalypb.Review{TargetBranch: []byte("main"), Title: []byte("t")}, false)
+		require.ErrorIs(t, err, corestore.ErrReviewVersionConflict)
+	})
+
+	t.Run("a checkpoint that is not there", func(t *testing.T) {
+		_, err := store.CheckpointRefs(ctx, repoID, 42)
+		require.ErrorIs(t, err, corestore.ErrCheckpointNotFound)
+	})
+
+	t.Run("a checkpoint whose pack key is not owned", func(t *testing.T) {
+		_, _, err := store.CreateCheckpoint(ctx, repoID, corestore.CheckpointInput{
+			Seq:  1,
+			Refs: map[string]corestore.Target{"refs/heads/main": "0000000000000000000000000000000000000001"},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("a lease holder that is no text", func(t *testing.T) {
+		_, err := store.AcquireMaintenanceLease(ctx, repoID, "", time.Minute)
+		require.Error(t, err)
+
+		err = store.ReleaseMaintenanceLease(ctx, repoID, "")
+		require.Error(t, err)
+	})
+
+	t.Run("an age that is negative", func(t *testing.T) {
+		_, err := store.ListRemovedRepositories(ctx, "default", -time.Hour)
+		require.Error(t, err)
+
+		_, err = store.ObserveAllocator(ctx, -time.Hour, false)
+		require.Error(t, err)
+	})
+
+	t.Run("an imported review that is no review", func(t *testing.T) {
+		_, _, err := store.ImportHistory(ctx, repoID, nil, []*gitalypb.Review{nil})
+		require.Error(t, err)
+	})
+
+	t.Run("an imported review whose ID is no number", func(t *testing.T) {
+		_, _, err := store.ImportHistory(ctx, repoID, nil, []*gitalypb.Review{{Id: "not a number"}})
+		require.Error(t, err)
+	})
+}
