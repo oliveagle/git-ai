@@ -15,13 +15,17 @@ cd "$root"
 out="${1:-${TMPDIR:-/tmp}/git-ai-coverage}"
 mkdir -p "$out"
 
-packages="$(go list ./internal/graft/... ./cmd/graft/... ./sdk/... ./internal/gitaly/server/auth 2>/dev/null |
+packages="$(go list ./internal/graft/... ./cmd/graft/... ./cmd/graft-bench/... ./cmd/graft-cache/... ./cmd/graft-verify/... ./sdk/... ./internal/gitaly/server/auth 2>/dev/null |
 	rg -v '/(conformance|e2e|coretest)$')"
 
 echo "testing ${packages}" | tr '\n' ' ' | cut -c1-200
 echo
 
-go test -count=1 -timeout 30m -covermode=atomic -coverprofile "$out/cover.out" $packages
+status=0
+# A package that fails still leaves the blocks it ran in the profile, and a
+# machine-specific failure (a git without --ref-format=mvcc runs the mvcc test
+# of the proposals package) must not hide the numbers of the other packages.
+go test -count=1 -timeout 30m -covermode=atomic -coverprofile "$out/cover.out" $packages || status=$?
 
 go run ./tools/coverage -profile "$out/cover.out" -root "$root" -prefix 'internal/graft/,sdk/,cmd/graft,internal/gitaly/server/auth' -json |
 	tee "$out/packages.txt"
@@ -29,3 +33,5 @@ go run ./tools/coverage -profile "$out/cover.out" -root "$root" -prefix 'interna
 echo
 echo "all packages of the scope:"
 go run ./tools/coverage -profile "$out/cover.out" -root "$root"
+
+exit "$status"
