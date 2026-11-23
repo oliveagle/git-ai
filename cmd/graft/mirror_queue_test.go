@@ -509,3 +509,34 @@ func TestMirrorQueueStretchesTheIntervalOfAQuietTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.WithinDuration(t, time.Now().Add(5*time.Minute), next, time.Minute)
 }
+
+// TestMirrorQueueDoesNotReplayTheNewestChangeOfARepository checks the first
+// observation: a repository whose log already moved — an import, a clone, a
+// repository that changed while the queue was down — is published once on its
+// schedule and not again as if its newest entry were a change. The cursor has
+// to start at the tail of the log for that, not one entry short of it.
+func TestMirrorQueueDoesNotReplayTheNewestChangeOfARepository(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	// The log moves before the queue ever reads it.
+	landChange(t, env)
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "1h", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "published "+env.relPath)
+	require.Contains(t, stdout, "on the schedule")
+
+	// Nothing moved since that publication, and the newest entry of the log
+	// belongs to the history the queue started from.
+	code, stdout, stderr = runCLI(t, "mirror", "queue", "run", "--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "no mirror target is due")
+	require.NotContains(t, stdout, "on a change")
+}

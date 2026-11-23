@@ -171,7 +171,10 @@ func TestTargetRefusesAnIdleIntervalShorterThanItsInterval(t *testing.T) {
 // TestRetryKeepsAFailedTargetOnItsInterval checks that a failure is not
 // silence: a target whose publication failed waits its interval, not the
 // stretched delay of a quiet target.
-func TestRetryKeepsAFailedTargetOnItsInterval(t *testing.T) {
+// TestRetryDoesNotInheritTheQuietDelay keeps a failure from being punished
+// with the stretch of a quiet target: a mirror that stopped working starts
+// over from the interval and stretches on its own count.
+func TestRetryDoesNotInheritTheQuietDelay(t *testing.T) {
 	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
 
 	target := newTarget("failed")
@@ -182,7 +185,13 @@ func TestRetryKeepsAFailedTargetOnItsInterval(t *testing.T) {
 	require.Equal(t, 20*time.Minute, target.NextDelay())
 
 	target.Retry(now)
-	require.Equal(t, now.Add(5*time.Minute), target.NextRun)
+	require.Equal(t, now.Add(10*time.Minute), target.NextRun)
+	require.Equal(t, 1, target.Failures)
+
+	// A success forgets the quiet runs it inherited as well as the failures.
+	target.ResetFailures()
+	target.Observe(true, true)
+	require.Equal(t, 5*time.Minute, target.NextDelay())
 }
 
 func TestLastTasksAreTheNewestOnesOfTheHistory(t *testing.T) {
@@ -265,4 +274,81 @@ func TestUpdateTargetRefusesATargetTheQueueDoesNotHold(t *testing.T) {
 	_, err := q.UpdateTarget(newTarget("gitee"))
 	require.ErrorContains(t, err, "no target named")
 	require.Empty(t, q.Targets)
+}
+
+// TestFailingTargetStretchesTowardsItsFailureInterval checks the schedule of a
+// target whose mirror cannot be reached: it keeps retrying from its interval,
+// but the delay doubles once per failure towards the failure interval, so that
+// a broken mirror does not consume the schedule of the mirrors that work.
+func TestFailingTargetStretchesTowardsItsFailureInterval(t *testing.T) {
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+
+	target := newTarget("broken")
+	target.Interval = 5 * time.Minute
+	target.IdleInterval = time.Hour
+	target.FailureInterval = 30 * time.Minute
+
+	target.Retry(now)
+	require.Equal(t, 1, target.Failures)
+	require.Equal(t, 10*time.Minute, target.NextRun.Sub(now))
+
+	target.Retry(now)
+	require.Equal(t, 20*time.Minute, target.NextRun.Sub(now))
+
+	// The failure interval is the ceiling, and it is not the idle interval.
+	target.Retry(now)
+	require.Equal(t, 30*time.Minute, target.NextRun.Sub(now))
+	for i := 0; i < 5; i++ {
+		target.Retry(now)
+	}
+	require.Equal(t, 30*time.Minute, target.NextRun.Sub(now))
+
+	// A publication resets the count, so the next failure starts over.
+	target.ResetFailures()
+	require.Equal(t, 0, target.Failures)
+	target.Retry(now)
+	require.Equal(t, 10*time.Minute, target.NextRun.Sub(now))
+}
+
+// TestFailingTargetWithoutAFailureIntervalStretchesTowardsItsIdleInterval
+// checks the fallback of the fallback: a queue written before the failure
+// interval existed still stops hammering a mirror nobody can reach.
+func TestFailingTargetWithoutAFailureIntervalStretchesTowardsItsIdleInterval(t *testing.T) {
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+
+	target := newTarget("broken")
+	target.Interval = 5 * time.Minute
+	target.IdleInterval = time.Hour
+
+	target.Retry(now)
+	require.Equal(t, 10*time.Minute, target.NextRun.Sub(now))
+	target.Retry(now)
+	require.Equal(t, 20*time.Minute, target.NextRun.Sub(now))
+	target.Retry(now)
+	require.Equal(t, 40*time.Minute, target.NextRun.Sub(now))
+	target.Retry(now)
+	require.Equal(t, time.Hour, target.NextRun.Sub(now))
+
+	// A target with neither interval keeps retrying on its plain interval.
+	plain := newTarget("plain")
+	plain.Interval = 5 * time.Minute
+	plain.Retry(now)
+	plain.Retry(now)
+	require.Equal(t, 5*time.Minute, plain.NextRun.Sub(now))
+	require.Equal(t, 2, plain.Failures)
+}
+
+// TestTargetRefusesAFailureIntervalShorterThanItsInterval keeps a target from
+// naming a failure interval the schedule cannot honour.
+func TestTargetRefusesAFailureIntervalShorterThanItsInterval(t *testing.T) {
+	target := newTarget("broken")
+	target.Interval = 5 * time.Minute
+	target.FailureInterval = time.Minute
+	require.Error(t, target.Validate())
+
+	target.FailureInterval = -time.Minute
+	require.Error(t, target.Validate())
+
+	target.FailureInterval = 30 * time.Minute
+	require.NoError(t, target.Validate())
 }

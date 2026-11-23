@@ -44,27 +44,34 @@ const (
 	defaultQueueConcurrency = 4
 	// defaultTaskLimit is how many tasks the task list prints.
 	defaultTaskLimit = 20
+	// defaultTaskTimeout is how long one publication may take. A mirror that
+	// hangs is a mirror that starves the schedule of every other target, and
+	// with events on the schedule also carries the latency of a change, so a
+	// task is given a deadline by default.
+	defaultTaskTimeout = 2 * time.Minute
 )
 
 // mirrorQueueTarget is one target of the queue, as the command prints it.
 type mirrorQueueTarget struct {
-	Name         string   `json:"name"`
-	Repository   string   `json:"repository"`
-	URL          string   `json:"url"`
-	Branches     []string `json:"branches"`
-	TokenEnv     string   `json:"token_env,omitempty"`
-	Username     string   `json:"username,omitempty"`
-	SSHKey       string   `json:"ssh_key,omitempty"`
-	KnownHosts   string   `json:"known_hosts,omitempty"`
-	Force        bool     `json:"force,omitempty"`
-	Interval     string   `json:"interval"`
-	IdleInterval string   `json:"idle_interval,omitempty"`
-	QuietRuns    int      `json:"quiet_runs,omitempty"`
-	Enabled      bool     `json:"enabled"`
-	NextRun      string   `json:"next_run,omitempty"`
-	LastTask     string   `json:"last_task,omitempty"`
-	LastStatus   string   `json:"last_status,omitempty"`
-	LastError    string   `json:"last_error,omitempty"`
+	Name            string   `json:"name"`
+	Repository      string   `json:"repository"`
+	URL             string   `json:"url"`
+	Branches        []string `json:"branches"`
+	TokenEnv        string   `json:"token_env,omitempty"`
+	Username        string   `json:"username,omitempty"`
+	SSHKey          string   `json:"ssh_key,omitempty"`
+	KnownHosts      string   `json:"known_hosts,omitempty"`
+	Force           bool     `json:"force,omitempty"`
+	Interval        string   `json:"interval"`
+	IdleInterval    string   `json:"idle_interval,omitempty"`
+	QuietRuns       int      `json:"quiet_runs,omitempty"`
+	FailureInterval string   `json:"failure_interval,omitempty"`
+	Failures        int      `json:"failures,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	NextRun         string   `json:"next_run,omitempty"`
+	LastTask        string   `json:"last_task,omitempty"`
+	LastStatus      string   `json:"last_status,omitempty"`
+	LastError       string   `json:"last_error,omitempty"`
 }
 
 // mirrorQueueTask is one task of the history, as the command prints it.
@@ -84,22 +91,24 @@ type mirrorQueueTask struct {
 // mirrorQueueTargetJSON returns the target as the command prints it.
 func mirrorQueueTargetJSON(t *mirrorqueue.Target) mirrorQueueTarget {
 	out := mirrorQueueTarget{
-		Name:         t.Name,
-		Repository:   t.Repository,
-		URL:          t.URL,
-		Branches:     append([]string(nil), t.Branches...),
-		TokenEnv:     t.TokenEnv,
-		Username:     t.Username,
-		SSHKey:       t.SSHKey,
-		KnownHosts:   t.KnownHosts,
-		Force:        t.Force,
-		Interval:     mirrorQueueInterval(t.Interval),
-		IdleInterval: mirrorQueueIdleInterval(t),
-		QuietRuns:    t.QuietRuns,
-		Enabled:      t.Enabled,
-		LastTask:     t.LastTask,
-		LastStatus:   t.LastStatus,
-		LastError:    t.LastError,
+		Name:            t.Name,
+		Repository:      t.Repository,
+		URL:             t.URL,
+		Branches:        append([]string(nil), t.Branches...),
+		TokenEnv:        t.TokenEnv,
+		Username:        t.Username,
+		SSHKey:          t.SSHKey,
+		KnownHosts:      t.KnownHosts,
+		Force:           t.Force,
+		Interval:        mirrorQueueInterval(t.Interval),
+		IdleInterval:    mirrorQueueIdleInterval(t),
+		QuietRuns:       t.QuietRuns,
+		FailureInterval: mirrorQueueFailureInterval(t),
+		Failures:        t.Failures,
+		Enabled:         t.Enabled,
+		LastTask:        t.LastTask,
+		LastStatus:      t.LastStatus,
+		LastError:       t.LastError,
 	}
 	if !t.NextRun.IsZero() {
 		out.NextRun = t.NextRun.Format(time.RFC3339)
@@ -151,14 +160,27 @@ func mirrorQueueIdleInterval(t *mirrorqueue.Target) string {
 // mirrorQueueSchedule is the schedule of a target as the command prints it: the
 // interval, and the idle interval the target stretches towards while its
 // repository does not change.
+func mirrorQueueFailureInterval(t *mirrorqueue.Target) string {
+	if t.FailureInterval <= 0 {
+		return ""
+	}
+	return t.FailureInterval.String()
+}
+
 func mirrorQueueSchedule(t *mirrorqueue.Target) string {
 	if t.Interval <= 0 {
 		return "manual"
 	}
+	schedule := t.Interval.String()
 	if t.IdleInterval > 0 {
-		return fmt.Sprintf("%s, idle %s", t.Interval, t.IdleInterval)
+		schedule = fmt.Sprintf("%s, idle %s", schedule, t.IdleInterval)
 	}
-	return t.Interval.String()
+	if cap := mirrorQueueFailureInterval(t); cap != "" {
+		schedule = fmt.Sprintf("%s, failing %s", schedule, cap)
+	} else if t.IdleInterval > 0 {
+		schedule = fmt.Sprintf("%s, failing %s", schedule, t.IdleInterval)
+	}
+	return schedule
 }
 
 // mirrorQueueStore returns the store of the queue. The file is named by the
@@ -336,6 +358,13 @@ func mirrorQueueDeclare(o *options, f *mirrorFlags, q *mirrorQueueFlags, usage, 
 	if idleInterval > 0 && interval > 0 && idleInterval < interval {
 		return nil, usagef("%s: the idle interval %s is shorter than the interval %s", usage, idleInterval, interval)
 	}
+	failureInterval := q.failureInterval
+	if failureInterval < 0 {
+		failureInterval = 0
+	}
+	if failureInterval > 0 && interval > 0 && failureInterval < interval {
+		return nil, usagef("%s: the failure interval %s is shorter than the interval %s", usage, failureInterval, interval)
+	}
 	credential := mirrorAuth{
 		usage:    usage,
 		url:      f.url,
@@ -371,6 +400,7 @@ func mirrorQueueDeclare(o *options, f *mirrorFlags, q *mirrorQueueFlags, usage, 
 		Force:             f.force,
 		Interval:          interval,
 		IdleInterval:      idleInterval,
+		FailureInterval:   failureInterval,
 	}
 	// A target with a schedule is due right away, so that the queue publishes
 	// it without waiting for the next tick of the worker.
@@ -529,6 +559,9 @@ func mirrorQueueShow(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 	if target.QuietRuns > 0 {
 		fmt.Fprintf(out, "quiet runs: %d\n", target.QuietRuns)
 	}
+	if target.Failures > 0 {
+		fmt.Fprintf(out, "failed runs: %d\n", target.Failures)
+	}
 	if !target.NextRun.IsZero() {
 		fmt.Fprintf(out, "next run: %s\n", target.NextRun.Format(time.RFC3339))
 	}
@@ -563,8 +596,8 @@ func mirrorQueueIdle(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 	if len(args) > 1 {
 		return usagef("mirror queue idle takes at most the name of one target")
 	}
-	if q.idleInterval < 0 {
-		return usagef("mirror queue idle requires --idle-interval DURATION")
+	if q.idleInterval < 0 && q.failureInterval < 0 {
+		return usagef("mirror queue idle requires --idle-interval DURATION, --failure-interval DURATION, or both")
 	}
 	store, err := mirrorQueueStore(q)
 	if err != nil {
@@ -581,7 +614,16 @@ func mirrorQueueIdle(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 				return fmt.Errorf("the idle interval %s is shorter than the interval %s of the mirror target %q",
 					q.idleInterval, target.Interval, target.Name)
 			}
-			target.IdleInterval = q.idleInterval
+			if q.failureInterval > 0 && target.Interval > 0 && q.failureInterval < target.Interval {
+				return fmt.Errorf("the failure interval %s is shorter than the interval %s of the mirror target %q",
+					q.failureInterval, target.Interval, target.Name)
+			}
+			if q.idleInterval >= 0 {
+				target.IdleInterval = q.idleInterval
+			}
+			if q.failureInterval >= 0 {
+				target.FailureInterval = q.failureInterval
+			}
 			target.UpdatedAt = now
 			changed = append(changed, target)
 		}
@@ -604,8 +646,8 @@ func mirrorQueueIdle(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 		return mirrorQueueWriteJSON(out, list)
 	}
 	for _, t := range changed {
-		fmt.Fprintf(out, "the mirror target %s now waits %s at most between two publications\n",
-			t.Name, mirrorQueueIdleInterval(t))
+		fmt.Fprintf(out, "the mirror target %s now waits %s at most between two publications, and %s between two attempts while it fails\n",
+			t.Name, pick(mirrorQueueIdleInterval(t), t.Interval.String()), pick(mirrorQueueFailureInterval(t), pick(mirrorQueueIdleInterval(t), t.Interval.String())))
 	}
 	return nil
 }
@@ -736,7 +778,13 @@ func mirrorQueuePublish(ctx context.Context, out io.Writer, o *options, f *mirro
 			slots <- struct{}{}
 			defer func() { <-slots }()
 
-			task := mirrorQueuePublishTarget(ctx, o, f, store, target, changes[mirrorQueueRepoKey(o, target)])
+			taskCtx := ctx
+			if q.taskTimeout > 0 {
+				var cancel context.CancelFunc
+				taskCtx, cancel = context.WithTimeout(ctx, q.taskTimeout)
+				defer cancel()
+			}
+			task := mirrorQueuePublishTarget(taskCtx, o, f, store, target, changes[mirrorQueueRepoKey(o, target)])
 			mu.Lock()
 			tasks = append(tasks, task)
 			mu.Unlock()
@@ -805,6 +853,7 @@ func mirrorQueueRecord(store *mirrorqueue.FileStore, target *mirrorqueue.Target,
 			switch task.Status {
 			case mirrorqueue.TaskOK:
 				current.Observe(task.Changed, observed)
+				current.ResetFailures()
 				current.SetNextRun(task.FinishedAt)
 			case mirrorqueue.TaskDiverged:
 				// A branch the mirror kept with other history is not a quiet
@@ -1014,27 +1063,45 @@ func mirrorQueueReadChanges(ctx context.Context, repo *sdk.Repo, cursor *mirrorq
 // after n has a tail greater than n: the tail is found by growing a bound and
 // bisecting it, which costs a handful of reads instead of replaying the log.
 func mirrorQueueChangesetTail(ctx context.Context, repo *sdk.Repo) (uint64, error) {
+	// Changesets answers the entries with a sequence greater than the one it
+	// is given, so "does sequence s exist" is asked as Changesets(s-1, 1) and
+	// the entry that comes back is s itself. Asking Changesets(s, 1) instead
+	// would answer whether s+1 exists and make the tail one short, which
+	// replays the newest entry of an imported repository as a change.
+	exists := func(s uint64) (bool, error) {
+		if s == 0 {
+			return false, nil
+		}
+		entries, err := repo.Changesets(ctx, s-1, 1)
+		if err != nil {
+			return false, err
+		}
+		return len(entries) > 0 && entries[0].GetSequence() == s, nil
+	}
+
+	// lo is a sequence that exists (zero when the log may be empty), hi is a
+	// sequence that does not.
 	lo, hi := uint64(0), uint64(1)
 	for i := 0; i < 40; i++ {
-		entries, err := repo.Changesets(ctx, hi, 1)
+		ok, err := exists(hi)
 		if err != nil {
 			return 0, err
 		}
-		if len(entries) == 0 {
+		if !ok {
 			break
 		}
 		lo, hi = hi, hi*2
 	}
 	for hi-lo > 1 {
 		mid := lo + (hi-lo)/2
-		entries, err := repo.Changesets(ctx, mid, 1)
+		ok, err := exists(mid)
 		if err != nil {
 			return 0, err
 		}
-		if len(entries) == 0 {
-			hi = mid
-		} else {
+		if ok {
 			lo = mid
+		} else {
+			hi = mid
 		}
 	}
 	return lo, nil
@@ -1243,6 +1310,13 @@ func mirrorTaskID() string {
 type mirrorQueueFlags struct {
 	// interval is how often a target is published.
 	interval time.Duration
+	// failureInterval is the longest a failing target waits between two
+	// attempts. Zero falls back to the idle interval.
+	failureInterval time.Duration
+	// taskTimeout bounds one publication, so that a mirror that hangs cannot
+	// hold the run — and with it the schedule and the events of every other
+	// target — for as long as its own client keeps waiting.
+	taskTimeout time.Duration
 	// idleInterval is the longest a quiet target waits between two
 	// publications. Zero leaves the interval fixed.
 	idleInterval time.Duration

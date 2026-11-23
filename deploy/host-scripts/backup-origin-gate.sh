@@ -165,10 +165,15 @@ while IFS='|' read -r repo_id repository; do
     [ -n "$url" ] || continue
 
     if [ "$SYNC" = "1" ]; then
+      # A publish is bounded like the read-back below: a mirror that hangs
+      # holds the lock of the queue, and the queue is what carries every
+      # event of the server, so one unreachable origin must not own the
+      # whole gate run. The task timeout of the queue is the first line; this
+      # is the line that also covers a sync command of the registry.
       if [ -n "$sync_cmd" ]; then
-        bash -c "$sync_cmd" >>"$SYNC_LOG" 2>&1 || true
+        timeout --signal=TERM --kill-after=30 "$PUSH_TIMEOUT" bash -c "$sync_cmd" >>"$SYNC_LOG" 2>&1 || true
       else
-        "$PUBLISH" "$repository" "$url" >>"$SYNC_LOG" 2>&1 || true
+        timeout --signal=TERM --kill-after=30 "$PUSH_TIMEOUT" "$PUBLISH" "$repository" "$url" >>"$SYNC_LOG" 2>&1 || true
       fi
     fi
 

@@ -78,6 +78,16 @@ type Target struct {
 	// changed that found the mirror up to date. It is what stretches the
 	// delay towards IdleInterval, and a change resets it.
 	QuietRuns int `json:"quiet_runs,omitempty"`
+	// FailureInterval is the longest a failing target waits between two
+	// attempts: a failure doubles the delay from Interval towards it, so that
+	// a mirror that cannot be reached stops eating the schedule of the ones
+	// that can. Zero falls back to IdleInterval, and a target with neither
+	// keeps retrying on its interval.
+	FailureInterval time.Duration `json:"failure_interval,omitempty"`
+	// Failures is the number of attempts since the target last published.
+	// It is what stretches the delay of a failing target towards its failure
+	// interval, and a successful publication resets it.
+	Failures int `json:"failures,omitempty"`
 	// Enabled tells whether the worker publishes the target on its schedule.
 	Enabled bool `json:"enabled"`
 	// CreatedAt is when the target was added to the queue.
@@ -213,6 +223,12 @@ func (t *Target) Validate() error {
 	}
 	if t.IdleInterval > 0 && t.Interval > 0 && t.IdleInterval < t.Interval {
 		return fmt.Errorf("the idle interval of the mirror target %q is shorter than its interval", t.Name)
+	}
+	if t.FailureInterval < 0 {
+		return fmt.Errorf("the failure interval of the mirror target %q is negative", t.Name)
+	}
+	if t.FailureInterval > 0 && t.Interval > 0 && t.FailureInterval < t.Interval {
+		return fmt.Errorf("the failure interval of the mirror target %q is shorter than its interval", t.Name)
 	}
 	return nil
 }
@@ -353,32 +369,58 @@ func (t *Target) SetNextRun(now time.Time) {
 // doubled once per quiet run up to the idle interval; a target without an
 // idle interval waits the interval whatever its quiet runs say.
 func (t *Target) NextDelay() time.Duration {
-	if t.IdleInterval <= t.Interval || t.QuietRuns <= 0 {
+	return t.stretchedDelay(t.QuietRuns, t.IdleInterval, 0)
+}
+
+// stretchedDelay doubles the interval once per quiet or failed run, up to the
+// cap the operator named: the first of fallback and second is the cap, so that
+// a target without a failure interval stretches as far as its idle interval.
+func (t *Target) stretchedDelay(runs int, cap, fallback time.Duration) time.Duration {
+	if cap <= 0 {
+		cap = fallback
+	}
+	if cap <= t.Interval || runs <= 0 {
 		return t.Interval
 	}
 	delay := t.Interval
-	for i := 0; i < t.QuietRuns; i++ {
-		if delay >= t.IdleInterval/2 {
-			return t.IdleInterval
+	for i := 0; i < runs; i++ {
+		if delay >= cap/2 {
+			return cap
 		}
 		delay *= 2
 	}
-	if delay > t.IdleInterval {
-		return t.IdleInterval
+	if delay > cap {
+		return cap
 	}
 	return delay
 }
 
-// Retry schedules a run that failed. A failure is not silence: it waits the
-// interval, not the stretched delay of a quiet target, so that a broken
-// mirror is repaired as often as the operator asked and not as often as the
-// fallback allows.
+// Retry schedules a run that failed. A failure is not silence, but it is not
+// a change either: the target keeps retrying from its interval, and unlike a
+// quiet target it stretches towards the failure interval rather than the idle
+// one, so that a mirror nobody can reach is repaired as often as the operator
+// allows and does not consume the schedule of the mirrors that work. A target
+// that names no failure interval falls back to its idle interval, and one
+// with neither keeps retrying on its plain interval.
 func (t *Target) Retry(now time.Time) {
 	if t.Interval <= 0 {
 		t.NextRun = time.Time{}
 		return
 	}
-	t.NextRun = now.Add(t.Interval)
+	t.Failures++
+	t.NextRun = now.Add(t.failureDelay())
+}
+
+// failureDelay is the delay after a failed run: the interval, doubled once per
+// failure, up to the failure interval.
+func (t *Target) failureDelay() time.Duration {
+	return t.stretchedDelay(t.Failures, t.FailureInterval, t.IdleInterval)
+}
+
+// ResetFailures records that the target published: the next failure waits the
+// interval again.
+func (t *Target) ResetFailures() {
+	t.Failures = 0
 }
 
 // Observe records the outcome of one publication for the schedule: a run

@@ -92,8 +92,11 @@ published at once, whatever its interval says, and the interval is the
 fallback for what the log does not see. --idle-interval is the longest a
 quiet target waits between two publications: the delay doubles once per
 run that found the mirror up to date, up to the idle interval, and a change
-puts the target back on its interval. --no-events reads no log, so that the
-schedule is the only trigger.
+puts the target back on its interval. A failing target stretches the same way
+towards --failure-interval, which defaults to the idle interval, so that a
+mirror nobody can reach stops consuming the schedule of the mirrors that
+work. --task-timeout bounds one publication for the same reason.
+--no-events reads no log, so that the schedule is the only trigger.
 
 Every run records a task: what was published, when, and what happened. The
 history is what an operator reads when a mirror stopped moving, and it is
@@ -153,6 +156,8 @@ func mirrorCommand() command {
 			fs.DurationVar(&q.interval, "interval", -1, "how often a target of the queue is published, such as 5m (default 5m; 0: only when a person asks for it)")
 			fs.BoolVar(&q.manual, "manual", false, "keep the target out of the schedule: publish it only when a person asks for it")
 			fs.DurationVar(&q.idleInterval, "idle-interval", -1, "longest a quiet target waits between publications, such as 1h (default: the interval is fixed; requires --interval)")
+			fs.DurationVar(&q.failureInterval, "failure-interval", -1, "longest a failing target waits between two attempts, such as 30m (default: the idle interval, or the interval)")
+			fs.DurationVar(&q.taskTimeout, "task-timeout", defaultTaskTimeout, "how long one publication may take before the run gives up on it (0: wait forever)")
 			fs.DurationVar(&q.tick, "tick", defaultQueueTick, "how often the worker looks for the targets that are due")
 			fs.IntVar(&q.concurrency, "concurrency", defaultQueueConcurrency, "how many tasks of the queue run at the same time")
 			fs.StringVar(&q.queueFile, "queue-file", "", "file the mirror queue is kept in (env GRAFT_MIRROR_QUEUE)")

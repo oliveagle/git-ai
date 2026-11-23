@@ -141,7 +141,7 @@ The commands of the queue:
 | `graft mirror queue disable NAME` | leaves the target alone, keeping its history |
 | `graft mirror queue remove NAME` | takes the target out of the queue, and out of the mirror policy of the server |
 | `graft mirror queue register NAME` | registers a target the queue already holds with the server, without publishing it |
-| `graft mirror queue idle --idle-interval 1h` | sets the fallback of every target, or of the one that is named |
+| `graft mirror queue idle --idle-interval 1h` | sets the fallback (and, with `--failure-interval`, the failing fallback) of every target, or of the one that is named |
 | `graft mirror queue run` | publishes the targets that are due, and exits |
 | `graft mirror queue worker` | publishes the targets that are due, over and over |
 | `graft mirror task list` | lists the tasks, newest first |
@@ -231,6 +231,24 @@ A queue whose targets were written before the idle interval existed is moved
 by `graft mirror queue idle --idle-interval 1h`, which sets the fallback of
 every target — or of the one it names — and leaves the rest of the target
 alone.
+
+**A failing target stretches too, on its own count.** `--failure-interval` is
+the longest a target waits between two attempts while its last attempt failed.
+The delay doubles once per failure, from the interval towards that cap, and a
+successful publication resets the count. A target that names no failure
+interval falls back to its idle interval, so a queue written before the
+failure interval existed stops hammering a mirror nobody can reach as soon as
+it stretches. The reason is the same as the stretch of a quiet target: an
+unreachable host — a mirror behind a broken network, a token that was revoked
+— costs a round trip per attempt, and a schedule that spends its minute on
+them never reaches the targets that work.
+
+**One publication is bounded.** `--task-timeout` (two minutes by default)
+gives each task a deadline. A mirror that hangs is not only a target that
+does not move, it is a run that never ends: the schedule of every other
+target waits behind it, and with events on, so does the latency of a change.
+A task that runs out of time fails, and the failure is what the failure
+interval stretches.
 
 `--no-events` reads no log at all, so that the schedule is the only trigger.
 It is the switch for a server whose changelog is off, and the way to measure
