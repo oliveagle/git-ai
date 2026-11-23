@@ -3,11 +3,13 @@ package cachetier
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
 	gitalyauth "github.com/feder-cr/git-ai/auth"
@@ -55,6 +57,14 @@ func NewGRPCServer(s *Server) *grpc.Server {
 
 	srv := grpc.NewServer(
 		grpc.Creds(lm),
+		// The client pings every 20s (internal/grpc/client/dial.go). Without an explicit
+		// enforcement policy gRPC's default MinTime (5m) counts those pings as strikes and
+		// answers a long-running request with GOAWAY ENHANCE_YOUR_CALM "too_many_pings".
+		// Bulk storage imports run for minutes without sending data, so allow the client cadence.
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
 		grpc.ForceServerCodec(proxy.NewCodec()),
 		grpc.UnknownServiceHandler(proxy.TransparentHandler(s.director)),
 		// A panic in one request, for example on a damaged cache entry, fails that
