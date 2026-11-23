@@ -180,6 +180,11 @@ set +a
 # The token's validity window is widened for clients whose clock drifts
 # (auth/token.go reads this variable; the default stays 30 seconds).
 export GITALY_TOKEN_VALIDITY=10m
+# Spans go to the collector on the host's loopback: the lane's container
+# shares the host network. The sampler keeps the volume proportional to a
+# home server's request rate; a host that exports GITLAB_TRACING itself
+# overrides it, and an empty value keeps tracing off (noop provider).
+export GITLAB_TRACING="\${GITLAB_TRACING:-otlp://127.0.0.1:14320?sampler=probabilistic&sampler_param=0.05}"
 exec "$LANE_DIR/current/bin/gitaly" serve "$LANE_DIR/config.toml"
 RUNNER
 chmod 750 "$runner"
