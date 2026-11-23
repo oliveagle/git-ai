@@ -22,3 +22,7 @@
 ## Skaffold
 k8s/statefulset.yaml
 /dist/
+
+# gomut artifacts
+.gomut-report/
+.gomut-cache/
