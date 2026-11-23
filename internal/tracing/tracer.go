@@ -54,12 +54,18 @@ func InitializeTracerProvider(ctx context.Context, serviceName string) (io.Close
 		return io.NopCloser(nil), nil
 	}
 
-	_, shutdown, err := labkitv2trace.NewWithConfig(ctx, &labkitv2trace.Config{
+	tracer, shutdown, err := labkitv2trace.NewWithConfig(ctx, &labkitv2trace.Config{
 		ServiceName: serviceName,
 	})
 	if err != nil {
 		return io.NopCloser(nil), err
 	}
+
+	// Install the provider LabKit built as the global one. The gRPC
+	// interceptors of the server read otel.GetTracerProvider(), so a provider
+	// that is returned but never installed is a server that exports nothing:
+	// every interceptor gets the global noop provider and no span is created.
+	otel.SetTracerProvider(tracer.Provider())
 
 	// Override the global propagator to include OpenTracing and Jaeger propagators
 	// for backward compatibility with other GitLab components that have not yet
