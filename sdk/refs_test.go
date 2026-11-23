@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/git/gittest"
 	"github.com/feder-cr/git-ai/internal/gitaly/config"
@@ -80,4 +81,24 @@ func newOperatorRepo(t *testing.T) (*Repo, string, config.Cfg) {
 	t.Cleanup(func() { _ = client.Close() })
 
 	return client.Repo(repoProto.GetRelativePath()), repoPath, cfg
+}
+
+// TestTheReferenceMethodsRefuseTheArgumentsTheyCannotRun covers the arguments
+// the reference methods refuse before they contact the server.
+func TestTheReferenceMethodsRefuseTheArgumentsTheyCannotRun(t *testing.T) {
+	t.Parallel()
+
+	repo := &Repo{}
+
+	_, err := repo.ReferenceValue(testhelper.Context(t), "main")
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	err = repo.UpdateReference(testhelper.Context(t), "main", "", "abc")
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	err = repo.UpdateReference(testhelper.Context(t), "refs/graft/green/main", "abc", "")
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
