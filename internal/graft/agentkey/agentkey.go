@@ -19,6 +19,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -77,10 +78,15 @@ func ParsePrivateKey(text []byte) (ssh.Signer, error) {
 	return signer, nil
 }
 
+// randReader is the source of the random bytes of a nonce. It is a variable
+// so that a test can make the read fail: a signer that cannot draw a nonce
+// must refuse to send the request rather than send it unsigned.
+var randReader io.Reader = rand.Reader
+
 // Nonce returns a new nonce: random bytes in hex.
 func Nonce() (string, error) {
 	buf := make([]byte, NonceBytes)
-	if _, err := rand.Read(buf); err != nil {
+	if _, err := io.ReadFull(randReader, buf); err != nil {
 		return "", fmt.Errorf("read the random bytes of the nonce: %w", err)
 	}
 	return hex.EncodeToString(buf), nil
