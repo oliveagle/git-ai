@@ -129,6 +129,13 @@ all and publishes to a public mirror. A target whose variable is not set
 fails with the name of the variable, not with a secret, so the task of the
 history says what the operator has to put in the environment of the worker.
 
+The worker of this deployment, `deploy/host-scripts/mirror-queue-run.sh`, reads
+two host files when the environment is bare, so that cron needs no secret: the
+GitHub token from `~/.config/laya-workflow/github.token`
+(`GITAI_GITHUB_TOKEN_FILE`) and the Gitea token from `tokens/gitea` under the
+deploy root (`GITAI_GITEA_TOKEN_FILE`). A variable that is already set wins,
+and a target of another host is served from the environment alone.
+
 The commands of the queue:
 
 | Command | What it does |
