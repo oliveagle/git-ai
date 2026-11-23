@@ -98,6 +98,8 @@ func TestCommitRefusesWhatItCannotRead(t *testing.T) {
 	})
 
 	t.Run("a file it cannot read", func(t *testing.T) {
+		requireEnforcedPermissions(t)
+
 		b := seedBackend(t, []string{"a/x.txt"}, []string{"one"})
 		ws := cloneTestWorkspace(t, b)
 		path := filepath.Join(ws.Root(), "a", "x.txt")
@@ -112,6 +114,7 @@ func TestCommitRefusesWhatItCannotRead(t *testing.T) {
 // TestStatusReportsTheFileItCannotRead covers the directory it cannot walk.
 func TestStatusReportsTheFileItCannotRead(t *testing.T) {
 	t.Parallel()
+	requireEnforcedPermissions(t)
 
 	b := seedBackend(t, []string{"a/x.txt"}, []string{"one"})
 	ws := cloneTestWorkspace(t, b)

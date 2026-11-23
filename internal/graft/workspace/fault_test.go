@@ -393,6 +393,7 @@ func TestAbortRefusesWithoutAPendingCommit(t *testing.T) {
 // workspace cannot read any more.
 func TestDiffReportsTheFileItCannotRead(t *testing.T) {
 	t.Parallel()
+	requireEnforcedPermissions(t)
 
 	b := faultBackendFor(t, func(*faultBackend) {})
 	ws := cloneTestWorkspace(t, b)

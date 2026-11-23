@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,8 +13,19 @@ import (
 // breakMeta makes the metadata directory of the workspace read-only, so that
 // the workspace can be read but every write of the state fails and the command
 // has to report it.
+// requireEnforcedPermissions skips a test that needs the mode bits of a file to
+// be enforced: Windows keeps a directory writable whatever its mode says, so a
+// test that makes one read-only would read what it expects to be refused.
+func requireEnforcedPermissions(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the platform does not enforce the permission bits of a file")
+	}
+}
+
 func breakMeta(t *testing.T, root string) {
 	t.Helper()
+	requireEnforcedPermissions(t)
 
 	meta := filepath.Join(root, metaDirName)
 	require.NoError(t, os.Chmod(meta, 0o555))
