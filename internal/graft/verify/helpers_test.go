@@ -88,6 +88,11 @@ type fakeGreens struct {
 	refs     map[string]string
 	moves    int
 	failMove error
+	// failCurrentOn fails the read of one reference, and failTree the read of
+	// the tree of a commit: a ref store that answers some references and not
+	// others is what a partly reachable server looks like.
+	failCurrentOn map[string]error
+	failTree      error
 }
 
 func newFakeGreens() *fakeGreens {
@@ -98,6 +103,9 @@ func newFakeGreens() *fakeGreens {
 func (g *fakeGreens) Current(_ context.Context, ref string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if err, ok := g.failCurrentOn[ref]; ok {
+		return "", err
+	}
 	return g.refs[ref], nil
 }
 
@@ -245,5 +253,10 @@ func (g *fakeGreens) MoveAll(_ context.Context, moves []Move) error {
 // Tree implements greenRefs. The in-memory repository has no tree objects, so
 // the tree of a commit is named after it.
 func (g *fakeGreens) Tree(_ context.Context, rev string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.failTree != nil {
+		return "", g.failTree
+	}
 	return "tree-of-" + rev, nil
 }
