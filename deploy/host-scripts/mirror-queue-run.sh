@@ -34,6 +34,16 @@ if [ -z "${GITHUB_TOKEN:-}" ] && [ -r "$token_file" ]; then
   export GITHUB_TOKEN
 fi
 
+# The Gitea of this host is written to with a token, and the queue names the
+# variable (GITEA_TOKEN) rather than its value. The value is the host's, kept
+# beside the shared token, so that a worker started by cron pushes to Gitea
+# without a token in the queue or on the command line.
+gitea_token_file="${GITAI_GITEA_TOKEN_FILE:-$ROOT/tokens/gitea}"
+if [ -z "${GITEA_TOKEN:-}" ] && [ -r "$gitea_token_file" ]; then
+  GITEA_TOKEN="$(cat "$gitea_token_file")"
+  export GITEA_TOKEN
+fi
+
 # The same environment serves the other subcommands that read or write the
 # queue: the daily tiering runs here, under the same lock as a run, so that a
 # tier of the schedule never races the schedule itself.
