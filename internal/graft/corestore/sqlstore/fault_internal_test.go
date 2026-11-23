@@ -122,6 +122,38 @@ func (c *faultyConn) Prepare(query string) (driver.Stmt, error) {
 	return c.Conn.Prepare(query)
 }
 
+// faultBegin fails the next transactions' BEGIN while it is set.
+var faultBegin atomic.Bool
+
+// faultCommit fails the next transactions' COMMIT while it is set.
+var faultCommit atomic.Bool
+
+// Begin fails the transactions the test fails, and otherwise wraps the
+// transaction so that Commit can be failed too.
+func (c *faultyConn) Begin() (driver.Tx, error) {
+	if faultBegin.Load() {
+		return nil, errFaultQuery
+	}
+	tx, err := c.Conn.Begin()
+	if err != nil {
+		return nil, err
+	}
+	return &faultyTx{Tx: tx}, nil
+}
+
+// faultyTx is a transaction whose commit the test can fail.
+type faultyTx struct {
+	driver.Tx
+}
+
+// Commit fails when the test asks for it.
+func (t *faultyTx) Commit() error {
+	if faultCommit.Load() {
+		return errFaultQuery
+	}
+	return t.Tx.Commit()
+}
+
 // faultyStore opens a store whose database fails the queries the test names.
 // The database is the file of the good store, so that the data of the setup is
 // there.
