@@ -104,6 +104,87 @@ func TestSetNextRun(t *testing.T) {
 	require.True(t, manual.NextRun.IsZero(), "a target without a schedule is never due")
 }
 
+// TestQuietTargetStretchesTowardsItsIdleInterval checks the schedule of a
+// target nobody touched: the delay doubles once per quiet run, up to the
+// idle interval, and a change puts the target back on its interval.
+func TestQuietTargetStretchesTowardsItsIdleInterval(t *testing.T) {
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+
+	target := newTarget("quiet")
+	target.Interval = 5 * time.Minute
+	target.IdleInterval = time.Hour
+
+	target.SetNextRun(now)
+	require.Equal(t, 5*time.Minute, target.NextDelay())
+
+	// A run that found the mirror up to date doubles the delay.
+	target.Observe(false, true)
+	require.Equal(t, 1, target.QuietRuns)
+	require.Equal(t, 10*time.Minute, target.NextDelay())
+
+	target.Observe(false, true)
+	require.Equal(t, 20*time.Minute, target.NextDelay())
+
+	// The idle interval is the ceiling.
+	for i := 0; i < 10; i++ {
+		target.Observe(false, true)
+	}
+	require.Equal(t, time.Hour, target.NextDelay())
+
+	// A change makes the target active again.
+	target.Observe(true, true)
+	require.Equal(t, 0, target.QuietRuns)
+	require.Equal(t, 5*time.Minute, target.NextDelay())
+
+	// A run that could not read the changeset log of the repository says
+	// nothing, so the schedule stays where it was.
+	target.Observe(false, false)
+	require.Equal(t, 0, target.QuietRuns)
+	require.Equal(t, 5*time.Minute, target.NextDelay())
+}
+
+// TestTargetWithoutIdleIntervalKeepsItsInterval checks that a target whose
+// operator named no idle interval is published on its interval, whatever its
+// quiet runs say.
+func TestTargetWithoutIdleIntervalKeepsItsInterval(t *testing.T) {
+	target := newTarget("fixed")
+	target.Interval = 5 * time.Minute
+
+	target.Observe(false, true)
+	target.Observe(false, true)
+	require.Equal(t, 5*time.Minute, target.NextDelay())
+}
+
+// TestTargetRefusesAnIdleIntervalShorterThanItsInterval checks the
+// declaration of a target: the fallback may not be shorter than the schedule
+// it backs up.
+func TestTargetRefusesAnIdleIntervalShorterThanItsInterval(t *testing.T) {
+	target := newTarget("wrong")
+	target.Interval = 5 * time.Minute
+	target.IdleInterval = time.Minute
+	require.ErrorContains(t, target.Validate(), "shorter than its interval")
+
+	target.IdleInterval = 5 * time.Minute
+	require.NoError(t, target.Validate())
+}
+
+// TestRetryKeepsAFailedTargetOnItsInterval checks that a failure is not
+// silence: a target whose publication failed waits its interval, not the
+// stretched delay of a quiet target.
+func TestRetryKeepsAFailedTargetOnItsInterval(t *testing.T) {
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+
+	target := newTarget("failed")
+	target.Interval = 5 * time.Minute
+	target.IdleInterval = time.Hour
+	target.Observe(false, true)
+	target.Observe(false, true)
+	require.Equal(t, 20*time.Minute, target.NextDelay())
+
+	target.Retry(now)
+	require.Equal(t, now.Add(5*time.Minute), target.NextRun)
+}
+
 func TestLastTasksAreTheNewestOnesOfTheHistory(t *testing.T) {
 	q := New()
 	for i, name := range []string{"one", "two", "three"} {

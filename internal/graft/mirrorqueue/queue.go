@@ -68,6 +68,16 @@ type Target struct {
 	// Interval is how often the target is published. Zero means that the
 	// target is only published when a person asks for it.
 	Interval time.Duration `json:"interval"`
+	// IdleInterval is the longest a quiet target waits between two
+	// publications: a target whose repository has not changed stretches from
+	// Interval towards IdleInterval, and a change puts it back on Interval.
+	// Zero leaves the interval fixed, which is what a target of a server
+	// without a changeset log gets.
+	IdleInterval time.Duration `json:"idle_interval,omitempty"`
+	// QuietRuns is the number of publications since the repository last
+	// changed that found the mirror up to date. It is what stretches the
+	// delay towards IdleInterval, and a change resets it.
+	QuietRuns int `json:"quiet_runs,omitempty"`
 	// Enabled tells whether the worker publishes the target on its schedule.
 	Enabled bool `json:"enabled"`
 	// CreatedAt is when the target was added to the queue.
@@ -108,6 +118,11 @@ type Task struct {
 	// DivergentRefs are the remote branches the task kept because they hold
 	// history the graft branch does not have.
 	DivergentRefs []string `json:"divergent_refs,omitempty"`
+	// Changed tells whether the changeset log of the repository showed a
+	// change of the references the mirror publishes since the last run of
+	// the target. A run that is not triggered by a change is the sweep of the
+	// schedule, and a run of a quiet target is what stretches its interval.
+	Changed bool `json:"changed,omitempty"`
 	// Error is the reason the task failed.
 	Error string `json:"error,omitempty"`
 }
@@ -123,6 +138,21 @@ type Queue struct {
 	Targets []*Target `json:"targets"`
 	// Tasks are the tasks of the queue, oldest first.
 	Tasks []*Task `json:"tasks"`
+	// Repos is the cursor of every repository whose changeset log the worker
+	// follows, by repository path. The log is the event source of the queue:
+	// a repository whose log moved past its cursor has something to publish,
+	// and a repository whose log did not move is quiet — which is what
+	// stretches the interval of its targets towards their idle interval.
+	Repos map[string]*RepoCursor `json:"repos,omitempty"`
+}
+
+// RepoCursor is how far the worker has read the changeset log of one
+// repository.
+type RepoCursor struct {
+	// Seq is the last sequence of the log the worker read.
+	Seq uint64 `json:"seq"`
+	// ObservedAt is when the worker last read the log.
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 // queueVersion is the version of the queue file this package writes.
@@ -177,6 +207,12 @@ func (t *Target) Validate() error {
 	}
 	if t.Interval < 0 {
 		return fmt.Errorf("the interval of the mirror target %q is negative", t.Name)
+	}
+	if t.IdleInterval < 0 {
+		return fmt.Errorf("the idle interval of the mirror target %q is negative", t.Name)
+	}
+	if t.IdleInterval > 0 && t.Interval > 0 && t.IdleInterval < t.Interval {
+		return fmt.Errorf("the idle interval of the mirror target %q is shorter than its interval", t.Name)
 	}
 	return nil
 }
@@ -301,11 +337,62 @@ func (q *Queue) LastTasks(target string, limit int) []*Task {
 }
 
 // SetNextRun sets the time the target is published next. A target without a
-// schedule is never due.
+// schedule is never due. A quiet target waits longer than an active one: the
+// delay doubles once per quiet run, up to the idle interval the operator
+// named, so that an idle repository is checked as often as the fallback
+// needs and an active one as often as its interval says.
 func (t *Target) SetNextRun(now time.Time) {
 	if t.Interval <= 0 {
 		t.NextRun = time.Time{}
 		return
 	}
+	t.NextRun = now.Add(t.NextDelay())
+}
+
+// NextDelay is how long the target waits after a run. It is the interval,
+// doubled once per quiet run up to the idle interval; a target without an
+// idle interval waits the interval whatever its quiet runs say.
+func (t *Target) NextDelay() time.Duration {
+	if t.IdleInterval <= t.Interval || t.QuietRuns <= 0 {
+		return t.Interval
+	}
+	delay := t.Interval
+	for i := 0; i < t.QuietRuns; i++ {
+		if delay >= t.IdleInterval/2 {
+			return t.IdleInterval
+		}
+		delay *= 2
+	}
+	if delay > t.IdleInterval {
+		return t.IdleInterval
+	}
+	return delay
+}
+
+// Retry schedules a run that failed. A failure is not silence: it waits the
+// interval, not the stretched delay of a quiet target, so that a broken
+// mirror is repaired as often as the operator asked and not as often as the
+// fallback allows.
+func (t *Target) Retry(now time.Time) {
+	if t.Interval <= 0 {
+		t.NextRun = time.Time{}
+		return
+	}
 	t.NextRun = now.Add(t.Interval)
+}
+
+// Observe records the outcome of one publication for the schedule: a run
+// that carried a change makes the target active again, and a run that found
+// the mirror up to date lets it stretch towards its idle interval. A run
+// whose changeset log could not be read does not tell either way, so it
+// leaves the quiet count alone.
+func (t *Target) Observe(changed, observed bool) {
+	if !observed {
+		return
+	}
+	if changed {
+		t.QuietRuns = 0
+		return
+	}
+	t.QuietRuns++
 }

@@ -29,6 +29,11 @@ GITHUB_OWNER="${MIRROR_GITHUB_OWNER:-oliveagle}"
 WORKSTATION="${MIRROR_WORKSTATION:-oliveagle@192.168.2.106}"
 WORKSTATION_ROOT="${MIRROR_WORKSTATION_ROOT:-/home/oliveagle/git-ai-backup}"
 SSH_KEY="${MIRROR_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+# The idle interval is the longest a target waits between two publications
+# while its repository does not change: the queue reads the changeset log of
+# every repository, and a repository that changed is published at once, so
+# the interval is the fallback for the repositories nobody touches.
+IDLE_INTERVAL="${MIRROR_IDLE_INTERVAL:-1h}"
 KNOWN_HOSTS="${MIRROR_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}"
 
 export GRAFT_MIRROR_QUEUE="$QUEUE"
@@ -122,6 +127,7 @@ while read -r remote repo interval branches; do
   # server reads on every run, so a rotated key needs no new target.
   verb=add
   args=(mirror queue add "$name" --repo "$repo" --url "$url" --interval "$interval"
+        --idle-interval "$IDLE_INTERVAL"
         --ssh-key "$SSH_KEY" --known-hosts "$KNOWN_HOSTS")
   if "$graft" mirror queue show "$name" >/dev/null 2>&1; then
     # The table is the declaration of the operator, so a line that changed is

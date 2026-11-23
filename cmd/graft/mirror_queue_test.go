@@ -130,6 +130,37 @@ func TestMirrorQueueRunsOnlyTheTargetsThatAreDue(t *testing.T) {
 	require.Contains(t, stdout, "published "+env.relPath)
 }
 
+// TestMirrorQueueIdleSetsTheFallbackOfTheTargets checks the command that
+// moves a queue whose targets were written before the idle interval
+// existed: it sets the fallback and leaves the rest of the target alone.
+func TestMirrorQueueIdleSetsTheFallbackOfTheTargets(t *testing.T) {
+	env := startServer(t)
+	env.seedMain(t, map[string]string{"top.txt": "top\n"})
+	remote := mirrorRemote(t, env)
+	queue := mirrorQueueFile(t)
+
+	code, _, stderr := runCLI(t, "mirror", "queue", "add", "gitee",
+		"--repo", env.relPath, "--url", remote, "--branch", "main",
+		"--interval", "5m", "--queue-file", queue, "-address", env.addr, "-storage", env.storage)
+	require.Equal(t, exitOK, code, stderr)
+
+	code, stdout, stderr := runCLI(t, "mirror", "queue", "idle", "--idle-interval", "1h",
+		"--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitOK, code, stderr)
+	require.Contains(t, stdout, "the mirror target gitee now waits 1h0m0s")
+
+	targets := mirrorQueueTargetState(t, queue, env)
+	require.Len(t, targets, 1)
+	require.Equal(t, "1h0m0s", targets[0].IdleInterval)
+	require.Equal(t, "5m0s", targets[0].Interval)
+
+	// A fallback shorter than the schedule it backs up is refused.
+	code, _, stderr = runCLI(t, "mirror", "queue", "idle", "--idle-interval", "1m",
+		"--queue-file", queue, "-address", env.addr)
+	require.Equal(t, exitError, code)
+	require.Contains(t, stderr, "shorter than the interval")
+}
+
 // TestMirrorQueueHoldsNoSecret checks that the file of the queue names the
 // variable that carries the token, and never carries the token itself.
 func TestMirrorQueueHoldsNoSecret(t *testing.T) {
@@ -449,19 +480,22 @@ func TestMirrorQueueStretchesTheIntervalOfAQuietTarget(t *testing.T) {
 	targets := mirrorQueueTargetState(t, queue, env)
 	require.Len(t, targets, 1)
 	require.Equal(t, "1h0m0s", targets[0].IdleInterval)
-	require.Equal(t, 0, targets[0].QuietRuns)
+	require.Equal(t, 1, targets[0].QuietRuns, "a mirror that found nothing new is a quiet mirror")
+	next, err := time.Parse(time.RFC3339, targets[0].NextRun)
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(10*time.Minute), next, time.Minute)
 
-	// A run that finds the mirror up to date stretches the delay: the
-	// interval of five minutes becomes ten.
+	// A run that finds the mirror up to date stretches the delay again: the
+	// delay of ten minutes becomes twenty.
 	code, _, stderr = runCLI(t, "mirror", "queue", "run", "--all", "--queue-file", queue, "-address", env.addr)
 	require.Equal(t, exitOK, code, stderr)
 
 	targets = mirrorQueueTargetState(t, queue, env)
 	require.Len(t, targets, 1)
-	require.Equal(t, 1, targets[0].QuietRuns)
-	next, err := time.Parse(time.RFC3339, targets[0].NextRun)
+	require.Equal(t, 2, targets[0].QuietRuns)
+	next, err = time.Parse(time.RFC3339, targets[0].NextRun)
 	require.NoError(t, err)
-	require.WithinDuration(t, time.Now().Add(10*time.Minute), next, time.Minute)
+	require.WithinDuration(t, time.Now().Add(20*time.Minute), next, time.Minute)
 
 	// A change puts the target back on its interval: it is active again.
 	landChange(t, env)

@@ -141,6 +141,7 @@ The commands of the queue:
 | `graft mirror queue disable NAME` | leaves the target alone, keeping its history |
 | `graft mirror queue remove NAME` | takes the target out of the queue, and out of the mirror policy of the server |
 | `graft mirror queue register NAME` | registers a target the queue already holds with the server, without publishing it |
+| `graft mirror queue idle --idle-interval 1h` | sets the fallback of every target, or of the one that is named |
 | `graft mirror queue run` | publishes the targets that are due, and exits |
 | `graft mirror queue worker` | publishes the targets that are due, over and over |
 | `graft mirror task list` | lists the tasks, newest first |
@@ -178,6 +179,64 @@ a remote branch with unrelated history keeps that branch, the task of the run
 is `diverged`, and the run exits 1. Only a target that was given `--force`
 overwrites it, and that is a decision of a person, made once, on the target
 and not on the run.
+
+## Events, and the interval as the fallback
+
+A schedule alone is a blunt instrument: every repository is published as often
+as the busiest one, and the repositories nobody touches are checked as often
+as the ones that change every minute. The queue therefore has two triggers,
+and the first one is an event.
+
+**The event is the changeset log of the repository.** Every reference update
+the server accepts — a push, a land, a fast-forward, a server-side commit —
+is appended to the log of that repository, with a dense sequence number. A
+run reads the log of every repository the queue publishes and compares its
+tail with the cursor it stored the last time. A log that moved past the
+cursor is a change the mirror has to carry, and the targets of that
+repository are published at once, whatever their interval says. A log that did
+not move is a quiet repository.
+
+**The interval is the fallback.** The log cannot be the only trigger: a
+mirror of a repository whose writes come from somewhere else — a replica, a
+mirror of a mirror, a host that records its changes in another node's log —
+never sees an event, and a repository that is imported without a log never
+has one. The interval is what still publishes those, and it is what the
+queue falls back to when the log cannot be read: a run that could not read a
+log changes neither the quiet count nor the schedule.
+
+**The interval of a quiet repository stretches.** `--idle-interval` is the
+longest a target waits between two publications:
+
+```shell
+graft mirror queue add github-shop --repo shop.git \
+  --url https://github.com/group/shop.git --branch main \
+  --interval 5m --idle-interval 1h
+```
+
+A target that has just published waits its interval. A target whose last
+runs found the mirror up to date doubles its delay: five minutes, then ten,
+then twenty, up to the idle interval. A change puts it back on its interval,
+because a repository that changes is a repository that is worth watching
+closely. The stretch only happens when the log was read and said nothing, so
+a quiet count is always a fact about the repository and never a guess.
+
+What this buys is the traffic of the queue, not its correctness. A mirror is
+still published at least every idle interval, and a repository that changes
+is published within the tick of the worker — a minute, for a cron job that
+runs every minute. The lag the mirror policy warns about is therefore the
+lag of the *active* interval, not of the idle one: a repository that nobody
+touches cannot fall behind, because nothing lands on it.
+
+A queue whose targets were written before the idle interval existed is moved
+by `graft mirror queue idle --idle-interval 1h`, which sets the fallback of
+every target — or of the one it names — and leaves the rest of the target
+alone.
+
+`--no-events` reads no log at all, so that the schedule is the only trigger.
+It is the switch for a server whose changelog is off, and the way to measure
+what the events are worth: a queue with events and a queue without them
+publish the same repositories, one of them often and the other on its
+schedule.
 
 ## The mirror policy
 

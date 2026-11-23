@@ -22,7 +22,7 @@ import (
 )
 
 // mirrorQueueSynopsis is the command line of graft mirror queue.
-const mirrorQueueSynopsis = "usage: graft mirror queue <add|update|remove|register|list|show|enable|disable|run|worker> [flags]"
+const mirrorQueueSynopsis = "usage: graft mirror queue <add|update|remove|register|list|show|enable|disable|idle|run|worker> [flags]"
 
 // mirrorQueueUsage lists the subcommands of graft mirror queue.
 const mirrorQueueUsage = "mirror queue requires a subcommand: " + mirrorQueueSynopsis
@@ -201,6 +201,8 @@ func cmdMirrorQueue(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		return mirrorQueueList(ctx, out, o, f, q, args[1:])
 	case "show":
 		return mirrorQueueShow(ctx, out, o, f, q, args[1:])
+	case "idle":
+		return mirrorQueueIdle(ctx, out, o, f, q, args[1:])
 	case "run":
 		return mirrorQueueRun(ctx, out, o, f, q, args[1:])
 	case "worker":
@@ -548,6 +550,62 @@ func mirrorQueueShow(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 			fmt.Fprintf(out, " (%s)", target.LastError)
 		}
 		fmt.Fprintln(out)
+	}
+	return nil
+}
+
+// mirrorQueueIdle sets the idle interval of the targets of the queue: the
+// longest a target waits between two publications while its repository does
+// not change. It is the operator's way of moving a queue that was written
+// before the idle interval existed, and it leaves everything else of a target
+// alone — its declaration, its history and its cursor.
+func mirrorQueueIdle(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
+	if len(args) > 1 {
+		return usagef("mirror queue idle takes at most the name of one target")
+	}
+	if q.idleInterval < 0 {
+		return usagef("mirror queue idle requires --idle-interval DURATION")
+	}
+	store, err := mirrorQueueStore(q)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	var changed []*mirrorqueue.Target
+	if err := store.Update(func(queue *mirrorqueue.Queue) error {
+		for _, target := range queue.Targets {
+			if len(args) == 1 && target.Name != args[0] {
+				continue
+			}
+			if q.idleInterval > 0 && target.Interval > 0 && q.idleInterval < target.Interval {
+				return fmt.Errorf("the idle interval %s is shorter than the interval %s of the mirror target %q",
+					q.idleInterval, target.Interval, target.Name)
+			}
+			target.IdleInterval = q.idleInterval
+			target.UpdatedAt = now
+			changed = append(changed, target)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(changed) == 0 {
+		if len(args) == 1 {
+			return fmt.Errorf("the mirror queue has no target named %q", args[0])
+		}
+		fmt.Fprintln(out, "the mirror queue holds no target")
+		return nil
+	}
+	if o.jsonOut {
+		list := make([]mirrorQueueTarget, 0, len(changed))
+		for _, t := range changed {
+			list = append(list, mirrorQueueTargetJSON(t))
+		}
+		return mirrorQueueWriteJSON(out, list)
+	}
+	for _, t := range changed {
+		fmt.Fprintf(out, "the mirror target %s now waits %s at most between two publications\n",
+			t.Name, mirrorQueueIdleInterval(t))
 	}
 	return nil
 }
@@ -917,11 +975,15 @@ func mirrorQueueObserve(ctx context.Context, o *options, queue *mirrorqueue.Queu
 // up right away instead of waiting for its interval.
 func mirrorQueueReadChanges(ctx context.Context, repo *sdk.Repo, cursor *mirrorqueue.RepoCursor) mirrorQueueChange {
 	if cursor == nil {
+		// The log is read for the first time: the cursor starts at the tail,
+		// so that the queue does not replay the whole history of the
+		// repository, and the repository counts as quiet until its log says
+		// otherwise.
 		tail, err := mirrorQueueChangesetTail(ctx, repo)
 		if err != nil {
 			return mirrorQueueChange{}
 		}
-		return mirrorQueueChange{changed: true, observed: true, seq: tail}
+		return mirrorQueueChange{observed: true, seq: tail}
 	}
 
 	seq := cursor.Seq
