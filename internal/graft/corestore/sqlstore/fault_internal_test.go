@@ -30,6 +30,11 @@ var errFaultQuery = errors.New("the database refused the query")
 // holds it fails. The empty string fails nothing.
 var faultQuery atomic.Value
 
+// faultRowsQuery names the queries whose rows fail after the first one. A
+// store that reads a table row by row only reaches its iteration error when
+// the result set breaks part way through, which no healthy database does.
+var faultRowsQuery atomic.Value
+
 // faultyDriver is the SQLite driver of the tests: it fails the queries the
 // test names, so that the paths of the store that report a failure of the
 // database are reached without a database that fails on demand.
@@ -59,7 +64,8 @@ func faultHits(query string) bool {
 	return needle != "" && strings.Contains(query, needle)
 }
 
-// Query fails the queries the test names.
+// Query fails the queries the test names, and breaks the rows of the queries
+// whose iteration the test makes fail after their first row.
 func (c *faultyConn) Query(query string, args []driver.Value) (driver.Rows, error) {
 	if faultHits(query) {
 		return nil, errFaultQuery
@@ -68,7 +74,31 @@ func (c *faultyConn) Query(query string, args []driver.Value) (driver.Rows, erro
 	if !ok {
 		return nil, fmt.Errorf("the connection cannot query")
 	}
-	return q.Query(query, args)
+	rows, err := q.Query(query, args)
+	if err != nil {
+		return nil, err
+	}
+	if needle, _ := faultRowsQuery.Load().(string); needle != "" && strings.Contains(query, needle) {
+		return &faultyRows{Rows: rows, remaining: 1}, nil
+	}
+	return rows, nil
+}
+
+// faultyRows answers the first row of a result set and fails the iteration
+// afterwards, so that a loop of the store that reads rows meets the failure
+// while it reads instead of before it starts.
+type faultyRows struct {
+	driver.Rows
+	remaining int
+}
+
+// Next answers the first row and then reports the failure.
+func (r *faultyRows) Next(dest []driver.Value) error {
+	if r.remaining == 0 {
+		return errFaultQuery
+	}
+	r.remaining--
+	return r.Rows.Next(dest)
 }
 
 // Exec fails the queries the test names.
@@ -132,6 +162,15 @@ func (f *faultStore) fault(t *testing.T, table string) {
 
 	faultQuery.Store(table)
 	t.Cleanup(func() { faultQuery.Store("") })
+}
+
+// faultRows breaks the iteration of the queries the test names after their
+// first row until the test ends.
+func (f *faultStore) faultRows(t *testing.T, query string) {
+	t.Helper()
+
+	faultRowsQuery.Store(query)
+	t.Cleanup(func() { faultRowsQuery.Store("") })
 }
 
 // register registers a repository on the good database of the store.
