@@ -142,6 +142,12 @@ if [ "$switched" = "1" ]; then
       break
     fi
     log "health check attempt $attempt failed"
+    if [ "$attempt" = "1" ]; then
+      # The reason a release does not come up is in its container log, and the
+      # rollback removes the container. Print it while it still exists.
+      ssh_script "$DEPLOY_DIR/host-scripts/lane-logs.sh" LANE_CONTAINER \
+        2>&1 | sed 's/^/  | /' >&2 || true
+    fi
   done
   sed 's/^/  /' "/tmp/healthcheck.$lane.log" >&2 || true
 fi
