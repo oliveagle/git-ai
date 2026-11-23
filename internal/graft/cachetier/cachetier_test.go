@@ -74,6 +74,10 @@ type fakeObjectService struct {
 
 	// chunkSize, if set, replaces testChunk as the size of the data messages.
 	chunkSize int
+
+	// raw, if set for an object ID, replaces every message sent for it with
+	// exactly these frames: an upstream that answers what git never would.
+	raw map[string][]*gitalypb.GetObjectsResponse
 }
 
 func newFakeObjectService() *fakeObjectService {
@@ -139,10 +143,20 @@ func (f *fakeObjectService) GetObjects(req *gitalypb.GetObjectsRequest, stream g
 			continue
 		}
 
-		data := obj.data
 		f.mu.Lock()
+		frames, scripted := f.raw[oid]
 		corrupt := f.corrupt[oid]
 		f.mu.Unlock()
+		if scripted {
+			for _, msg := range frames {
+				if err := stream.Send(msg); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
+		data := obj.data
 		if corrupt && len(data) > 0 {
 			data = append([]byte(nil), data...)
 			data[0] ^= 0xff
