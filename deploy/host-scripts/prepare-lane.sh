@@ -184,7 +184,7 @@ export GITALY_TOKEN_VALIDITY=10m
 # shares the host network. The sampler keeps the volume proportional to a
 # home server's request rate; a host that exports GITLAB_TRACING itself
 # overrides it, and an empty value keeps tracing off (noop provider).
-export GITLAB_TRACING="\${GITLAB_TRACING:-otlp://127.0.0.1:14320?sampler=probabilistic&sampler_param=0.05}"
+export GITLAB_TRACING="\${GITLAB_TRACING:-otlp://127.0.0.1:14320?sampler=probabilistic&sampler_param=0.05&service_name=gitaly-$LANE}"
 exec "$LANE_DIR/current/bin/gitaly" serve "$LANE_DIR/config.toml"
 RUNNER
 chmod 750 "$runner"
