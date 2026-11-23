@@ -124,6 +124,13 @@ func TestParseConfigRejects(t *testing.T) {
 			wantErr: "mutually exclusive",
 		},
 		{
+			name: "a suite that is not a name",
+			toml: strings.Replace(validConfigTOML,
+				`test = { command = ["go", "test", "./..."] }`,
+				`test = { command = ["go", "test", "./..."], suites = ["a b"] }`, 1),
+			wantErr: "not a valid suite name",
+		},
+		{
 			name:    "branch with dots",
 			toml:    validConfigTOML + "\nbranch = \"a..b\"\n",
 			wantErr: "not a valid branch name",
