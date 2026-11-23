@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -19,6 +20,10 @@ import (
 //	otlps://host:port       HTTPS (secure)
 //	otlp+tls://host:port    HTTPS (secure)
 const gitlabTracingEnvVar = "GITLAB_TRACING"
+
+// defaultSampleRate is LabKit v2/trace's default when it builds the config
+// itself. An explicit sampler_param in GITLAB_TRACING overrides it.
+const defaultSampleRate = 0.01
 
 // defaultPropagator is the default TextMapPropagator used for context propagation.
 // Propagators are objects responsible for propagating tracing data.
@@ -54,9 +59,41 @@ func InitializeTracerProvider(ctx context.Context, serviceName string) (io.Close
 		return io.NopCloser(nil), nil
 	}
 
-	tracer, shutdown, err := labkitv2trace.NewWithConfig(ctx, &labkitv2trace.Config{
+	// Parse the connection string ourselves instead of handing LabKit a
+	// non-nil Config. A non-nil Config with a zero SampleRate means
+	// "never sample" (the zero value is deliberate in LabKit's API), so the
+	// old wrapper silently dropped every span even when GITLAB_TRACING
+	// asked for sampler_param=1. It also lets us add the /v1/traces path:
+	// otlptracehttp.WithEndpointURL does not append it, so a bare
+	// otlp://host:port would POST to "/" and the collector answers 404.
+	env := labkitv2trace.ParseTracingConfigFromEnv()
+	if env == nil {
+		return io.NopCloser(nil), fmt.Errorf("%s is set but is not a valid OTLP connection string", gitlabTracingEnvVar)
+	}
+
+	endpoint := env.Endpoint + env.URLPath
+	if env.URLPath == "" {
+		endpoint = env.Endpoint + "/v1/traces"
+	}
+
+	cfg := &labkitv2trace.Config{
 		ServiceName: serviceName,
-	})
+		Endpoint:    endpoint,
+		Insecure:    env.Insecure,
+		Headers:     env.Headers,
+		// LabKit's default when it builds the Config itself is 1%. Keep that
+		// default for a connection string that names no sampler; an explicit
+		// sampler_param (including 0) always wins.
+		SampleRate: defaultSampleRate,
+	}
+	if env.ServiceName != "" {
+		cfg.ServiceName = env.ServiceName
+	}
+	if env.SamplerSet {
+		cfg.SampleRate = env.SampleRate
+	}
+
+	tracer, shutdown, err := labkitv2trace.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return io.NopCloser(nil), err
 	}

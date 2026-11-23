@@ -2,7 +2,11 @@ package tracing
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,4 +102,53 @@ func TestInitializeTracerProviderKeepsTheGlobalProviderWhenDisabled(t *testing.T
 	require.NoError(t, closer.Close())
 
 	assert.Equal(t, previous, otel.GetTracerProvider())
+}
+
+// TestInitializeTracerProviderExportsSpans is the end-to-end regression for
+// the two reasons the deployment exported no span at all:
+//
+//  1. the wrapper handed LabKit a non-nil Config whose zero SampleRate means
+//     "never sample", so sampler_param=1 in GITLAB_TRACING was ignored;
+//  2. otlptracehttp.WithEndpointURL does not append /v1/traces, so a bare
+//     otlp://host:port POSTed to "/" and the collector answered 404.
+//
+// The test runs a real OTLP/HTTP receiver, starts one span, and asserts the
+// receiver got a POST on the traces path with a non-empty body.
+func TestInitializeTracerProviderExportsSpans(t *testing.T) {
+	var requests atomic.Int32
+	var gotPath atomic.Value
+
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		gotPath.Store(r.URL.Path)
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer receiver.Close()
+
+	previous := otel.GetTracerProvider()
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	t.Setenv(gitlabTracingEnvVar, "otlp://"+strings.TrimPrefix(receiver.URL, "http://")+"?sampler=probabilistic&sampler_param=1")
+
+	closer, err := InitializeTracerProvider(context.Background(), "gitaly")
+	require.NoError(t, err)
+
+	_, span := otel.Tracer("test").Start(context.Background(), "test-span")
+	span.End()
+	require.NoError(t, closer.Close())
+
+	require.Equal(t, int32(1), requests.Load(), "the exporter must send the sampled span")
+	require.Equal(t, "/v1/traces", gotPath.Load(), "a pathless otlp:// endpoint must still reach /v1/traces")
+}
+
+// TestInitializeTracerProviderRejectsInvalidEnv makes a typo loud instead of
+// silently falling back to a defaults-only provider.
+func TestInitializeTracerProviderRejectsInvalidEnv(t *testing.T) {
+	previous := otel.GetTracerProvider()
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	t.Setenv(gitlabTracingEnvVar, "opentracing://collector:6831")
+
+	closer, err := InitializeTracerProvider(context.Background(), "gitaly")
+	require.Error(t, err)
+	require.NotNil(t, closer)
 }
