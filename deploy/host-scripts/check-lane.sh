@@ -7,6 +7,7 @@
 #
 #   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER
 #   LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI
+#   LANE_GITALY_METRICS_PORT
 #   REQUIRE_INSTALLED=1   also assert that a release is installed (after a switch)
 #   OTHER_DIR OTHER_*     the other lane, for the isolation checks
 set -euo pipefail
@@ -24,6 +25,9 @@ has() { case "$body" in *"$1"*) return 0 ;; *) return 1 ;; esac; }
 
 has "$LANE_DIR/repos"        && ok "storage path is $LANE_DIR/repos"       || bad "storage path is not $LANE_DIR/repos"
 has "0.0.0.0:$LANE_GITALY_PORT" && ok "server listens on $LANE_GITALY_PORT" || bad "server does not listen on $LANE_GITALY_PORT"
+has "prometheus_listen_addr = \"127.0.0.1:$LANE_GITALY_METRICS_PORT\"" \
+  && ok "metrics listen on $LANE_GITALY_METRICS_PORT" \
+  || bad "server does not expose metrics on $LANE_GITALY_METRICS_PORT"
 if has "/$LANE_PG_DB?" || has "/$LANE_PG_DB\""; then ok "database is $LANE_PG_DB"; else bad "database is not $LANE_PG_DB"; fi
 has "$LANE_PG_USER@"         && ok "database role is $LANE_PG_USER"        || bad "database role is not $LANE_PG_USER"
 has "s3://$LANE_BUCKET?"     && ok "bucket is $LANE_BUCKET"                || bad "bucket is not $LANE_BUCKET"
@@ -112,6 +116,8 @@ if [ -n "${OTHER_DIR:-}" ] && [ -d "$OTHER_DIR" ]; then
     || bad "server port is shared with the other lane"
   [ "$LANE_CACHE_TCP_PORT" != "${OTHER_CACHE_TCP_PORT:-}" ] && ok "cache port differs ($LANE_CACHE_TCP_PORT)" \
     || bad "cache port is shared with the other lane"
+  [ "$LANE_GITALY_METRICS_PORT" != "${OTHER_GITALY_METRICS_PORT:-}" ] && ok "metrics port differs ($LANE_GITALY_METRICS_PORT)" \
+    || bad "metrics port is shared with the other lane"
 fi
 
 exit "$fail"

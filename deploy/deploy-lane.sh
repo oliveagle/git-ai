@@ -47,6 +47,7 @@ export LANE_DIR="$(lane_dir "$lane")"
 export LANE_GITALY_PORT="$(lane_gitaly_port "$lane")"
 export LANE_CACHE_TCP_PORT="$(lane_cache_port "$lane")"
 export LANE_CACHE_METRICS_PORT="$(lane_metrics_port "$lane")"
+export LANE_GITALY_METRICS_PORT="$(lane_gitaly_metrics_port "$lane")"
 export LANE_PG_DB="$(lane_pg_db "$lane")"
 export LANE_PG_USER="$(lane_pg_user "$lane")"
 export LANE_BUCKET="$(lane_bucket "$lane")"
@@ -60,6 +61,7 @@ export OTHER_DIR="$(lane_dir "$other")"
 export OTHER_PG_DB="$(lane_pg_db "$other")"
 export OTHER_BUCKET="$(lane_bucket "$other")"
 export OTHER_GITALY_PORT="$(lane_gitaly_port "$other")"
+export OTHER_GITALY_METRICS_PORT="$(lane_gitaly_metrics_port "$other")"
 export OTHER_CACHE_TCP_PORT="$(lane_cache_port "$other")"
 
 export VERSION="$version"
@@ -98,6 +100,7 @@ ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
 log "preparing the lane"
 ssh_script "$DEPLOY_DIR/host-scripts/prepare-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT \
+  LANE_GITALY_METRICS_PORT \
   LANE_PG_DB LANE_PG_USER LANE_BUCKET LANE_NODE_ID LANE_CONTAINER LANE_PROGRAMS \
   LANE_SUPERVISOR_INI \
   DEPLOY_BASE PG_HOST PG_PORT PG_CONTAINER PG_IN_CONTAINER_PORT \
@@ -107,8 +110,9 @@ log "checking the lane before it starts"
 ssh_script "$DEPLOY_DIR/host-scripts/check-lane.sh" \
   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_PG_DB LANE_PG_USER \
   LANE_BUCKET LANE_NODE_ID LANE_PROGRAMS LANE_SUPERVISOR_INI LANE_IMAGE \
+  LANE_GITALY_METRICS_PORT \
   OTHER_DIR OTHER_PG_DB OTHER_BUCKET \
-  OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT
+  OTHER_GITALY_PORT OTHER_CACHE_TCP_PORT OTHER_GITALY_METRICS_PORT
 
 log "installing the release"
 ssh_script "$DEPLOY_DIR/host-scripts/install-release.sh" \

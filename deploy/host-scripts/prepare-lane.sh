@@ -5,6 +5,7 @@
 # ssh with the lane's settings in the environment:
 #
 #   LANE LANE_DIR LANE_GITALY_PORT LANE_CACHE_TCP_PORT LANE_CACHE_METRICS_PORT
+#   LANE_GITALY_METRICS_PORT
 #   LANE_PG_DB LANE_PG_USER LANE_BUCKET LANE_NODE_ID LANE_CONTAINER LANE_PROGRAMS
 #   LANE_SUPERVISOR_INI (the ini that defines the lane's cache tiers)
 #   DEPLOY_BASE PG_HOST PG_PORT PG_CONTAINER PG_IN_CONTAINER_PORT
@@ -127,6 +128,9 @@ if [ ! -s "$config" ]; then
 bin_dir      = "$LANE_DIR/bin"
 socket_path  = "$LANE_DIR/run/gitaly.sock"
 listen_addr  = "0.0.0.0:$LANE_GITALY_PORT"
+# The server's own /metrics. The collector scrapes it; without it a lane is
+# invisible in Grafana however healthy it is.
+prometheus_listen_addr = "127.0.0.1:$LANE_GITALY_METRICS_PORT"
 runtime_dir  = "$LANE_DIR/run"
 
 [auth]

@@ -66,6 +66,7 @@ lane_dir()        { lane_setting "$1" DIR; }
 lane_gitaly_port(){ lane_setting "$1" GITALY_PORT; }
 lane_cache_port() { lane_setting "$1" CACHE_TCP_PORT; }
 lane_metrics_port(){ lane_setting "$1" CACHE_METRICS_PORT; }
+lane_gitaly_metrics_port(){ lane_setting "$1" GITALY_METRICS_PORT; }
 lane_pg_db()      { lane_setting "$1" PG_DB; }
 lane_pg_user()    { lane_setting "$1" PG_USER; }
 lane_bucket()     { lane_setting "$1" BUCKET; }
