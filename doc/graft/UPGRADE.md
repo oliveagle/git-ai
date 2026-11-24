@@ -46,9 +46,14 @@ still decides who may call what. Three cases are deliberate:
 
 - A client that reports **no** version predates the key, so it is older than
   every release that has it, and is refused while a minimum is set.
-- A build made from a checkout without the release ldflags reports `unknown`.
-  It cannot be compared with a release, and refusing it would refuse the
-  server's own tools, so it is answered and the version is logged.
+- A build made from a checkout reports what that build was told to report, not
+  a release version: `make` passes the `VERSION` file through `-ldflags`, so a
+  build of this tree reports the Gitaly line (`19.5.0-rc3-g1a2b3c4`), which
+  sorts above every graft release; a plain `go build` reports `unknown`. Neither
+  can be compared with a release in a way that means anything, and refusing
+  them would refuse the server's own tools, so they are answered and the
+  version is logged. A deployment that wants a hard floor should therefore set
+  `min_client_version` and install released clients, not source builds.
 - `ServerInfo` and the gRPC health probes are always answered, so an old
   client can be told what it needs and an orchestrator can still see the
   process is alive.

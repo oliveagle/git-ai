@@ -34,7 +34,7 @@ the example stays a working configuration.
 | `land` | table | | `[graft.land.batch]`: batching of concurrent lands, and `[graft.land.resolver]`: the conflict resolver of `UserLand`, see below. |
 | `storage` | table | | `[graft.storage]`: the storage core (database plus object storage), see below. |
 | `mirror` | table | | `[graft.mirror]`: the mirror policy, see below and [MIRROR.md](MIRROR.md). |
-| `min_client_version` | string | empty | Oldest client version the external API answers, for example `0.9.0`. A client below it — and a client that reports no version at all — is refused with `FailedPrecondition` naming this version and `graft upgrade`. A build made without a version reports `unknown` and is answered. Empty answers every client. See [UPGRADE.md](UPGRADE.md). |
+| `min_client_version` | string | empty | Oldest client version the external API answers, for example `0.9.0`. A client below it — and a client that reports no version at all — is refused with `FailedPrecondition` naming this version and `graft upgrade`. A source build is answered whatever it reports (it carries the `VERSION` line, or `unknown` without ldflags). Empty answers every client. See [UPGRADE.md](UPGRADE.md). |
 
 ### Request defaults (standalone mode)
 

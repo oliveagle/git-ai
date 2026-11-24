@@ -18,9 +18,10 @@ import (
 // what tells the server it predates the contract.
 const MetadataKey = "graft-client-version"
 
-// unreportedVersion is what a build without a version reports: it is a client
-// of this binary that was compiled without the release workflow's ldflags, so
-// it is newer than the contract rather than older than any release.
+// unreportedVersion is what a build that carries no version reports, which is
+// a `go build` without the ldflags the release workflow and the Makefile pass.
+// It cannot be compared with a release, and refusing it would refuse the
+// server's own tools, so a server answers it and logs the value.
 const unreportedVersion = "unknown"
 
 // refused counts the requests a server refused because the client was too old.

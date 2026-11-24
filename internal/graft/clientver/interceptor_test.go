@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/testhelper"
+	buildversion "github.com/feder-cr/git-ai/internal/version"
 )
 
 // reported returns a context as a client would send it.
@@ -144,12 +145,18 @@ func TestStreamServerInterceptorRefusesAnOldClient(t *testing.T) {
 }
 
 // TestClientInterceptorsReportTheVersion covers the other half of the
-// contract: every request of this build carries its version, and a build
-// without one carries the marker that says it cannot be compared.
+// contract: every request of this build carries its version, and a build made
+// without one carries the marker that says it cannot be compared. The test
+// binary's version depends on how it was built -- `make test` passes the
+// VERSION file through -ldflags, a bare `go test` carries none -- so the
+// expectation is whatever this build reports, never a hard-coded string.
 func TestClientInterceptorsReportTheVersion(t *testing.T) {
 	t.Parallel()
 
-	want := unreportedVersion // the test binary is built without the release ldflags
+	want := buildversion.GetVersion()
+	if want == "" {
+		want = unreportedVersion
+	}
 
 	var got []string
 	err := UnaryClientInterceptor()(context.Background(), "/m", nil, nil, nil,
