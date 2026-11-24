@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/feder-cr/git-ai/internal/gitaly/server/auth"
+	"github.com/feder-cr/git-ai/internal/graft/clientver"
 	"github.com/feder-cr/git-ai/internal/graft/requestdefaults"
 	"github.com/feder-cr/git-ai/internal/grpc/backchannel"
 	"github.com/feder-cr/git-ai/internal/grpc/client"
@@ -214,6 +215,16 @@ func (s *GitalyServerFactory) New(external, secure bool, opts ...Option) (*grpc.
 
 	streamServerInterceptors = append(streamServerInterceptors, cfg.streamInterceptors...)
 	unaryServerInterceptors = append(unaryServerInterceptors, cfg.unaryInterceptors...)
+
+	// The client version contract applies to the external API only: the
+	// internal socket carries this process's own hook calls, whose version is
+	// this build's (doc/graft/UPGRADE.md).
+	if external {
+		if min, ok := clientver.Parse(s.cfg.Graft.MinClientVersion); ok {
+			unaryServerInterceptors = append(unaryServerInterceptors, clientver.UnaryServerInterceptor(min, s.logger))
+			streamServerInterceptors = append(streamServerInterceptors, clientver.StreamServerInterceptor(min, s.logger))
+		}
+	}
 
 	// Only requests coming through the external API need to be ran transactionalized. Only the HookService calls
 	// should arrive through the internal socket. Requests coming from there would already be running in a

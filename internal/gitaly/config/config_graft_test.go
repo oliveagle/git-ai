@@ -304,3 +304,20 @@ func TestGraft_MaxOpenReviews(t *testing.T) {
 		require.ErrorContains(t, err, "max_open_reviews must not be negative")
 	}
 }
+
+// TestGraft_ValidateMinClientVersion covers the version the server requires of
+// its clients: a value it cannot compare would either refuse every client or
+// none, so a value that is not a version is rejected at load time.
+func TestGraft_ValidateMinClientVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, version := range []string{"", "0.9.0", "v1.2.3", "0.10.0-rc.1", "0.9.1-2-g1a2b3c4"} {
+		graft := Graft{MinClientVersion: version}
+		require.NoError(t, graft.Validate(), version)
+	}
+
+	for _, version := range []string{"0.9", "latest", "0.9.x", "0.9.1-"} {
+		graft := Graft{MinClientVersion: version}
+		require.ErrorContains(t, graft.Validate(), "min_client_version", version)
+	}
+}

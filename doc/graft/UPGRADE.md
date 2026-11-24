@@ -22,6 +22,41 @@ The gitaly server is not part of a release, because it embeds a full build of
 Git; upgrade it by building it from source
 ([doc/development.md](../development.md)).
 
+## The version the server requires
+
+The tools are released apart from the server, so a client and a server may be
+different versions. The server can name the oldest client it answers:
+
+```toml
+[graft]
+min_client_version = "0.9.0"
+```
+
+Every client of this project reports its version on every request, in the
+`graft-client-version` metadata key. The external API refuses a client below
+the minimum with `FailedPrecondition`:
+
+```text
+the server requires client version 0.9.0 or newer; this client is 0.8.0:
+run `graft upgrade` to update the graft tools, or install the package of this release
+```
+
+The refusal is a compatibility answer, not a security control: authentication
+still decides who may call what. Three cases are deliberate:
+
+- A client that reports **no** version predates the key, so it is older than
+  every release that has it, and is refused while a minimum is set.
+- A build made from a checkout without the release ldflags reports `unknown`.
+  It cannot be compared with a release, and refusing it would refuse the
+  server's own tools, so it is answered and the version is logged.
+- `ServerInfo` and the gRPC health probes are always answered, so an old
+  client can be told what it needs and an orchestrator can still see the
+  process is alive.
+
+The gate is enforced on the external listeners only; the internal socket
+carries the server's own hook calls, whose version is the server's. With
+`min_client_version` empty, every client is answered, which is the default.
+
 ## What it does not do
 
 `graft upgrade` replaces the tools of the directory the running `graft` was

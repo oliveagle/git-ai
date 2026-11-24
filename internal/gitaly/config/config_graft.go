@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/feder-cr/git-ai/internal/graft/clientver"
 	"github.com/feder-cr/git-ai/internal/graft/greenref"
 )
 
@@ -70,6 +71,11 @@ type Graft struct {
 	// mirror, and a mirror that falls behind holds the pushes back
 	// (doc/graft/MIRROR.md).
 	Mirror GraftMirror `json:"mirror" toml:"mirror,omitempty"`
+	// MinClientVersion is the oldest client version the server answers, such
+	// as "0.9.0". A client below it, and a client that reports no version at
+	// all, is refused with FailedPrecondition and told to run `graft upgrade`
+	// (doc/graft/UPGRADE.md). Empty: every client is answered.
+	MinClientVersion string `json:"min_client_version" toml:"min_client_version,omitempty"`
 }
 
 // GraftSearch configures code search.
@@ -606,6 +612,12 @@ func (g Graft) Validate() error {
 
 	if err := g.validateAgents(); err != nil {
 		return err
+	}
+
+	if g.MinClientVersion != "" {
+		if _, ok := clientver.Parse(g.MinClientVersion); !ok {
+			return fmt.Errorf("graft: min_client_version %q is not a version such as 0.9.0", g.MinClientVersion)
+		}
 	}
 
 	return g.Land.Resolver.validate()

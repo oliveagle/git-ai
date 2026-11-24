@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/feder-cr/git-ai/internal/graft/clientver"
 	"github.com/feder-cr/git-ai/internal/grpc/dnsresolver"
 	"github.com/feder-cr/git-ai/internal/grpc/protoregistry"
 	gitalyx509 "github.com/feder-cr/git-ai/internal/x509"
@@ -257,6 +258,10 @@ func New(_ context.Context, rawAddress string, opts ...DialOption) (*grpc.Client
 		// For more information:
 		// https://gitlab.com/groups/gitlab-org/-/epics/8971#note_1207008162
 		grpc.WithDefaultServiceConfig(defaultServiceConfigJSON),
+		// Every client of this build reports its version, so that a server can
+		// refuse one older than what it answers (doc/graft/UPGRADE.md).
+		grpc.WithChainUnaryInterceptor(clientver.UnaryClientInterceptor()),
+		grpc.WithChainStreamInterceptor(clientver.StreamClientInterceptor()),
 	}, connOpts...)
 
 	// https://github.com/grpc/grpc-go/issues/8207 prevents Unix connections from working
