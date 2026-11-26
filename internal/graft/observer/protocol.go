@@ -162,6 +162,8 @@ type HealthResponse struct {
 	Version        string       `json:"version"`
 	Warnings       []string     `json:"warnings"`
 	Galaxies       *GalaxyState `json:"galaxies,omitempty"`
+	// System holds the deeper probes of the health page.
+	System *SystemProbe `json:"system,omitempty"`
 }
 
 // GalaxyState is the state of the galaxy namer.

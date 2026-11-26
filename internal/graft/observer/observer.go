@@ -37,6 +37,37 @@ type Config struct {
 	StaticDir string
 	// LabelDailyCalls is how many calls the galaxy namer may make a day.
 	LabelDailyCalls int
+	// GraftToken is the shared token of the graft server. The observer asks
+	// the server how far every mirror is behind, and it performs the writes
+	// an operator asks for, so it needs the credentials of the server.
+	GraftToken string
+	// QueuePath is the file of the mirror queue of the node. It holds the
+	// plan of the mirrors: the interval of every target, the next run and
+	// the last tasks.
+	QueuePath string
+	// ReportsDir is the directory of the reports of the backup gate.
+	ReportsDir string
+	// DumpsDir is the directory of the dumps of the storage core.
+	DumpsDir string
+	// CIDatabase is the database of the CI server, read only.
+	CIDatabase string
+	// CIURL is the web base of the CI server, so a pipeline row can link to
+	// its own page.
+	CIURL string
+	// MirrorTTL is how long a reading of the mirror telemetry is served
+	// before it is collected again.
+	MirrorTTL time.Duration
+	// CITTL is how long a reading of the CI telemetry is served before it
+	// is collected again.
+	CITTL time.Duration
+	// ActionToken is the token a client must carry to ask for a write.
+	ActionToken string
+	// GraftBin is the graft client the observer uses to perform a write.
+	GraftBin string
+	// GraftUser is the identity the writes are made with.
+	GraftUser string
+	// Storage is the storage the writes address.
+	Storage string
 }
 
 // DefaultPollInterval is how often the service reads the storage core when
@@ -49,6 +80,9 @@ type Observer struct {
 	db        *sql.DB
 	hub       *EventHub
 	collector *collector
+	mirrors   *MirrorIntel
+	ci        *CIIntel
+	actions   *Actions
 	startedAt time.Time
 	stop      chan struct{}
 }
@@ -71,6 +105,9 @@ func New(cfg Config) (*Observer, error) {
 		db:        db,
 		hub:       hub,
 		collector: newCollector(db, hub),
+		mirrors:   NewMirrorIntel(cfg),
+		ci:        NewCIIntel(cfg),
+		actions:   NewActions(cfg),
 		startedAt: time.Now(),
 		stop:      make(chan struct{}),
 	}, nil
@@ -80,10 +117,18 @@ func New(cfg Config) (*Observer, error) {
 // applies the migrations of the storage core.
 func openDatabase(dsn string) (*sql.DB, error) {
 	driver := "pgx"
+	source := dsn
 	if strings.HasPrefix(dsn, "sqlite:") {
 		driver = "sqlite3"
+		// The driver wants a file name, not a URL: "sqlite:///var/lib/core.db"
+		// names the file "/var/lib/core.db" and "sqlite::memory:" names the
+		// memory database.
+		source = strings.TrimPrefix(strings.TrimPrefix(dsn, "sqlite:"), "//")
+		if source == "" {
+			source = ":memory:"
+		}
 	}
-	db, err := sql.Open(driver, dsn)
+	db, err := sql.Open(driver, source)
 	if err != nil {
 		return nil, fmt.Errorf("observer: open the storage core: %w", err)
 	}
@@ -134,6 +179,21 @@ func (o *Observer) Poll(ctx context.Context) error {
 // Hub is the event hub of the service.
 func (o *Observer) Hub() *EventHub {
 	return o.hub
+}
+
+// Mirrors is the collector of the mirror and backup telemetry.
+func (o *Observer) Mirrors() *MirrorIntel {
+	return o.mirrors
+}
+
+// CI is the collector of the CI telemetry.
+func (o *Observer) CI() *CIIntel {
+	return o.ci
+}
+
+// Actions is the writer of the service.
+func (o *Observer) Actions() *Actions {
+	return o.actions
 }
 
 // sourceInfo says where the picture comes from.
@@ -187,6 +247,7 @@ func (o *Observer) Health(ctx context.Context) HealthResponse {
 	if warnings == nil {
 		warnings = []string{}
 	}
+	system := o.system(ctx, warnings)
 	return HealthResponse{
 		OK:             ok,
 		Mode:           "live",
@@ -195,7 +256,63 @@ func (o *Observer) Health(ctx context.Context) HealthResponse {
 		UptimeSec:      int64(time.Since(o.startedAt).Seconds()),
 		Version:        o.cfg.Version,
 		Warnings:       warnings,
+		System:         system,
 	}
+}
+
+// system runs the deeper probes of the health page: is the storage core
+// answering, how old is the last reading, does the mirror fabric keep up and
+// what does the backup gate say.
+func (o *Observer) system(ctx context.Context, warnings []string) *SystemProbe {
+	probe := &SystemProbe{
+		Database: DatabaseProbe{CheckedAt: isoTime(time.Now())},
+		Hosts:    []HostDisk{},
+		Nodes:    []NodeSummary{},
+	}
+
+	start := time.Now()
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := o.db.PingContext(pingCtx); err != nil {
+		probe.Database.Error = stringPtr(err.Error())
+	} else {
+		probe.Database.Reachable = true
+		latency := time.Since(start).Milliseconds()
+		probe.Database.LatencyMs = &latency
+	}
+
+	o.collector.mu.RLock()
+	lastSuccess := o.collector.lastSuccessAt
+	o.collector.mu.RUnlock()
+	if !lastSuccess.IsZero() {
+		stamp := isoTime(lastSuccess)
+		probe.Poll.LastPollAt = &stamp
+		age := time.Since(lastSuccess).Milliseconds()
+		probe.Poll.AgeMs = &age
+	}
+
+	mirrors, backup := o.Mirrors().Get(ctx)
+	summary := mirrors.Summary
+	probe.Mirrors = &summary
+	probe.Backup = backup.Gate
+	probe.Hosts = mirrors.Hosts
+	source := MirrorSourceProbe{OK: mirrors.OK, LagProbes: mirrors.Source.LagProbes}
+	if mirrors.Source.Error != nil {
+		source.Error = mirrors.Source.Error
+	}
+	if mirrors.Source.Host != "" {
+		host := mirrors.Source.Host
+		source.Host = &host
+	}
+	probe.MirrorSource = &source
+
+	o.collector.mu.RLock()
+	repos := o.collector.repoRows
+	nodes := o.collector.nodeRows
+	o.collector.mu.RUnlock()
+	probe.Nodes = buildNodes(repos, nodes, time.Now())
+
+	return probe
 }
 
 // describeDatabase names a database without its credentials. The picture of the

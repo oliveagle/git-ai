@@ -3,10 +3,12 @@ package observer
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +21,12 @@ func (o *Observer) Handler() http.Handler {
 	mux.HandleFunc("/api/events", o.handleEvents)
 	mux.HandleFunc("/api/refresh", o.handleRefresh)
 	mux.HandleFunc("/api/galaxy-names", o.handleGalaxyNames)
+	mux.HandleFunc("/api/mirrors", o.handleMirrors)
+	mux.HandleFunc("/api/backups", o.handleBackups)
+	mux.HandleFunc("/api/ci", o.handleCI)
+	mux.HandleFunc("/api/actions/repo-create", o.handleRepoCreate)
+	mux.HandleFunc("/api/actions/land", o.handleLand)
+	mux.HandleFunc("/api/actions/mirror-push", o.handleMirrorPush)
 	if o.cfg.StaticDir != "" {
 		mux.Handle("/", staticHandler(o.cfg.StaticDir))
 	} else {
@@ -187,4 +195,127 @@ func staticHandler(dir string) http.Handler {
 		index := filepath.Join(dir, "index.html")
 		http.ServeFile(w, r, index)
 	})
+}
+
+// handleMirrors answers with the mirror and backup telemetry. It is read on
+// the server, so a client never asks a worker host anything.
+func (o *Observer) handleMirrors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "only GET is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	response, _ := o.Mirrors().Get(r.Context())
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleBackups answers with the report of the backup gate.
+func (o *Observer) handleBackups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "only GET is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_, response := o.Mirrors().Get(r.Context())
+	writeJSON(w, http.StatusOK, response)
+}
+
+// handleCI answers with the telemetry of the CI server.
+func (o *Observer) handleCI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "only GET is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, o.CI().Get(r.Context()))
+}
+
+// actionToken is the token a client carries to ask for a write.
+func actionToken(r *http.Request) string {
+	if value := strings.TrimSpace(r.Header.Get("X-Action-Token")); value != "" {
+		return value
+	}
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(value), "bearer ") {
+		return strings.TrimSpace(value[len("bearer "):])
+	}
+	return ""
+}
+
+// handleRepoCreate registers a repository in the storage core.
+func (o *Observer) handleRepoCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "only POST is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !o.Actions().Authorized(actionToken(r)) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "the action token is missing or wrong"})
+		return
+	}
+	var input RepoCreateInput
+	if err := decodeAction(readBody(r), &input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	result := o.Actions().CreateRepo(r.Context(), input)
+	status := http.StatusOK
+	if !result.OK {
+		status = http.StatusBadGateway
+	}
+	writeJSON(w, status, result)
+}
+
+// handleLand commits a workspace and lands it on a branch.
+func (o *Observer) handleLand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "only POST is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !o.Actions().Authorized(actionToken(r)) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "the action token is missing or wrong"})
+		return
+	}
+	var input LandInput
+	if err := decodeAction(readBody(r), &input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	result := o.Actions().Land(r.Context(), input)
+	status := http.StatusOK
+	if !result.OK {
+		status = http.StatusBadGateway
+	}
+	writeJSON(w, status, result)
+}
+
+// handleMirrorPush publishes a repository to a mirror.
+func (o *Observer) handleMirrorPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "only POST is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !o.Actions().Authorized(actionToken(r)) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "the action token is missing or wrong"})
+		return
+	}
+	var input MirrorPushInput
+	if err := decodeAction(readBody(r), &input); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	result := o.Actions().MirrorPush(r.Context(), input)
+	status := http.StatusOK
+	if !result.OK {
+		status = http.StatusBadGateway
+	}
+	writeJSON(w, status, result)
+}
+
+// readBody reads the body of a request.
+func readBody(r *http.Request) []byte {
+	if r.Body == nil {
+		return nil
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return nil
+	}
+	return body
 }

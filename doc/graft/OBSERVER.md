@@ -33,9 +33,42 @@ database, a worker host or a model endpoint.
 | --- | --- |
 | `GET /api/snapshot` | The whole fleet: source, repositories, nodes, mirrors, events, counters |
 | `GET /api/events` | The activity as a stream (SSE); a client that reconnects with a cursor gets what it missed |
-| `GET /api/health` | The state of the service and of the storage core |
+| `GET /api/health` | The state of the service, of the storage core, of the mirrors, of the backups and of the CI |
 | `POST /api/refresh` | Reads what changed right now |
 | `GET /api/galaxy-names` | The galaxy labels the namer holds |
+| `GET /api/mirrors` | The mirror fabric: the plan of the queue, the measured state of the server, the runs |
+| `GET /api/backups` | The verdict of the backup gate, the lag of every repository and the disks |
+| `GET /api/ci` | The telemetry of the CI server: the pipelines, the repositories and the agents |
+| `POST /api/actions/repo-create` | Registers a repository, with the credentials of the server |
+| `POST /api/actions/land` | Commits a workspace and lands it on a branch |
+| `POST /api/actions/mirror-push` | Publishes a repository to a mirror |
+
+The three read endpoints of the pages hold their own cache: the CI telemetry
+for eight seconds, the mirror telemetry for ten and the backup report for a
+minute. A page that is read often costs one collection, not one collection
+per request.
+
+## The mirrors, the backups and the CI
+
+The mirror telemetry joins three authorities:
+
+- the queue of the operator (`mirror-queue.json`), which holds the plan: the
+  interval of every target, the next run and the last tasks;
+- the graft server, which holds the measured state: how far a target is
+  behind, when it published last. The observer asks the server with the SDK
+  and falls back to the tables of the storage core when the server cannot be
+  reached;
+- the backup gate, which reads the origins back and says whether a backup
+  counts. Its report is a file of the node.
+
+The observer reads the queue and the report as files of the node it runs on.
+No client ever asks a worker host anything over ssh.
+
+## The writes
+
+The client asks; the server does. The browser holds a token of the observer
+and nothing else. The observer holds the token of the graft server, runs the
+`graft` client with it and redacts the token from every line it shows.
 
 ## The events
 
@@ -49,12 +82,24 @@ and a client that was away can catch up.
 | Variable | What it is |
 | --- | --- |
 | `GRAFT_OBSERVER_DATABASE` | The storage core: `postgres://…` or `sqlite://…` |
-| `GRAFT_OBSERVER_LISTEN` | The address the service listens on |
+| `GRAFT_OBSERVER_LISTEN` | The address the HTTP server listens on |
 | `GRAFT_OBSERVER_POLL_INTERVAL` | How often the storage core is read; 900 ms by default |
 | `GRAFT_OBSERVER_STATE_DIR` | Where the journal of the events is kept |
 | `GRAFT_OBSERVER_ADDRESS` | The address of the graft server, shown as the origin of the writes |
 | `GRAFT_OBSERVER_STATIC` | The directory of the built frontend, when the service hosts it |
 | `GRAFT_OBSERVER_VERSION` | The version the health endpoint reports |
+| `GRAFT_OBSERVER_TOKEN` / `GRAFT_OBSERVER_TOKEN_FILE` | The token a client must carry to read the API |
+| `GRAFT_OBSERVER_ACTION_TOKEN` | The token a client must carry to ask for a write |
+| `GRAFT_OBSERVER_GRAFT_BIN` | The `graft` client the observer uses to write |
+| `GRAFT_OBSERVER_GRAFT_USER` | The identity the writes are made with |
+| `GRAFT_OBSERVER_STORAGE` | The storage the writes address |
+| `GRAFT_OBSERVER_QUEUE_PATH` | The mirror queue of the node |
+| `GRAFT_OBSERVER_REPORTS_DIR` | The directory of the reports of the backup gate |
+| `GRAFT_OBSERVER_DUMPS_DIR` | The directory of the dumps of the storage core |
+| `GRAFT_OBSERVER_CI_DATABASE` | The database of the CI server, read only |
+| `GRAFT_OBSERVER_CI_URL` | The web base of the CI server, so a pipeline row can link to its own page |
+| `GRAFT_OBSERVER_MIRROR_TTL` | How long a reading of the mirror telemetry is served |
+| `GRAFT_OBSERVER_CI_TTL` | How long a reading of the CI telemetry is served |
 
 ## Where it runs
 

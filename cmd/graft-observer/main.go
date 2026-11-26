@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,6 +43,30 @@ type options struct {
 	graftAddress string
 	staticDir    string
 	version      string
+
+	// The credentials of the graft server: the observer asks it how far
+	// every mirror is behind, and it performs the writes an operator asks
+	// for.
+	graftToken string
+	graftBin   string
+	graftUser  string
+	storage    string
+
+	// The operational files of the node: the queue of the mirrors, the
+	// reports of the backup gate and the dumps of the storage core.
+	queuePath  string
+	reportsDir string
+	dumpsDir   string
+
+	// The CI server.
+	ciDatabase string
+	ciURL      string
+
+	// The token a client carries to ask for a write.
+	actionToken string
+
+	mirrorTTL time.Duration
+	ciTTL     time.Duration
 }
 
 func main() {
@@ -63,6 +88,18 @@ func parseOptions(args []string) (*options, error) {
 	fs.StringVar(&opts.graftAddress, "graft-address", os.Getenv("GRAFT_OBSERVER_ADDRESS"), "address of the graft server, shown as the origin of the writes")
 	fs.StringVar(&opts.staticDir, "static-dir", os.Getenv("GRAFT_OBSERVER_STATIC"), "directory of the built frontend, when the service hosts it")
 	fs.StringVar(&opts.version, "version", os.Getenv("GRAFT_OBSERVER_VERSION"), "version of the service")
+	fs.StringVar(&opts.graftToken, "graft-token", envOr("GRAFT_OBSERVER_TOKEN", ""), "token of the graft server")
+	fs.StringVar(&opts.graftBin, "graft-bin", envOr("GRAFT_OBSERVER_GRAFT_BIN", "graft"), "graft client used for the writes")
+	fs.StringVar(&opts.graftUser, "graft-user", envOr("GRAFT_OBSERVER_GRAFT_USER", ""), "identity the writes are made with")
+	fs.StringVar(&opts.storage, "storage", envOr("GRAFT_OBSERVER_STORAGE", "default"), "storage the writes address")
+	fs.StringVar(&opts.queuePath, "queue-path", envOr("GRAFT_OBSERVER_QUEUE_PATH", ""), "file of the mirror queue of the node")
+	fs.StringVar(&opts.reportsDir, "reports-dir", envOr("GRAFT_OBSERVER_REPORTS_DIR", ""), "directory of the reports of the backup gate")
+	fs.StringVar(&opts.dumpsDir, "dumps-dir", envOr("GRAFT_OBSERVER_DUMPS_DIR", ""), "directory of the dumps of the storage core")
+	fs.StringVar(&opts.ciDatabase, "ci-database", envOr("GRAFT_OBSERVER_CI_DATABASE", ""), "database of the CI server, read only")
+	fs.StringVar(&opts.ciURL, "ci-url", envOr("GRAFT_OBSERVER_CI_URL", ""), "web base of the CI server")
+	fs.StringVar(&opts.actionToken, "action-token", envOr("GRAFT_OBSERVER_ACTION_TOKEN", ""), "token a client carries to ask for a write")
+	fs.DurationVar(&opts.mirrorTTL, "mirror-ttl", envDuration("GRAFT_OBSERVER_MIRROR_TTL", 10*time.Second), "how long a reading of the mirror telemetry is served")
+	fs.DurationVar(&opts.ciTTL, "ci-ttl", envDuration("GRAFT_OBSERVER_CI_TTL", 8*time.Second), "how long a reading of the CI telemetry is served")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -103,6 +140,17 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The token of the graft server may be given as a file, so that it
+	// does not have to live in the environment of the service.
+	graftToken := opts.graftToken
+	if graftToken == "" {
+		if path := os.Getenv("GRAFT_OBSERVER_TOKEN_FILE"); path != "" {
+			if raw, err := os.ReadFile(path); err == nil {
+				graftToken = strings.TrimSpace(string(raw))
+			}
+		}
+	}
+
 	service, err := observer.New(observer.Config{
 		Database:     opts.database,
 		Listen:       opts.listen,
@@ -111,6 +159,24 @@ func run(args []string) error {
 		GraftAddress: opts.graftAddress,
 		StaticDir:    opts.staticDir,
 		Version:      opts.version,
+
+		GraftToken: graftToken,
+		GraftBin:   opts.graftBin,
+		GraftUser:  opts.graftUser,
+		Storage:    opts.storage,
+
+		QueuePath:  opts.queuePath,
+		ReportsDir: opts.reportsDir,
+		DumpsDir:   opts.dumpsDir,
+
+		CIDatabase: opts.ciDatabase,
+		CIURL:      opts.ciURL,
+
+		ActionToken:    opts.actionToken,
+		ActionsEnabled: graftToken != "" && opts.graftAddress != "",
+
+		MirrorTTL: opts.mirrorTTL,
+		CITTL:     opts.ciTTL,
 	})
 	if err != nil {
 		return err
