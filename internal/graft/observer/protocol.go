@@ -140,16 +140,6 @@ type Snapshot struct {
 	Stats       UniverseStats   `json:"stats"`
 }
 
-// GalaxyName is one model-written galaxy label, keyed by the membership of
-// the galaxy it names.
-type GalaxyName struct {
-	Signature string `json:"signature"`
-	Name      string `json:"name"`
-	Summary   string `json:"summary"`
-	Model     string `json:"model"`
-	At        string `json:"at"`
-}
-
 // HealthResponse is the answer of the health endpoint.
 type HealthResponse struct {
 	// OK is false while the storage core is unreachable, which means the data

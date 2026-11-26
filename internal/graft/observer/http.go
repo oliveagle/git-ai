@@ -87,18 +87,21 @@ func (o *Observer) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleGalaxyNames answers with the galaxy labels the namer holds.
 func (o *Observer) handleGalaxyNames(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "only GET is allowed", http.StatusMethodNotAllowed)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, o.Galaxy().Status())
+	case http.MethodPost:
+		var request struct {
+			Families []GalaxyFamily `json:"families"`
+		}
+		if err := decodeAction(readBody(r), &request); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, o.Galaxy().Request(request.Families))
+	default:
+		http.Error(w, "only GET and POST are allowed", http.StatusMethodNotAllowed)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"configured": false,
-		"names":      []GalaxyName{},
-		"callsToday": 0,
-		"dailyLimit": o.cfg.LabelDailyCalls,
-		"lastCallAt": nil,
-		"lastError":  nil,
-	})
 }
 
 // handleRefresh reads what changed right now.

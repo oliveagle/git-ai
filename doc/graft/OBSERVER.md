@@ -35,7 +35,8 @@ database, a worker host or a model endpoint.
 | `GET /api/events` | The activity as a stream (SSE); a client that reconnects with a cursor gets what it missed |
 | `GET /api/health` | The state of the service, of the storage core, of the mirrors, of the backups and of the CI |
 | `POST /api/refresh` | Reads what changed right now |
-| `GET /api/galaxy-names` | The galaxy labels the namer holds |
+| `GET /api/galaxy-names` | The galaxy labels the namer holds, with the meter of the budget |
+| `POST /api/galaxy-names` | Asks the namer to name the families that changed |
 | `GET /api/mirrors` | The mirror fabric: the plan of the queue, the measured state of the server, the runs |
 | `GET /api/backups` | The verdict of the backup gate, the lag of every repository and the disks |
 | `GET /api/ci` | The telemetry of the CI server: the pipelines, the repositories and the agents |
@@ -100,6 +101,13 @@ and a client that was away can catch up.
 | `GRAFT_OBSERVER_CI_URL` | The web base of the CI server, so a pipeline row can link to its own page |
 | `GRAFT_OBSERVER_MIRROR_TTL` | How long a reading of the mirror telemetry is served |
 | `GRAFT_OBSERVER_CI_TTL` | How long a reading of the CI telemetry is served |
+| `GRAFT_OBSERVER_LABEL_URL` | The endpoints of the naming model, e.g. `http://host:3795/v1/responses\|model`, comma separated |
+| `GRAFT_OBSERVER_LABEL_MODEL` | The model the endpoints expect, when the URL does not name one |
+| `GRAFT_OBSERVER_LABEL_KEY` / `GRAFT_OBSERVER_LABEL_KEY_FILE` | The credential of the naming model |
+| `GRAFT_OBSERVER_LABEL_DAILY_CALLS` | How many calls the naming model may make a day; 32 by default |
+| `GRAFT_OBSERVER_LABEL_MIN_INTERVAL_MS` | The smallest gap between two calls; five seconds by default |
+| `GRAFT_OBSERVER_LABEL_TIMEOUT_MS` | How long one call may take; 45 seconds by default |
+| `GRAFT_OBSERVER_LABEL_RETRY_AFTER_MS` | How long a family that failed is left alone; six hours by default |
 
 ## Where it runs
 
@@ -114,3 +122,12 @@ backups of the workstation, and it is pulled in on a slow schedule.
 Naming the galaxies costs a call to a model, so it is bounded: a hard ceiling
 of calls per day, a minimum interval between two calls, and a cache keyed by
 the membership of the galaxy. A fleet that does not change costs nothing.
+
+The client asks for a family to be named and does not wait for it: it posts the
+family with its members, its stacks, its agents and its mirrors, and the
+namer answers when the budget allows. A family that keeps its members is
+never asked about again — the name is cached by the membership, on disk, next
+to the journal of the events — and a family that failed is left alone for
+hours instead of being retried. The names are handed to the client by
+`GET /api/galaxy-names`, which is also the meter: the calls of the day, the
+ceiling, the last call and the last error.

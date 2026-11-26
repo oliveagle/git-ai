@@ -37,6 +37,16 @@ type Config struct {
 	StaticDir string
 	// LabelDailyCalls is how many calls the galaxy namer may make a day.
 	LabelDailyCalls int
+	// LabelTargets are the channels of the naming model, tried in order.
+	LabelTargets []LabelTarget
+	// LabelKey is the credential of the naming model.
+	LabelKey string
+	// LabelMinInterval is the smallest gap between two calls.
+	LabelMinInterval time.Duration
+	// LabelTimeout is how long one call may take.
+	LabelTimeout time.Duration
+	// LabelRetryAfter is how long a failed family is left alone.
+	LabelRetryAfter time.Duration
 	// GraftToken is the shared token of the graft server. The observer asks
 	// the server how far every mirror is behind, and it performs the writes
 	// an operator asks for, so it needs the credentials of the server.
@@ -83,6 +93,7 @@ type Observer struct {
 	mirrors   *MirrorIntel
 	ci        *CIIntel
 	actions   *Actions
+	galaxy    *GalaxyNamer
 	startedAt time.Time
 	stop      chan struct{}
 }
@@ -108,6 +119,7 @@ func New(cfg Config) (*Observer, error) {
 		mirrors:   NewMirrorIntel(cfg),
 		ci:        NewCIIntel(cfg),
 		actions:   NewActions(cfg),
+		galaxy:    NewGalaxyNamer(cfg),
 		startedAt: time.Now(),
 		stop:      make(chan struct{}),
 	}, nil
@@ -143,6 +155,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.collector.start(ctx); err != nil {
 		return err
 	}
+	o.galaxy.Start()
 	go o.pollLoop(ctx)
 	return nil
 }
@@ -168,6 +181,7 @@ func (o *Observer) pollLoop(ctx context.Context) {
 // Stop ends the service.
 func (o *Observer) Stop() error {
 	close(o.stop)
+	o.galaxy.Stop()
 	return o.db.Close()
 }
 
@@ -194,6 +208,11 @@ func (o *Observer) CI() *CIIntel {
 // Actions is the writer of the service.
 func (o *Observer) Actions() *Actions {
 	return o.actions
+}
+
+// Galaxy is the namer of the galaxies.
+func (o *Observer) Galaxy() *GalaxyNamer {
+	return o.galaxy
 }
 
 // sourceInfo says where the picture comes from.
