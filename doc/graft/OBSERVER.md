@@ -117,6 +117,26 @@ CI database is on the same machine: reading them there costs no ssh and no
 remote process. The one thing that stays remote is the gate of the local
 backups of the workstation, and it is pulled in on a slow schedule.
 
+## How it is installed
+
+The observer is a static binary (it is built without cgo, so the same file
+runs on every node) and a systemd user service:
+
+```sh
+deploy/host-scripts/install-observer.sh --from /path/to/graft-observer
+```
+
+The script installs the binary under `~/opt/git-ai/bin`, writes the unit to
+`~/.config/systemd/user/graft-observer.service`, enables the service and
+waits until `/api/health` answers. Without `--from` it builds the binary from
+this repository, which needs Go on the node.
+
+The script never writes the environment file: it holds the credentials of the
+storage core and of the naming model, a password must not pass through a
+command line, and the file must stay at `0600`. It reads the listen address
+from that file, because the address is part of the configuration of the
+service.
+
 ## The cost of the model
 
 Naming the galaxies costs a call to a model, so it is bounded: a hard ceiling
