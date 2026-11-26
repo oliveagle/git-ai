@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,19 @@ import (
 //     that;
 //   - a failure is remembered per signature and not retried for hours;
 //   - with no model configured nothing is ever called and the rules stand.
+
+const (
+	// labelBudget is how many tokens a naming call may use. The answer is
+	// two short lines: anything more is a model that thinks out loud.
+	labelBudget = 800
+	// labelBudgetRetry is the ceiling of the second try. A model that spent
+	// the first one thinking needs room to answer, and a label is worth a
+	// few hundred tokens.
+	labelBudgetRetry = 3200
+)
+
+// errLabelBudget says the model ran out of room before it answered.
+var errLabelBudget = errors.New("the model ran out of output budget")
 
 // LabelTarget is one channel of the naming model.
 type LabelTarget struct {
@@ -313,6 +327,7 @@ func (n *GalaxyNamer) take() (GalaxyFamily, bool) {
 }
 
 // name asks the model for the label of one family.
+// name asks the model for the label of one family.
 func (n *GalaxyNamer) name(family GalaxyFamily) error {
 	if !n.Configured() {
 		return fmt.Errorf("no naming model is configured")
@@ -322,8 +337,21 @@ func (n *GalaxyNamer) name(family GalaxyFamily) error {
 	var failures []string
 
 	for _, target := range n.cfg.LabelTargets {
-		for attempt := 0; attempt < 2; attempt++ {
-			text, err := n.call(target, input, attempt)
+		// The first call asks for a small answer. A model that spends the
+		// whole ceiling thinking is given room once: the label is worth a
+		// few hundred tokens, and giving up is worse.
+		budget := labelBudget
+		strict := false
+		for round := 0; round < 3; round++ {
+			text, err := n.call(target, input, strict, budget)
+			if errors.Is(err, errLabelBudget) {
+				failures = append(failures, fmt.Sprintf("%s: the model ran out of budget", target.Model))
+				if budget < labelBudgetRetry {
+					budget = labelBudgetRetry
+					continue
+				}
+				break
+			}
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("%s: %s", target.Model, truncate(err.Error(), 160)))
 				// Only a bad label is worth a second try; a rejected or
@@ -331,11 +359,13 @@ func (n *GalaxyNamer) name(family GalaxyFamily) error {
 				if !strings.Contains(err.Error(), "no label") {
 					break
 				}
+				strict = true
 				continue
 			}
 			label, summary := parseGalaxyLabel(text)
 			if !isPlausibleLabel(label) {
 				failures = append(failures, fmt.Sprintf("%s: no label", target.Model))
+				strict = true
 				continue
 			}
 			n.mu.Lock()
@@ -389,9 +419,14 @@ func (n *GalaxyNamer) trimCalls() {
 }
 
 // call asks one channel of the model.
-func (n *GalaxyNamer) call(target LabelTarget, input string, attempt int) (string, error) {
+// call asks one channel of the model.
+//
+// The budget is the ceiling of the answer. A model that thinks out loud
+// spends it and answers nothing: that is errLabelBudget, and the caller
+// may give it more room.
+func (n *GalaxyNamer) call(target LabelTarget, input string, strict bool, budget int) (string, error) {
 	prompt := input
-	if attempt > 0 {
+	if strict {
 		prompt += "\n\nYour last answer was rejected: it must be exactly two short lines, the name and the summary, with no explanation and no reasoning."
 	}
 	body, err := json.Marshal(map[string]any{
@@ -399,7 +434,7 @@ func (n *GalaxyNamer) call(target LabelTarget, input string, attempt int) (strin
 		"input": prompt,
 		// Two short lines: a reasoning model that spends its budget thinking
 		// is the failure mode this ceiling exists to expose.
-		"max_output_tokens": 800,
+		"max_output_tokens": budget,
 		"reasoning":         map[string]any{"effort": "low"},
 	})
 	if err != nil {
@@ -436,11 +471,35 @@ func (n *GalaxyNamer) call(target LabelTarget, input string, attempt int) (strin
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return "", fmt.Errorf("not JSON: %s", truncate(string(raw), 160))
 	}
+	if reason := incompleteReason(payload); reason != "" {
+		if reason == "max_output_tokens" {
+			return "", fmt.Errorf("%w: %s", errLabelBudget, reason)
+		}
+		return "", fmt.Errorf("the answer is incomplete: %s", reason)
+	}
 	text := modelText(payload)
 	if text == "" {
 		return "", fmt.Errorf("no label: %s", truncate(string(raw), 160))
 	}
 	return text, nil
+}
+
+// incompleteReason says why an answer stopped short, if it did. An empty
+// answer is not the same as an answer that ran out of room.
+func incompleteReason(payload map[string]any) string {
+	status, _ := payload["status"].(string)
+	if status != "incomplete" {
+		return ""
+	}
+	details, ok := payload["incomplete_details"].(map[string]any)
+	if !ok {
+		return "unknown"
+	}
+	reason, _ := details["reason"].(string)
+	if reason == "" {
+		return "unknown"
+	}
+	return reason
 }
 
 // galaxyPrompt is the question asked about one family.

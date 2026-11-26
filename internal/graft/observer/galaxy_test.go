@@ -252,3 +252,106 @@ func waitFor(t *testing.T, limit time.Duration, condition func() bool) {
 }
 
 var _ = context.Background
+
+// A model that thinks out loud spends the ceiling and answers nothing. The
+// namer has to notice that and give it room once, instead of giving up on
+// the family for hours.
+func TestAModelThatRanOutOfBudgetIsGivenRoomOnce(t *testing.T) {
+	var calls int64
+	var budgets []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&calls, 1)
+		var request struct {
+			MaxOutputTokens int `json:"max_output_tokens"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		budgets = append(budgets, request.MaxOutputTokens)
+		w.Header().Set("Content-Type", "application/json")
+		if atomic.LoadInt64(&calls) == 1 {
+			// The answer stopped short: the budget went into thinking.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "incomplete",
+				"incomplete_details": map[string]any{
+					"reason": "max_output_tokens",
+				},
+				"output": []any{map[string]any{
+					"type":    "reasoning",
+					"summary": []any{map[string]any{"type": "summary_text", "text": "thinking"}},
+				}},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"output_text": "git ai tooling\nA family of agents.",
+		})
+	}))
+	defer server.Close()
+
+	namer := NewGalaxyNamer(Config{
+		StateDir:         t.TempDir(),
+		LabelTargets:     []LabelTarget{{URL: server.URL, Model: "test-model"}},
+		LabelDailyCalls:  32,
+		LabelMinInterval: time.Millisecond,
+		LabelTimeout:     5 * time.Second,
+		LabelRetryAfter:  time.Hour,
+	})
+	namer.Start()
+	defer namer.Stop()
+
+	namer.Request([]GalaxyFamily{{Signature: "1,2,3", Members: []string{"a.git"}, RuleName: "git ai"}})
+
+	waitFor(t, 3*time.Second, func() bool { return len(namer.Names()) == 1 })
+	if got := atomic.LoadInt64(&calls); got != 2 {
+		t.Fatalf("calls = %d, want 2: one that ran out of budget and one with room", got)
+	}
+	if len(budgets) != 2 {
+		t.Fatalf("budgets = %v, want two of them", budgets)
+	}
+	if budgets[0] != labelBudget {
+		t.Fatalf("first budget = %d, want %d", budgets[0], labelBudget)
+	}
+	if budgets[1] <= budgets[0] {
+		t.Fatalf("second budget = %d, want more than %d", budgets[1], budgets[0])
+	}
+	if name := namer.Names()[0].Name; name != "git ai tooling" {
+		t.Fatalf("name = %q, want the answer of the second try", name)
+	}
+}
+
+// An answer that stopped short for another reason is not a budget problem:
+// the namer must not burn a bigger budget on it.
+func TestAnIncompleteAnswerForAnotherReasonIsNotRetriedWithMoreRoom(t *testing.T) {
+	var calls int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":             "incomplete",
+			"incomplete_details": map[string]any{"reason": "content_filter"},
+		})
+	}))
+	defer server.Close()
+
+	namer := NewGalaxyNamer(Config{
+		StateDir:         t.TempDir(),
+		LabelTargets:     []LabelTarget{{URL: server.URL, Model: "test-model"}},
+		LabelDailyCalls:  32,
+		LabelMinInterval: time.Millisecond,
+		LabelTimeout:     5 * time.Second,
+		LabelRetryAfter:  time.Hour,
+	})
+	namer.Start()
+	defer namer.Stop()
+
+	namer.Request([]GalaxyFamily{{Signature: "1,2,3", Members: []string{"a.git"}}})
+	waitFor(t, 3*time.Second, func() bool {
+		lastError := namer.Status().LastError
+		return lastError != nil && *lastError != ""
+	})
+	if got := atomic.LoadInt64(&calls); got != 1 {
+		t.Fatalf("calls = %d, want 1: a filtered answer is not worth a bigger budget", got)
+	}
+	if len(namer.Names()) != 0 {
+		t.Fatalf("names = %v, want none", namer.Names())
+	}
+}
