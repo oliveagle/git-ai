@@ -250,9 +250,10 @@ func (n *GalaxyNamer) Status() GalaxyStatus {
 	return status
 }
 
-// callsToday counts the calls of the local day. The caller holds the lock.
+// callsToday counts the calls of the day of the timestamps. The caller
+// holds the lock.
 func (n *GalaxyNamer) callsToday() int {
-	today := time.Now().Format("2006-01-02")
+	today := dayKey(time.Now())
 	count := 0
 	for _, call := range n.cache.Calls {
 		if strings.HasPrefix(call.At, today) {
@@ -709,4 +710,14 @@ func (n *GalaxyNamer) persist() {
 	if err := os.WriteFile(n.file, raw, 0o600); err != nil {
 		return
 	}
+}
+
+// dayKey is the day a call belongs to.
+//
+// The timestamps of the calls are UTC, so the day must be counted in UTC as
+// well: a node whose clock is in another zone would count the calls of the
+// previous UTC day as today's, and the ceiling of the day would not bind
+// between midnight and eight in the morning.
+func dayKey(t time.Time) string {
+	return t.UTC().Format("2006-01-02")
 }

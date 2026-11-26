@@ -355,3 +355,33 @@ func TestAnIncompleteAnswerForAnotherReasonIsNotRetriedWithMoreRoom(t *testing.T
 		t.Fatalf("names = %v, want none", namer.Names())
 	}
 }
+
+// The meter must count the day the timestamps are written in. A node whose
+// clock is in another zone would otherwise count the calls of the previous
+// day as today's, and the ceiling of the day would not bind between
+// midnight and eight in the morning.
+func TestTheDayOfTheMeterIsTheDayOfTheTimestamps(t *testing.T) {
+	stamp := time.Date(2026, 11, 26, 23, 30, 0, 0, time.UTC)
+	if got := dayKey(stamp); got != "2026-11-26" {
+		t.Fatalf("dayKey = %q, want the day of the stamp", got)
+	}
+	shifted := stamp.In(time.FixedZone("UTC+8", 8*60*60))
+	if got := dayKey(shifted); got != "2026-11-26" {
+		t.Fatalf("dayKey = %q, want the day of the stamp, not the day of the zone", got)
+	}
+}
+
+func TestTheCallsOfTodayAreCounted(t *testing.T) {
+	namer := NewGalaxyNamer(Config{
+		StateDir:         t.TempDir(),
+		LabelTargets:     []LabelTarget{{URL: "http://127.0.0.1:1", Model: "test-model"}},
+		LabelDailyCalls:  32,
+		LabelMinInterval: time.Millisecond,
+		LabelTimeout:     time.Second,
+		LabelRetryAfter:  time.Hour,
+	})
+	namer.cache = galaxyCacheFile{Version: 1, Names: map[string]GalaxyName{}, Retry: map[string]string{}, Calls: []GalaxyCall{{At: isoTime(time.Now()), OK: true}}}
+	if got := namer.callsToday(); got != 1 {
+		t.Fatalf("callsToday = %d, want 1: the call of this moment belongs to this day", got)
+	}
+}
