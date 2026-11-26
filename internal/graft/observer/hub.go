@@ -89,7 +89,7 @@ func (h *EventHub) appendJournal(event ActivityEvent) {
 		return
 	}
 	defer file.Close()
-	line, err := json.Marshal(event)
+	line, err := marshalJSON(event)
 	if err != nil {
 		return
 	}

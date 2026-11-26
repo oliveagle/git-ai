@@ -46,7 +46,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(payload); err != nil {
+	if err := encoder.Encode(emptyLists(payload)); err != nil {
 		// The status line is already written; there is nothing left to say.
 		return
 	}
@@ -178,7 +178,7 @@ func (o *Observer) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // writeEvent writes one event of the stream.
 func writeEvent(w http.ResponseWriter, event ActivityEvent) {
-	payload, err := json.Marshal(event)
+	payload, err := marshalJSON(event)
 	if err != nil {
 		return
 	}

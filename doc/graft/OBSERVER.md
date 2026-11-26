@@ -49,6 +49,13 @@ for eight seconds, the mirror telemetry for ten and the backup report for a
 minute. A page that is read often costs one collection, not one collection
 per request.
 
+The shape of an answer is part of the contract: a field that holds a list
+always holds a list, even when it is empty — the answer is `[]`, never
+`null`. A field that may be absent — a timestamp, a measurement, an error —
+stays `null`, because the client asks whether it is there. The rule is
+enforced at the edge of the service, so it holds for every endpoint and for
+every field that comes later.
+
 ## The mirrors, the backups and the CI
 
 The mirror telemetry joins three authorities:
