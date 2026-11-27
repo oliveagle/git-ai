@@ -44,6 +44,12 @@ func TestSpecBackupGateIsScheduled(t *testing.T) {
 	if !specLine(text, `cron`) {
 		t.Errorf("%s: the gate must be named as the job of a schedule", file)
 	}
+	if !specLine(text, `Temporal`) {
+		t.Errorf("%s: the gate must be named as the job of a Temporal schedule", file)
+	}
+	if !specLine(text, `graft-backup-gate`) {
+		t.Errorf("%s: the gate must be named by the identifier of its schedule", file)
+	}
 	if !specLine(text, `--sync`) {
 		t.Errorf("%s: the document must describe the publish-then-verify run", file)
 	}

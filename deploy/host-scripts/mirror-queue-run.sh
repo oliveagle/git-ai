@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mirror-queue-run.sh — publish the mirror targets that are due.
 #
-# Runs ON the node host, from cron or by hand:
+# Runs ON the node host, by hand or by the job worker of the node:
 #
 #   mirror-queue-run.sh                    the targets whose interval has passed
 #   mirror-queue-run.sh --all              every enabled target, due or not
@@ -9,8 +9,9 @@
 #
 # This is the worker of the mirror policy. The server records what every
 # target last published and decides the next push on that record, so a worker
-# that has stopped is a policy that refuses work: it belongs in cron, with a
-# log, and not only in a person's shell.
+# that has stopped is a policy that refuses work: it belongs to the job layer of
+# the node, whose runs have a history a person can read, and not only in a
+# person's shell.
 #
 # The queue file is the operator's, holds no secret, and names the credential
 # of each target by variable or by path; the values are read here, when a task
@@ -36,7 +37,7 @@ fi
 
 # The Gitea of this host is written to with a token, and the queue names the
 # variable (GITEA_TOKEN) rather than its value. The value is the host's, kept
-# beside the shared token, so that a worker started by cron pushes to Gitea
+# beside the shared token, so that a worker of the job layer pushes to Gitea
 # without a token in the queue or on the command line.
 gitea_token_file="${GITAI_GITEA_TOKEN_FILE:-$ROOT/tokens/gitea}"
 if [ -z "${GITEA_TOKEN:-}" ] && [ -r "$gitea_token_file" ]; then

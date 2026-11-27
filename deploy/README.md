@@ -157,8 +157,8 @@ been redeployed is not a pass.
 ### What a deploy does to a lane
 
 1. the host scripts of this directory are copied to `<lane>/deploy/host-scripts`,
-   so the cron jobs of the host — the mirror worker, the backup gate, the
-   database dump — run the scripts of the release that was installed;
+   so the jobs of the host — the mirror sweep, the backup gate, the database
+   dump — run the scripts of the release that was installed;
 2. the bundle is staged and its tools extracted to `<lane>/.tools`;
 3. `prepare-lane.sh` creates what is missing — directory, token, PostgreSQL
    role and database, bucket, `config.toml`, `run-gitaly.sh`, the two supervisor
@@ -224,12 +224,18 @@ The schedule is `host-scripts/pg-dump.sh`: it reads the database the lane's
 dump, a check that the archive is a readable `pg_dump` TOC, a restore drill
 that compares the row count of every user table on both sides, and a rotation
 of the newest dumps — into `~/backups/pg-gitai/`. It is a read of the lane, so
-it needs no window. The crontab of the host runs it once a day:
+it needs no window. The job of the node runs it once a day, and the calendar
+of the job lives on the Temporal server — `graft-database-dump`, at 03:40 in
+the time zone of the node:
 
 ```sh
-40 3 * * * /home/oliveagle/opt/git-ai/deploy/host-scripts/pg-dump.sh --lane prod \
-  >> /home/oliveagle/backups/pg-gitai/backup.log 2>&1
+~/opt/git-ai/bin/graft-worker list                     # the jobs, their workflows and their next run
+~/opt/git-ai/bin/graft-worker run graft-database-dump  # the same job, by hand
 ```
+
+The worker runs the same script that the cron of the node ran, and the exit
+status of the script is the status of the run: a dump that failed is a run
+that failed in the history of the server, not a line in a log nobody opens.
 
 What it covers is what the storage core keeps in PostgreSQL: the changeset log,
 the refs, the mirror targets and their publications, and the policies. The
@@ -268,10 +274,13 @@ know.
 ~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh --repo shop.git   # one repository
 ```
 
-The gate is run from cron, next to the mirror jobs it verifies; `--sync`
-repairs what drifted and the run still fails when the repair did not work. A
-gate that nobody runs is a wish, and a backup that was pushed once by hand is
-not a fallback.
+The gate is a job of the node — `graft-backup-gate`, every hour at 17 minutes
+past the hour, on the calendar of the Temporal server — and it runs next to
+the mirror jobs it verifies; `--sync` repairs what drifted and the run still
+fails when the repair did not work. A gate that nobody runs is a wish, and a
+backup that was pushed once by hand is not a fallback. The failure of a run
+stays in the history of the server, so a gate that fails at 17 minutes past
+the hour is something a person reads.
 
 ## The mirror queue
 
@@ -304,9 +313,12 @@ the worker has stopped rather than that the pusher is behind, and the refusal
 says which command repairs it.
 ```
 
-The worker is one cron line, every five minutes: `host-scripts/
-mirror-queue-run.sh` publishes the targets whose interval has passed, and the
-queue decides what is due.
+The worker is a job of the node — `graft-mirror-sweep` — and the Temporal
+server holds its calendar: every minute the job looks at the queue and
+publishes the targets whose interval has passed. The queue decides what is
+due; the server decides when to look. `host-scripts/mirror-queue-run.sh` is
+the same worker by hand, for the times the calendar is not what a person
+needs.
 
 ```sh
 ~/opt/git-ai/deploy/host-scripts/mirror-queue-seed.sh            # declare, idempotent

@@ -85,10 +85,10 @@ else
 fi
 
 
-# The cron jobs of the host run the scripts of the lane — the mirror worker,
+# The jobs of the host run the scripts of the lane — the mirror sweep,
 # the backup gate, the database dump — so the lane carries the version of them
 # that this deploy was cut with. A script that is only copied by hand drifts
-# from the repository, and a cron job then runs a worker nobody reviewed.
+# from the repository, and a job then runs a worker nobody reviewed.
 log "installing the host scripts"
 ssh ${DEPLOY_SSH_OPTS} "${DEPLOY_SSH_USER}@${DEPLOY_HOST}" \
   "mkdir -p '$LANE_DIR/deploy/host-scripts'"

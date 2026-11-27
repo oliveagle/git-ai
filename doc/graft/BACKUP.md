@@ -95,8 +95,8 @@ is a workflow of the Temporal server, and the worker of the node runs it:
 17 * * * *   # the schedule is graft-backup-gate, every hour at 17 minutes
 ```
 
-The script of the job is the same one the cron of the node ran, so a run
-under the job system and a run from a shell do the same thing. See
+The script of the job is the same one the cron of the node used to run, so
+a run under the job system and a run from a shell do the same thing. See
 [JOBS.md](JOBS.md) for the worker, the schedules and the cut over.
 
 The `--sync` run publishes first and verifies second, so a repository that

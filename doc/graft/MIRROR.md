@@ -131,8 +131,8 @@ fails with the name of the variable, not with a secret, so the task of the
 history says what the operator has to put in the environment of the worker.
 
 The worker of this deployment, `deploy/host-scripts/mirror-queue-run.sh`, reads
-two host files when the environment is bare, so that cron needs no secret: the
-GitHub token from `~/.config/laya-workflow/github.token`
+two host files when the environment is bare, so that the job worker needs no
+secret: the GitHub token from `~/.config/laya-workflow/github.token`
 (`GITAI_GITHUB_TOKEN_FILE`) and the Gitea token from `tokens/gitea` under the
 deploy root (`GITAI_GITEA_TOKEN_FILE`). A variable that is already set wins,
 and a target of another host is served from the environment alone.
@@ -258,7 +258,7 @@ a quiet count is always a fact about the repository and never a guess.
 
 What this buys is the traffic of the queue, not its correctness. A mirror is
 still published at least every idle interval, and a repository that changes
-is published within the tick of the worker — a minute, for a cron job that
+is published within the tick of the worker — a minute, for a job that
 runs every minute. The lag the mirror policy warns about is therefore the
 lag of the *active* interval, not of the idle one: a repository that nobody
 touches cannot fall behind, because nothing lands on it.
