@@ -312,3 +312,52 @@ func TestTheSchedulesKeepTheMinutesOfTheCronTheyReplace(t *testing.T) {
 		require.NotEmpty(t, s.Workflow)
 	}
 }
+
+// The jobs of a workstation are on the calendar too, with the minutes the
+// cron of the node used: the gate of the local repositories at 23 minutes
+// past the hour, the full backup on Sunday and the incremental one on the
+// other days, both at two in the morning.
+func TestTheSchedulesOfAWorkstationKeepTheMinutesOfTheCronTheyReplace(t *testing.T) {
+	schedules := Schedules(Options{
+		TaskQueue: "graft-jobs-workstation",
+		Local: LocalOptions{
+			Script:            "/home/oliveagle/bin/local-backup-gate.sh",
+			Roots:             []string{"/mnt/data/repos/github.com/oliveagle"},
+			Sync:              true,
+			FullScript:        "/home/oliveagle/bin/backup-full.sh",
+			IncrementalScript: "/home/oliveagle/bin/backup-incremental.sh",
+		},
+	})
+	byID := map[string]Schedule{}
+	for _, s := range schedules {
+		byID[s.ID] = s
+	}
+
+	require.Equal(t, "23 * * * *", byID[ScheduleLocalBackupGate].Cron)
+	require.Equal(t, "0 2 * * 0", byID[ScheduleLocalBackupFull].Cron)
+	require.Equal(t, "0 2 * * 1-6", byID[ScheduleLocalBackupIncremental].Cron)
+
+	// The gate of the checkouts publishes what is missing before it verifies,
+	// and it names the roots it walks.
+	gate := byID[ScheduleLocalBackupGate].Args[0].(GateInput)
+	require.Contains(t, gate.Args, "--sync")
+	require.Contains(t, gate.Args, "/mnt/data/repos/github.com/oliveagle")
+	require.Equal(t, "local-origins", gate.ReportPrefix)
+
+	// The two backups run the script of the node, and every job of the
+	// workstation runs on the queue of the workstation.
+	require.Equal(t, "/home/oliveagle/bin/backup-full.sh",
+		byID[ScheduleLocalBackupFull].Args[0].(LocalBackupInput).Script)
+	require.Equal(t, "/home/oliveagle/bin/backup-incremental.sh",
+		byID[ScheduleLocalBackupIncremental].Args[0].(LocalBackupInput).Script)
+	for _, s := range schedules {
+		require.Equal(t, "graft-jobs-workstation", s.TaskQueue)
+		require.NotEmpty(t, s.Workflow)
+	}
+}
+
+// A node that holds no jobs holds no schedule: the calendar of the server
+// names only the jobs a worker of that node can run.
+func TestANodeWithoutJobsHasNoSchedule(t *testing.T) {
+	require.Empty(t, Schedules(Options{TaskQueue: "graft-jobs"}))
+}
