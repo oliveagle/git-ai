@@ -88,11 +88,16 @@ happened.
 
 ## The schedule
 
-The gate belongs to a cron job, next to the mirror jobs it verifies:
+The gate is a job of the node, next to the mirror jobs it verifies. The job
+is a workflow of the Temporal server, and the worker of the node runs it:
 
-```cron
-17 * * * * ~/opt/git-ai/deploy/host-scripts/backup-origin-gate.sh --sync >> ~/opt/git-ai/logs/backup-origin-gate.log 2>&1
 ```
+17 * * * *   # the schedule is graft-backup-gate, every hour at 17 minutes
+```
+
+The script of the job is the same one the cron of the node ran, so a run
+under the job system and a run from a shell do the same thing. See
+[JOBS.md](JOBS.md) for the worker, the schedules and the cut over.
 
 The `--sync` run publishes first and verifies second, so a repository that
 drifted is repaired by the run and the gate still fails when the repair did
@@ -149,9 +154,9 @@ For a repository in that list the gate verifies and does not publish: a
 commit the origin does not hold is a commit that has to land in the authority
 first, and the gate says exactly that.
 
-```cron
-23 * * * * flock -n /tmp/local-backup-gate.lock ~/bin/local-backup-gate.sh --root ~/repos --root ~/.agents --sync --report ~/backup-reports/local-origins-$(date -u +\%Y\%m\%dT\%H\%M\%SZ).json >> ~/backup-reports/local-backup-gate.log 2>&1
-```
+The gate of the local repositories is a job of the workstation, at 23
+minutes past every hour. The worker of the workstation runs it, because the
+files it walks are there (see [JOBS.md](JOBS.md)).
 
 ## The recovery
 

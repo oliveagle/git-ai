@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/feder-cr/git-ai/internal/graft/mirrorqueue"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorsweep"
 )
 
 // TestMirrorQueueRefusesAnUnknownSubcommand covers the dispatch of the queue:
@@ -204,7 +205,7 @@ func TestMirrorQueueTierReportsTheAge(t *testing.T) {
 		{3*time.Hour + 30*time.Minute, "3h"},
 		{50 * time.Hour, "2d"},
 	} {
-		require.Equal(t, tc.want, mirrorQueueRepoAge(tc.age), tc.age.String())
+		require.Equal(t, tc.want, mirrorsweep.RepoAge(tc.age), tc.age.String())
 	}
 
 	// The tier of an age is the shortest one that still holds it.
@@ -218,7 +219,7 @@ func TestMirrorQueueTierReportsTheAge(t *testing.T) {
 		{48 * time.Hour, "recent"},
 		{30 * 24 * time.Hour, "dormant"},
 	} {
-		_, tier := mirrorQueueTierFor(tc.age, q)
+		_, tier := mirrorsweep.TierFor(tc.age, tierOptions(q))
 		require.Equal(t, tc.want, tier, tc.age.String())
 	}
 }

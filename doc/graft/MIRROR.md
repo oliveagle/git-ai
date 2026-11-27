@@ -86,9 +86,10 @@ graft mirror push --repo shop.git --url ... --branch main || true
 ```
 
 A push that fails after a successful land does not undo the land. The next
-scheduled run publishes what the failed run missed. Run the command from a cron
-job or a small supervisor as well as after lands; the schedule is the recovery
-point objective. A backup that is only pushed once, by hand, is not a fallback.
+scheduled run publishes what the failed run missed. Run the command from the
+job system of the node (see [JOBS.md](JOBS.md)) as well as after lands; the
+schedule is the recovery point objective. A backup that is only pushed once,
+by hand, is not a fallback.
 
 The mirror is downstream. If a traditional workflow commits to the mirror, the
 next run does not import that history silently. Import the change into Graft on
@@ -170,10 +171,12 @@ repository accepted meanwhile. Publish a mirror often enough that ordinary work
 does not reach the lag the policy warns about, or the warning — and from
 `deny_lag`, the refusal — becomes the normal answer to a push.
 
-`queue run` is the run of a cron job: the queue decides what is due, and the
-cron job decides how often the queue is looked at. `queue worker` is the
-same thing as a process: it publishes what is due, waits `--tick` and looks
-again, until it is interrupted.
+`queue run` is the run of a job: the queue decides what is due, and the
+job decides how often the queue is looked at. `queue worker` is the same
+thing as a process: it publishes what is due, waits `--tick` and looks again,
+until it is interrupted. The job of the node is a workflow of the Temporal
+server (see [JOBS.md](JOBS.md)), and the worker of the queue is the same code
+in both cases.
 
 The schedule of a target is its `--interval`. A target with an interval is
 published again when the interval has passed since the last run, and a target

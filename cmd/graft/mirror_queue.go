@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -18,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/feder-cr/git-ai/internal/graft/mirrorqueue"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorsweep"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
@@ -185,6 +183,8 @@ func mirrorQueueSchedule(t *mirrorqueue.Target) string {
 
 // mirrorQueueStore returns the store of the queue. The file is named by the
 // flag, else by the environment, else by the default of the user.
+// mirrorQueueStore returns the store of the queue. The file is named by the
+// flag, else by the environment, else by the default of the user.
 func mirrorQueueStore(q *mirrorQueueFlags) (*mirrorqueue.FileStore, error) {
 	path := q.queueFile
 	if path == "" {
@@ -200,8 +200,30 @@ func mirrorQueueStore(q *mirrorQueueFlags) (*mirrorqueue.FileStore, error) {
 	return mirrorqueue.NewFileStore(path), nil
 }
 
-// cmdMirrorQueue dispatches a mirror queue subcommand. The command line is
-// checked before the queue is touched.
+// mirrorQueueRunner returns the worker of the queue: the code that publishes
+// the targets and records what every publication did. The same worker runs
+// the queue of a person and the queue of a deployment, so that the two cannot
+// drift apart.
+func mirrorQueueRunner(store *mirrorqueue.FileStore, o *options) *mirrorsweep.Runner {
+	return &mirrorsweep.Runner{
+		Store: store,
+		Config: mirrorsweep.Config{
+			Address: o.address,
+			Token:   o.token,
+			Storage: o.storage,
+			User:    o.user,
+		},
+	}
+}
+
+// firstArg returns the first argument of a command, empty when it has none.
+func firstArg(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
+}
+
 func cmdMirrorQueue(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) == 0 {
 		return usagef("%s", mirrorQueueUsage)
@@ -674,160 +696,39 @@ func mirrorQueueTier(ctx context.Context, out io.Writer, o *options, f *mirrorFl
 	if err != nil {
 		return err
 	}
-	queue, err := store.Load()
+	runner := mirrorQueueRunner(store, o)
+	result, err := runner.Tier(ctx, mirrorsweep.TierOptions{
+		Target:       firstArg(args),
+		Active:       q.tierActive,
+		Recent:       q.tierRecent,
+		Dormant:      q.tierDormant,
+		ActiveWithin: q.tierActiveWithin,
+		RecentWithin: q.tierRecentWithin,
+	})
 	if err != nil {
 		return err
 	}
-
-	// The age of the last change of every repository, read once per repository
-	// and shared by its targets.
-	clients := map[string]*sdk.Client{}
-	defer func() {
-		for _, c := range clients {
-			_ = c.Close()
-		}
-	}()
-	ages := map[string]time.Duration{}
-	now := time.Now()
-	for _, t := range queue.Targets {
-		if len(args) == 1 && t.Name != args[0] {
-			continue
-		}
-		key := mirrorQueueRepoKey(o, t)
-		if _, done := ages[key]; done {
-			continue
-		}
-		address := pick(t.Address, o.address)
-		if address == "" {
-			ages[key] = -1
-			continue
-		}
-		client, ok := clients[address]
-		if !ok {
-			dialed, err := sdk.Dial(ctx, address, dialOptions(target{
-				Address: address,
-				Token:   o.token,
-				Storage: pick(t.Storage, o.storage),
-			})...)
-			if err != nil {
-				ages[key] = -1
-				continue
-			}
-			client = dialed
-			clients[address] = client
-		}
-		last, err := mirrorQueueLastChange(ctx, client.Repo(t.Repository))
-		if err != nil || last.IsZero() {
-			// A log that cannot be read, or one that holds no entry, says
-			// nothing about activity: the target keeps the tier it has.
-			ages[key] = -1
-			continue
-		}
-		ages[key] = now.Sub(last)
-	}
-
-	var changed []*mirrorqueue.Target
-	counts := map[string]int{}
-	if err := store.Update(func(queue *mirrorqueue.Queue) error {
-		for _, target := range queue.Targets {
-			if len(args) == 1 && target.Name != args[0] {
-				continue
-			}
-			key := mirrorQueueRepoKey(o, target)
-			age, known := ages[key]
-			if !known || age < 0 {
-				counts["kept"]++
-				continue
-			}
-			idle, tier := mirrorQueueTierFor(age, q)
-			if idle <= target.Interval {
-				counts["kept"]++
-				continue
-			}
-			if target.IdleInterval == idle {
-				counts[tier]++
-				continue
-			}
-			target.IdleInterval = idle
-			target.UpdatedAt = now
-			changed = append(changed, target)
-			counts[tier]++
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
 	if o.jsonOut {
-		list := make([]mirrorQueueTarget, 0, len(changed))
-		for _, t := range changed {
-			list = append(list, mirrorQueueTargetJSON(t))
+		list := make([]mirrorQueueTarget, 0, len(result.Changed))
+		for _, change := range result.Changed {
+			list = append(list, mirrorQueueTargetJSON(change.Target))
 		}
 		return mirrorQueueWriteJSON(out, list)
 	}
 	tiers := []string{"active", "recent", "dormant", "kept"}
 	parts := make([]string, 0, len(tiers))
 	for _, tier := range tiers {
-		if counts[tier] > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", counts[tier], tier))
+		if result.Counts[tier] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", result.Counts[tier], tier))
 		}
 	}
-	fmt.Fprintf(out, "the mirror queue tiers %d target(s): %s\n", len(changed), strings.Join(parts, ", "))
-	for _, t := range changed {
-		fmt.Fprintf(out, "  %s (%s): %s at most between two publications\n", t.Name, mirrorQueueRepoAge(ages[mirrorQueueRepoKey(o, t)]), mirrorQueueIdleInterval(t))
+	fmt.Fprintf(out, "the mirror queue tiers %d target(s): %s\n", len(result.Changed), strings.Join(parts, ", "))
+	for _, change := range result.Changed {
+		fmt.Fprintf(out, "  %s (%s): %s at most between two publications\n", change.Target.Name, mirrorsweep.RepoAge(change.Age), mirrorQueueIdleInterval(change.Target))
 	}
 	return nil
 }
 
-// mirrorQueueTierFor names the tier of a repository by the age of its last
-// change, and the idle interval that tier asks for: the shortest interval that
-// is not shorter than the declared one, so that a tier never tightens a target
-// the operator set tighter.
-func mirrorQueueTierFor(age time.Duration, q *mirrorQueueFlags) (time.Duration, string) {
-	switch {
-	case age <= q.tierActiveWithin:
-		return q.tierActive, "active"
-	case age <= q.tierRecentWithin:
-		return q.tierRecent, "recent"
-	default:
-		return q.tierDormant, "dormant"
-	}
-}
-
-// mirrorQueueRepoAge prints an age for a report: the next whole unit down, so
-// that the operator reads how old the last change is without a nanosecond.
-func mirrorQueueRepoAge(age time.Duration) string {
-	switch {
-	case age < 0:
-		return "unknown age"
-	case age < time.Minute:
-		return "less than a minute"
-	case age < time.Hour:
-		return fmt.Sprintf("%dm", int(age.Minutes()))
-	case age < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(age.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(age.Hours()/24))
-	}
-}
-
-// mirrorQueueLastChange is the time of the newest entry of the changeset log,
-// the same log the events of the queue come from. It is the zero time for a
-// repository whose log is empty.
-func mirrorQueueLastChange(ctx context.Context, repo *sdk.Repo) (time.Time, error) {
-	tail, err := mirrorQueueChangesetTail(ctx, repo)
-	if err != nil || tail == 0 {
-		return time.Time{}, err
-	}
-	entries, err := repo.Changesets(ctx, tail-1, 1)
-	if err != nil || len(entries) == 0 {
-		return time.Time{}, err
-	}
-	return entries[0].GetRecordedAt().AsTime(), nil
-}
-
-// mirrorQueueRun publishes the targets that are due, and exits. It is the
-// run of a cron job: the queue does the work, the schedule of the cron job
-// decides how often it is looked at.
 func mirrorQueueRun(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) != 0 {
 		return usagef("mirror queue run takes no arguments")
@@ -836,34 +737,22 @@ func mirrorQueueRun(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 	if err != nil {
 		return err
 	}
-	queue, err := store.Load()
+	runner := mirrorQueueRunner(store, o)
+	result, err := runner.Sweep(ctx, mirrorsweep.Options{
+		Target:      q.target,
+		All:         q.all,
+		Concurrency: q.concurrency,
+		TaskTimeout: q.taskTimeout,
+		NoEvents:    q.noEvents,
+	})
 	if err != nil {
 		return err
 	}
-	// The changeset logs are the events of the queue: a repository whose log
-	// moved past its cursor is published right away, and the interval stays
-	// as the fallback. A run that cannot read a log keeps the schedule it had.
-	changes := map[string]mirrorQueueChange{}
-	if !q.noEvents {
-		changes = mirrorQueueObserve(ctx, o, queue)
-		if len(changes) > 0 {
-			if err := mirrorQueueRecordChanges(store, o, changes); err != nil {
-				return err
-			}
-			if queue, err = store.Load(); err != nil {
-				return err
-			}
-		}
-	}
-	targets, err := mirrorQueueSelection(queue, q)
-	if err != nil {
-		return err
-	}
-	if len(targets) == 0 {
+	if len(result.Tasks) == 0 {
 		if o.jsonOut {
 			return mirrorQueueWriteJSON(out, []mirrorQueueTask{})
 		}
-		if len(queue.Targets) == 0 {
+		if result.Targets == 0 {
 			// The file is named by --queue-file, then GRAFT_MIRROR_QUEUE, then
 			// the default of the user: a person who repairs a mirror by hand
 			// reads which file the run used, so an empty queue is not mistaken
@@ -874,14 +763,9 @@ func mirrorQueueRun(ctx context.Context, out io.Writer, o *options, f *mirrorFla
 		fmt.Fprintf(out, "no mirror target is due in %s\n", store.Path)
 		return nil
 	}
-	tasks := mirrorQueuePublish(ctx, out, o, f, q, store, targets, changes)
-	return mirrorQueueReport(out, o, tasks)
+	return mirrorQueueReport(out, o, result.Tasks)
 }
 
-// mirrorQueueWorker publishes the targets that are due, over and over, until
-// the command is interrupted. It is the supervisor the mirror needs: the
-// schedule of the targets decides what is published, and the worker keeps
-// running.
 func mirrorQueueWorker(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) != 0 {
 		return usagef("mirror queue worker takes no arguments")
@@ -906,411 +790,6 @@ func mirrorQueueWorker(ctx context.Context, out io.Writer, o *options, f *mirror
 
 // mirrorQueueSelection returns the targets of a run: the ones that are due,
 // or the one the caller named, or every enabled target.
-func mirrorQueueSelection(queue *mirrorqueue.Queue, q *mirrorQueueFlags) ([]*mirrorqueue.Target, error) {
-	if q.target != "" {
-		target, ok := queue.Target(q.target)
-		if !ok {
-			return nil, fmt.Errorf("the mirror queue has no target named %q", q.target)
-		}
-		return []*mirrorqueue.Target{target}, nil
-	}
-	if q.all {
-		var targets []*mirrorqueue.Target
-		for _, t := range queue.Targets {
-			if t.Enabled {
-				targets = append(targets, t)
-			}
-		}
-		return targets, nil
-	}
-	return queue.Due(time.Now()), nil
-}
-
-// mirrorQueuePublish publishes the targets and records a task for each of
-// them. The tasks run at the same time, at most as many as the concurrency
-// allows.
-func mirrorQueuePublish(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, store *mirrorqueue.FileStore, targets []*mirrorqueue.Target, changes map[string]mirrorQueueChange) []mirrorqueue.Task {
-	concurrency := q.concurrency
-	if concurrency <= 0 {
-		concurrency = defaultQueueConcurrency
-	}
-	if concurrency > len(targets) {
-		concurrency = len(targets)
-	}
-
-	var (
-		mu    sync.Mutex
-		tasks []mirrorqueue.Task
-		wg    sync.WaitGroup
-	)
-	slots := make(chan struct{}, concurrency)
-	for _, target := range targets {
-		wg.Add(1)
-		go func(target *mirrorqueue.Target) {
-			defer wg.Done()
-			slots <- struct{}{}
-			defer func() { <-slots }()
-
-			taskCtx := ctx
-			if q.taskTimeout > 0 {
-				var cancel context.CancelFunc
-				taskCtx, cancel = context.WithTimeout(ctx, q.taskTimeout)
-				defer cancel()
-			}
-			task := mirrorQueuePublishTarget(taskCtx, o, f, store, target, changes[mirrorQueueRepoKey(o, target)])
-			mu.Lock()
-			tasks = append(tasks, task)
-			mu.Unlock()
-		}(target)
-	}
-	wg.Wait()
-
-	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Target < tasks[j].Target })
-	return tasks
-}
-
-// mirrorQueuePublishTarget publishes one target and records the task of the
-// run in the history of the queue.
-func mirrorQueuePublishTarget(ctx context.Context, o *options, f *mirrorFlags, store *mirrorqueue.FileStore, target *mirrorqueue.Target, change mirrorQueueChange) mirrorqueue.Task {
-	now := time.Now()
-	task := &mirrorqueue.Task{
-		ID:         mirrorTaskID(),
-		Target:     target.Name,
-		Repository: target.Repository,
-		URL:        target.URL,
-		Status:     mirrorqueue.TaskRunning,
-		CreatedAt:  now,
-		StartedAt:  now,
-		Changed:    change.changed,
-	}
-	mirrorQueueRecord(store, target, task, change.observed)
-
-	divergent, err := mirrorQueuePush(ctx, o, target)
-	finished := time.Now()
-	task.FinishedAt = finished
-	switch {
-	case err != nil:
-		task.Status = mirrorqueue.TaskFailed
-		task.Error = err.Error()
-	case len(divergent) > 0:
-		task.Status = mirrorqueue.TaskDiverged
-		task.DivergentRefs = divergent
-	default:
-		task.Status = mirrorqueue.TaskOK
-	}
-	mirrorQueueRecord(store, target, task, change.observed)
-
-	return *task
-}
-
-// mirrorQueueRecord writes the task of a run into the history of the queue,
-// and the outcome of the run into its target. Observed says whether the
-// changeset log of the repository was read: a run that could not read it does
-// not move the quiet count, because the schedule then knows nothing new.
-func mirrorQueueRecord(store *mirrorqueue.FileStore, target *mirrorqueue.Target, task *mirrorqueue.Task, observed bool) {
-	_ = store.Update(func(queue *mirrorqueue.Queue) error {
-		if existing, ok := queue.Task(task.ID); ok {
-			*existing = *task
-		} else {
-			queue.AddTask(task)
-		}
-		current, ok := queue.Target(target.Name)
-		if !ok {
-			return nil
-		}
-		current.LastTask = task.ID
-		current.LastStatus = task.Status
-		current.LastError = task.Error
-		current.UpdatedAt = task.FinishedAt
-		if !task.FinishedAt.IsZero() {
-			switch task.Status {
-			case mirrorqueue.TaskOK:
-				current.Observe(task.Changed, observed)
-				current.ResetFailures()
-				current.SetNextRun(task.FinishedAt)
-			case mirrorqueue.TaskDiverged:
-				// A branch the mirror kept with other history is not a quiet
-				// mirror: the next run looks at it again on the interval.
-				current.Observe(true, true)
-				current.SetNextRun(task.FinishedAt)
-			default:
-				current.Retry(task.FinishedAt)
-			}
-		}
-		return nil
-	})
-}
-
-// mirrorQueuePush publishes the selected references of the target to its
-// mirror. The credential is read from the environment when the task runs, so
-// that the queue never holds a secret.
-func mirrorQueuePush(ctx context.Context, o *options, tgt *mirrorqueue.Target) ([]string, error) {
-	address := tgt.Address
-	if address == "" {
-		address = o.address
-	}
-	if address == "" {
-		return nil, fmt.Errorf("the mirror target %q names no server: set GRAFT_ADDRESS or pass -address", tgt.Name)
-	}
-	credential := mirrorAuth{
-		usage:    "mirror queue",
-		url:      tgt.URL,
-		tokenEnv: tgt.TokenEnv,
-		username: tgt.Username,
-		sshKey:   tgt.SSHKey,
-	}
-	// The check that refuses a token in cleartext is made again here, because
-	// the environment of the worker is not the environment of the operator who
-	// added the target.
-	if name, token := mirrorToken(credential); token != "" {
-		if strings.HasPrefix(tgt.URL, "http://") && !tgt.AllowInsecureHTTP {
-			return nil, fmt.Errorf("the mirror target %q refuses to send %s over http://%s: use HTTPS, or allow it on the target", tgt.Name, name, strings.TrimPrefix(tgt.URL, "http://"))
-		}
-	}
-	header, err := mirrorAuthorization(credential)
-	if err != nil {
-		return nil, err
-	}
-
-	// The queue keeps the paths of the SSH credential, not the secret itself;
-	// the worker reads them when the task runs and sends the contents.
-	sshKey, err := mirrorCredentialFile("mirror queue", "--ssh-key", tgt.SSHKey)
-	if err != nil {
-		return nil, err
-	}
-	knownHosts, err := mirrorCredentialFile("mirror queue", "--known-hosts", tgt.KnownHosts)
-	if err != nil {
-		return nil, err
-	}
-
-	backend, err := openSDKBackend(ctx, target{Address: address, Token: o.token, Storage: pick(tgt.Storage, o.storage), Repo: tgt.Repository})
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = backend.Close() }()
-
-	res, err := backend.repo.Mirror(ctx, sdk.MirrorOptions{
-		URL:                     tgt.URL,
-		Branches:                tgt.Branches,
-		HTTPAuthorizationHeader: header,
-		SSHKey:                  sshKey,
-		KnownHosts:              knownHosts,
-		// The default is the safety net: a mirror that has unrelated history
-		// is a person's decision, not a retry's.
-		KeepDivergentRefs: !tgt.Force,
-		// The server records what the mirror holds under the name of the
-		// target, which is what the mirror policy of the server decides the
-		// next push with.
-		Target: tgt.Name,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return res.DivergentRefs, nil
-}
-
-// mirrorQueueChange is what the changeset log of one repository said during a
-// run: whether a reference the mirror publishes moved since the cursor, and
-// the cursor to store. Observed is false when the log could not be read, and
-// then the run neither resets the quiet count nor stretches it.
-type mirrorQueueChange struct {
-	changed  bool
-	observed bool
-	seq      uint64
-}
-
-const (
-	// mirrorQueueChangesetPage is how many changesets one read of a log asks
-	// for. A page that comes back full is read again from its last sequence.
-	mirrorQueueChangesetPage = 500
-	// mirrorQueueChangesetPages bounds the pages one read follows, so that a
-	// repository that is far behind is caught up over several runs instead of
-	// holding the run.
-	mirrorQueueChangesetPages = 40
-)
-
-// mirrorQueueRepoKey identifies the repository a target publishes: the
-// changeset log belongs to the repository, not to the destination, so the
-// targets of one repository share the cursor and the event.
-func mirrorQueueRepoKey(o *options, t *mirrorqueue.Target) string {
-	return pick(t.Address, o.address) + "|" + pick(t.Storage, o.storage) + "|" + t.Repository
-}
-
-// mirrorQueuePublishesRef tells whether a changeset touched a reference a
-// mirror publishes: branches and tags, never Graft's review or checkpoint
-// references, so a review that writes refs/graft/ does not make a mirror due.
-func mirrorQueuePublishesRef(ref string) bool {
-	return strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/tags/")
-}
-
-// mirrorQueueObserve reads the changeset log of every repository the enabled
-// targets of the queue publish. The log is the event source of the queue:
-// every reference update the server accepts is appended to it, so a log that
-// moved past its cursor is a change the mirror has to carry, and the interval
-// stays as the fallback for what the log does not see.
-func mirrorQueueObserve(ctx context.Context, o *options, queue *mirrorqueue.Queue) map[string]mirrorQueueChange {
-	changes := map[string]mirrorQueueChange{}
-	clients := map[string]*sdk.Client{}
-	defer func() {
-		for _, c := range clients {
-			_ = c.Close()
-		}
-	}()
-
-	for _, t := range queue.Targets {
-		if !t.Enabled || t.Interval <= 0 {
-			// A manual target is published when a person asks for it, so its
-			// repository is not read here.
-			continue
-		}
-		key := mirrorQueueRepoKey(o, t)
-		if _, done := changes[key]; done {
-			continue
-		}
-		address := pick(t.Address, o.address)
-		if address == "" {
-			changes[key] = mirrorQueueChange{}
-			continue
-		}
-		client, ok := clients[address]
-		if !ok {
-			dialed, err := sdk.Dial(ctx, address, dialOptions(target{
-				Address: address,
-				Token:   o.token,
-				Storage: pick(t.Storage, o.storage),
-			})...)
-			if err != nil {
-				changes[key] = mirrorQueueChange{}
-				continue
-			}
-			client = dialed
-			clients[address] = client
-		}
-		changes[key] = mirrorQueueReadChanges(ctx, client.Repo(t.Repository), queue.Repos[key])
-	}
-	return changes
-}
-
-// mirrorQueueReadChanges reads what the changeset log says about one
-// repository since its cursor. A repository read for the first time starts at
-// the tail of its log and is due once, so that a mirror that is behind catches
-// up right away instead of waiting for its interval.
-func mirrorQueueReadChanges(ctx context.Context, repo *sdk.Repo, cursor *mirrorqueue.RepoCursor) mirrorQueueChange {
-	if cursor == nil {
-		// The log is read for the first time: the cursor starts at the tail,
-		// so that the queue does not replay the whole history of the
-		// repository, and the repository counts as quiet until its log says
-		// otherwise.
-		tail, err := mirrorQueueChangesetTail(ctx, repo)
-		if err != nil {
-			return mirrorQueueChange{}
-		}
-		return mirrorQueueChange{observed: true, seq: tail}
-	}
-
-	seq := cursor.Seq
-	changed := false
-	for page := 0; page < mirrorQueueChangesetPages; page++ {
-		entries, err := repo.Changesets(ctx, seq, mirrorQueueChangesetPage)
-		if err != nil {
-			return mirrorQueueChange{}
-		}
-		if len(entries) == 0 {
-			break
-		}
-		for _, entry := range entries {
-			if mirrorQueuePublishesRef(string(entry.GetReference())) {
-				changed = true
-			}
-			seq = entry.GetSequence()
-		}
-		if uint32(len(entries)) < mirrorQueueChangesetPage {
-			break
-		}
-	}
-	return mirrorQueueChange{changed: changed, observed: true, seq: seq}
-}
-
-// mirrorQueueChangesetTail returns the last sequence of a repository's
-// changeset log. Sequences are dense and start at 1, so a log with entries
-// after n has a tail greater than n: the tail is found by growing a bound and
-// bisecting it, which costs a handful of reads instead of replaying the log.
-func mirrorQueueChangesetTail(ctx context.Context, repo *sdk.Repo) (uint64, error) {
-	// Changesets answers the entries with a sequence greater than the one it
-	// is given, so "does sequence s exist" is asked as Changesets(s-1, 1) and
-	// the entry that comes back is s itself. Asking Changesets(s, 1) instead
-	// would answer whether s+1 exists and make the tail one short, which
-	// replays the newest entry of an imported repository as a change.
-	exists := func(s uint64) (bool, error) {
-		if s == 0 {
-			return false, nil
-		}
-		entries, err := repo.Changesets(ctx, s-1, 1)
-		if err != nil {
-			return false, err
-		}
-		return len(entries) > 0 && entries[0].GetSequence() == s, nil
-	}
-
-	// lo is a sequence that exists (zero when the log may be empty), hi is a
-	// sequence that does not.
-	lo, hi := uint64(0), uint64(1)
-	for i := 0; i < 40; i++ {
-		ok, err := exists(hi)
-		if err != nil {
-			return 0, err
-		}
-		if !ok {
-			break
-		}
-		lo, hi = hi, hi*2
-	}
-	for hi-lo > 1 {
-		mid := lo + (hi-lo)/2
-		ok, err := exists(mid)
-		if err != nil {
-			return 0, err
-		}
-		if ok {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	return lo, nil
-}
-
-// mirrorQueueRecordChanges stores what the changeset logs said: the cursor of
-// every repository, and the targets that a change made due right away, so
-// that the run that read the log publishes them without waiting for a tick.
-func mirrorQueueRecordChanges(store *mirrorqueue.FileStore, o *options, changes map[string]mirrorQueueChange) error {
-	now := time.Now()
-	return store.Update(func(queue *mirrorqueue.Queue) error {
-		for _, target := range queue.Targets {
-			key := mirrorQueueRepoKey(o, target)
-			change, ok := changes[key]
-			if !ok {
-				continue
-			}
-			if change.observed {
-				if queue.Repos == nil {
-					queue.Repos = map[string]*mirrorqueue.RepoCursor{}
-				}
-				queue.Repos[key] = &mirrorqueue.RepoCursor{Seq: change.seq, ObservedAt: now}
-			}
-			if change.changed && target.Enabled && target.Interval > 0 {
-				if target.NextRun.IsZero() || target.NextRun.After(now) {
-					target.NextRun = now
-				}
-			}
-		}
-		return nil
-	})
-}
-
-// mirrorQueueReport prints the tasks of a run, and says whether the run
-// failed. A run that kept a divergent branch or that could not publish is
-// not a success, and the exit status says so.
 func mirrorQueueReport(out io.Writer, o *options, tasks []mirrorqueue.Task) error {
 	if o.jsonOut {
 		list := make([]mirrorQueueTask, 0, len(tasks))
@@ -1469,16 +948,6 @@ func mirrorQueueWriteJSON(out io.Writer, value any) error {
 }
 
 // mirrorTaskID returns the identifier of a task.
-func mirrorTaskID() string {
-	var buf [6]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		// The identifier only has to be unique inside one queue, so the time
-		// is enough when the random source fails.
-		return fmt.Sprintf("task-%d", time.Now().UnixNano())
-	}
-	return fmt.Sprintf("task-%d-%s", time.Now().Unix(), hex.EncodeToString(buf[:]))
-}
-
 // mirrorQueueFlags holds the flags of the mirror queue commands.
 type mirrorQueueFlags struct {
 	// interval is how often a target is published.
@@ -1523,9 +992,7 @@ type mirrorQueueFlags struct {
 }
 
 // mirrorQueueRegister records targets of the queue with the server, so that
-// the mirror policy of the server counts them. It is what a queue that was
-// added while the server was not reachable, or a server that lost its state,
-// is repaired with; running it again changes nothing.
+
 func mirrorQueueRegister(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) > 1 {
 		return usagef("mirror queue register takes at most the name of one target")

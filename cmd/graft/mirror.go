@@ -2,17 +2,16 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/feder-cr/git-ai/internal/graft/mirrorsweep"
 	"github.com/feder-cr/git-ai/sdk"
 )
 
@@ -215,15 +214,13 @@ func mirrorHost(raw string) string {
 
 // mirrorDefaults returns the token variable and the Basic user for a URL: the
 // host convention, or the generic one when the host is not known.
+// mirrorDefaults returns the token variable and the Basic user for a URL: the
+// convention of its host, or the default of every other host.
 func mirrorDefaults(raw string) mirrorCredential {
-	if c, ok := mirrorCredentials[mirrorHost(raw)]; ok {
-		return c
-	}
-	return mirrorCredential{username: "oauth2"}
+	c := mirrorsweep.Defaults(raw)
+	return mirrorCredential{tokenEnv: c.TokenEnv, username: c.Username}
 }
 
-// cmdMirror dispatches a mirror subcommand. The command line is checked before
-// the server is contacted.
 func cmdMirror(ctx context.Context, out io.Writer, o *options, f *mirrorFlags, q *mirrorQueueFlags, args []string) error {
 	if len(args) == 0 {
 		return usagef("%s", mirrorUsage)
@@ -380,48 +377,33 @@ type mirrorAuth struct {
 
 // mirrorAuthorization builds the Authorization header from the environment.
 // The token itself is never printed, and never reaches argv.
+// mirrorAuthorization builds the Authorization header from the environment.
+// The token itself is never printed, and never reaches argv.
 func mirrorAuthorization(a mirrorAuth) (string, error) {
-	if a.sshKey != "" {
-		// The caller chose the SSH identity: no HTTP header is built.
-		return "", nil
+	header, err := mirrorsweep.Authorization(mirrorsweep.Auth{
+		Usage:    a.usage,
+		URL:      a.url,
+		TokenEnv: a.tokenEnv,
+		Username: a.username,
+		SSHKey:   a.sshKey,
+	})
+	if err != nil {
+		return "", usagef("%s", err)
 	}
-	tokenEnv, token := mirrorToken(a)
-	if tokenEnv != "" && token == "" {
-		// The host of the URL has a convention for its token, or the caller
-		// named one. A mirror that needs a credential and does not get one
-		// would fail later, with the error of the host in the way. The name
-		// of the variable is what the operator needs.
-		return "", fmt.Errorf("%s: %s is not set in the environment", a.usage, tokenEnv)
-	}
-	if token == "" {
-		return "", nil
-	}
-	if !strings.HasPrefix(a.url, "https://") && !strings.HasPrefix(a.url, "http://") {
-		return "", usagef("%s: %s holds an HTTP token, but %q is not an HTTP URL (use --ssh-key for SSH)", a.usage, tokenEnv, a.url)
-	}
-	defaults := mirrorDefaults(a.url)
-	user := a.username
-	if user == "" {
-		user = defaults.username
-	}
-	if user == "" {
-		user = "oauth2"
-	}
-	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+token)), nil
+	return header, nil
 }
 
 // mirrorToken returns the token variable of the run and its value: the one the
 // caller named, else the one the host of the URL implies, and empty when the
 // variable is unset.
 func mirrorToken(a mirrorAuth) (string, string) {
-	name := a.tokenEnv
-	if name == "" {
-		name = mirrorDefaults(a.url).tokenEnv
-	}
-	if name == "" {
-		return "", ""
-	}
-	return name, os.Getenv(name)
+	return mirrorsweep.Token(mirrorsweep.Auth{
+		Usage:    a.usage,
+		URL:      a.url,
+		TokenEnv: a.tokenEnv,
+		Username: a.username,
+		SSHKey:   a.sshKey,
+	})
 }
 
 // mirrorCredentialFile reads a credential file that the caller named by path,
@@ -431,33 +413,19 @@ func mirrorToken(a mirrorAuth) (string, string) {
 // in the client so that the path is resolved where the person wrote it, and a
 // path that is wrong fails before any Git connection is made.
 func mirrorCredentialFile(usage, flag, path string) (string, error) {
-	if path == "" {
-		return "", nil
-	}
-	content, err := os.ReadFile(path)
+	content, err := mirrorsweep.CredentialFile(usage, flag, path)
 	if err != nil {
-		return "", usagef("%s: %s %s: %s", usage, flag, path, err)
+		return "", usagef("%s", err)
 	}
-	if strings.TrimSpace(string(content)) == "" {
-		return "", usagef("%s: %s %s is empty", usage, flag, path)
-	}
-	return string(content), nil
+	return content, nil
 }
 
 // mirrorDisplayURL hides the user information of a URL that a person may have
 // put a credential in: the mirror is printed in logs and chat.
 func mirrorDisplayURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
-		return raw
-	}
-	u.User = nil
-	return u.String()
+	return mirrorsweep.DisplayURL(raw)
 }
 
-// mirrorRegisterOneOffTarget records the target of a one-off publication with
-// the server, unless it is registered already: the queue that declares a
-// target is what changes it.
 func mirrorRegisterOneOffTarget(ctx context.Context, repo *sdk.Repo, f *mirrorFlags) error {
 	targets, _, _, err := repo.ListMirrorTargets(ctx, "")
 	if err != nil {

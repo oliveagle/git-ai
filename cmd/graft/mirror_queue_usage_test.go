@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/feder-cr/git-ai/internal/graft/mirrorqueue"
+	"github.com/feder-cr/git-ai/internal/graft/mirrorsweep"
 )
 
 // TestMirrorQueueReadsACadence covers how the command prints the schedule of a
@@ -34,15 +35,27 @@ func TestMirrorQueueReadsACadence(t *testing.T) {
 func TestMirrorQueueReadsAnAge(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, "unknown age", mirrorQueueRepoAge(-time.Second))
-	require.Equal(t, "less than a minute", mirrorQueueRepoAge(30*time.Second))
-	require.Equal(t, "5m", mirrorQueueRepoAge(5*time.Minute))
-	require.Equal(t, "3h", mirrorQueueRepoAge(3*time.Hour))
-	require.Equal(t, "2d", mirrorQueueRepoAge(50*time.Hour))
+	require.Equal(t, "unknown age", mirrorsweep.RepoAge(-time.Second))
+	require.Equal(t, "less than a minute", mirrorsweep.RepoAge(30*time.Second))
+	require.Equal(t, "5m", mirrorsweep.RepoAge(5*time.Minute))
+	require.Equal(t, "3h", mirrorsweep.RepoAge(3*time.Hour))
+	require.Equal(t, "2d", mirrorsweep.RepoAge(50*time.Hour))
 }
 
 // TestMirrorQueueTiersAnAge covers the tier of a repository: the interval and
 // the name the report prints, by how long ago its last change was.
+// tierOptions are the tiering choices of the command line, in the shape the
+// shared worker takes them.
+func tierOptions(q *mirrorQueueFlags) mirrorsweep.TierOptions {
+	return mirrorsweep.TierOptions{
+		Active:       q.tierActive,
+		Recent:       q.tierRecent,
+		Dormant:      q.tierDormant,
+		ActiveWithin: q.tierActiveWithin,
+		RecentWithin: q.tierRecentWithin,
+	}
+}
+
 func TestMirrorQueueTiersAnAge(t *testing.T) {
 	t.Parallel()
 
@@ -54,15 +67,15 @@ func TestMirrorQueueTiersAnAge(t *testing.T) {
 		tierRecentWithin: 7 * 24 * time.Hour,
 	}
 
-	interval, tier := mirrorQueueTierFor(time.Hour, q)
+	interval, tier := mirrorsweep.TierFor(time.Hour, tierOptions(q))
 	require.Equal(t, time.Hour, interval)
 	require.Equal(t, "active", tier)
 
-	interval, tier = mirrorQueueTierFor(48*time.Hour, q)
+	interval, tier = mirrorsweep.TierFor(48*time.Hour, tierOptions(q))
 	require.Equal(t, 3*time.Hour, interval)
 	require.Equal(t, "recent", tier)
 
-	interval, tier = mirrorQueueTierFor(200*time.Hour, q)
+	interval, tier = mirrorsweep.TierFor(200*time.Hour, tierOptions(q))
 	require.Equal(t, 12*time.Hour, interval)
 	require.Equal(t, "dormant", tier)
 }
@@ -73,10 +86,10 @@ func TestMirrorQueueTiersAnAge(t *testing.T) {
 func TestMirrorQueuePublishesOnlyBranchesAndTags(t *testing.T) {
 	t.Parallel()
 
-	require.True(t, mirrorQueuePublishesRef("refs/heads/main"))
-	require.True(t, mirrorQueuePublishesRef("refs/tags/v1.0.0"))
-	require.False(t, mirrorQueuePublishesRef("refs/graft/reviews/1"))
-	require.False(t, mirrorQueuePublishesRef("HEAD"))
+	require.True(t, mirrorsweep.PublishesRef("refs/heads/main"))
+	require.True(t, mirrorsweep.PublishesRef("refs/tags/v1.0.0"))
+	require.False(t, mirrorsweep.PublishesRef("refs/graft/reviews/1"))
+	require.False(t, mirrorsweep.PublishesRef("HEAD"))
 }
 
 // TestMirrorQueueIdleRefusesWhatItCannotSet covers the declaration checks of
