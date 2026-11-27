@@ -704,3 +704,65 @@ func (r *Runner) PublishTarget(ctx context.Context, name string, changed, observ
 	}
 	return r.publishTarget(ctx, target, change{changed: changed, observed: observed})
 }
+
+// Reap closes the tasks that a worker that is gone left running.
+//
+// A publication writes its task into the queue before it starts and writes
+// the outcome into it when it ends. A worker that is stopped in between —
+// a restart, a crash, a machine that went down — leaves the task as
+// "running", and the target with the state it had before the run. Nothing
+// says so anywhere, and the history of the queue holds a publication that
+// never ended.
+//
+// The Temporal server retries the activity of such a run, so the work itself
+// is not lost. What is lost is the truth of the queue: the target reads as
+// publishing for ever. A task that has been running longer than the deadline
+// of a publication is such a task — the worker that started it is not there
+// any more — and it is closed as failed, so that the target says what
+// happened and the next run publishes it again.
+//
+// The number that is returned is how many tasks were closed.
+func (r *Runner) Reap(timeout time.Duration) (int, error) {
+	if timeout <= 0 {
+		timeout = DefaultTaskTimeout
+	}
+	now := r.now()
+	reaped := 0
+	err := r.Store.Update(func(queue *mirrorqueue.Queue) error {
+		for _, task := range queue.Tasks {
+			if task.Status != mirrorqueue.TaskRunning {
+				continue
+			}
+			started := task.StartedAt
+			if started.IsZero() {
+				started = task.CreatedAt
+			}
+			if started.IsZero() || now.Sub(started) < timeout {
+				// The run is still within its deadline: the worker that
+				// started it may well be publishing right now.
+				continue
+			}
+			task.Status = mirrorqueue.TaskFailed
+			task.Error = fmt.Sprintf("the worker that published it was gone %s before the run ended", now.Sub(started).Round(time.Second))
+			task.FinishedAt = now
+			reaped++
+
+			current, ok := queue.Target(task.Target)
+			if !ok || current.LastTask != task.ID {
+				continue
+			}
+			current.LastStatus = mirrorqueue.TaskFailed
+			current.LastError = task.Error
+			current.UpdatedAt = now
+			// The target failed, so it waits for the backoff of a failure
+			// rather than for its plain interval: the next run publishes it
+			// again.
+			current.Retry(now)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return reaped, nil
+}

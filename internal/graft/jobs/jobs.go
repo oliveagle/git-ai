@@ -186,6 +186,7 @@ func RegisterWorkflows(w worker.Worker) {
 // RegisterActivities registers every activity of the package on a worker.
 func RegisterActivities(w worker.Worker, a Activities) {
 	w.RegisterActivity(a.MirrorDueTargets)
+	w.RegisterActivity(a.MirrorReapInterrupted)
 	w.RegisterActivity(a.MirrorPublishTarget)
 	w.RegisterActivity(a.MirrorTierTargets)
 	w.RegisterActivity(a.RunGate)

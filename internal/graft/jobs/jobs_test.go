@@ -26,12 +26,14 @@ func TestMirrorSweepPublishesEveryDueTarget(t *testing.T) {
 	env.RegisterWorkflowWithOptions(MirrorSweepWorkflow, workflow.RegisterOptions{Name: WorkflowMirrorSweep})
 	env.RegisterWorkflowWithOptions(MirrorPublishWorkflow, workflow.RegisterOptions{Name: WorkflowMirrorPublish})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
 	env.RegisterActivity(Activities{}.DumpDatabase)
 	env.RegisterActivity(Activities{}.RunScript)
 
+	env.OnActivity(ActivityMirrorReapInterrupted, mock.Anything, mock.Anything).Return(MirrorReapResult{}, nil)
 	env.OnActivity(ActivityMirrorDueTargets, mock.Anything, mock.Anything).Return(DueTargets{
 		Targets: []mirrorsweep.DueTarget{
 			{Name: "shop", Repository: "shop.git", URL: "git@github.com:oliveagle/shop.git"},
@@ -62,12 +64,14 @@ func TestMirrorSweepKeepsTheFailureOfOneTargetAndGoesOn(t *testing.T) {
 	env.RegisterWorkflowWithOptions(MirrorSweepWorkflow, workflow.RegisterOptions{Name: WorkflowMirrorSweep})
 	env.RegisterWorkflowWithOptions(MirrorPublishWorkflow, workflow.RegisterOptions{Name: WorkflowMirrorPublish})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
 	env.RegisterActivity(Activities{}.DumpDatabase)
 	env.RegisterActivity(Activities{}.RunScript)
 
+	env.OnActivity(ActivityMirrorReapInterrupted, mock.Anything, mock.Anything).Return(MirrorReapResult{}, nil)
 	env.OnActivity(ActivityMirrorDueTargets, mock.Anything, mock.Anything).Return(DueTargets{
 		Targets: []mirrorsweep.DueTarget{
 			{Name: "shop", Repository: "shop.git"},
@@ -94,12 +98,14 @@ func TestMirrorSweepWithNothingDueDoesNothing(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(MirrorSweepWorkflow, workflow.RegisterOptions{Name: WorkflowMirrorSweep})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
 	env.RegisterActivity(Activities{}.DumpDatabase)
 	env.RegisterActivity(Activities{}.RunScript)
 
+	env.OnActivity(ActivityMirrorReapInterrupted, mock.Anything, mock.Anything).Return(MirrorReapResult{}, nil)
 	env.OnActivity(ActivityMirrorDueTargets, mock.Anything, mock.Anything).Return(DueTargets{}, nil)
 
 	env.ExecuteWorkflow(MirrorSweepWorkflow, MirrorSweepInput{})
@@ -117,6 +123,7 @@ func TestBackupGateWritesTheReportAndSucceeds(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(BackupGateWorkflow, workflow.RegisterOptions{Name: WorkflowBackupGate})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
@@ -158,6 +165,7 @@ func TestBackupGateFailsWhenTheOriginIsNotInSync(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(BackupGateWorkflow, workflow.RegisterOptions{Name: WorkflowBackupGate})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
@@ -186,6 +194,7 @@ func TestDatabaseDumpFailsWhenTheScriptFails(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(DatabaseDumpWorkflow, workflow.RegisterOptions{Name: WorkflowDatabaseDump})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
@@ -213,6 +222,7 @@ func TestDatabaseDumpSucceedsAndCarriesTheEnvironment(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(DatabaseDumpWorkflow, workflow.RegisterOptions{Name: WorkflowDatabaseDump})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)
@@ -244,6 +254,7 @@ func TestLocalBackupFailsWhenTheCheckoutIsNotBackedUp(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflowWithOptions(LocalBackupWorkflow, workflow.RegisterOptions{Name: WorkflowLocalBackup})
 	env.RegisterActivity(Activities{}.MirrorDueTargets)
+	env.RegisterActivity(Activities{}.MirrorReapInterrupted)
 	env.RegisterActivity(Activities{}.MirrorPublishTarget)
 	env.RegisterActivity(Activities{}.MirrorTierTargets)
 	env.RegisterActivity(Activities{}.RunGate)

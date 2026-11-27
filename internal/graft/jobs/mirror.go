@@ -17,6 +17,9 @@ import (
 const (
 	// ActivityMirrorDueTargets asks the queue which targets are due.
 	ActivityMirrorDueTargets = "MirrorDueTargets"
+	// ActivityMirrorReapInterrupted closes the publications that a worker
+	// that is gone left running.
+	ActivityMirrorReapInterrupted = "MirrorReapInterrupted"
 	// ActivityMirrorPublishTarget publishes one target of the queue.
 	ActivityMirrorPublishTarget = "MirrorPublishTarget"
 	// ActivityMirrorTierTargets sets the fallback of the targets by the age
@@ -47,6 +50,9 @@ type MirrorSweepResult struct {
 	Diverged int `json:"diverged"`
 	// Failed is how many targets could not publish.
 	Failed int `json:"failed"`
+	// Reaped is how many publications that a worker that was gone left
+	// running were closed before the sweep.
+	Reaped int `json:"reaped"`
 	// Tasks holds what every publication did.
 	Tasks []MirrorPublishResult `json:"tasks,omitempty"`
 }
@@ -132,10 +138,17 @@ func MirrorSweepWorkflow(ctx workflow.Context, in MirrorSweepInput) (MirrorSweep
 		StartToCloseTimeout: mirrorQueueTimeout,
 		RetryPolicy:         mirrorPublishRetryPolicy(),
 	})
+	// A publication that a worker that is gone left running is closed
+	// before the sweep asks what is due, so that the queue says what
+	// happened to it and the target is published again.
+	var reaped MirrorReapResult
+	if err := workflow.ExecuteActivity(activityCtx, ActivityMirrorReapInterrupted, in).Get(ctx, &reaped); err != nil {
+		return MirrorSweepResult{}, err
+	}
 	if err := workflow.ExecuteActivity(activityCtx, ActivityMirrorDueTargets, in).Get(ctx, &due); err != nil {
 		return MirrorSweepResult{}, err
 	}
-	result := MirrorSweepResult{Due: len(due.Targets)}
+	result := MirrorSweepResult{Due: len(due.Targets), Reaped: reaped.Reaped}
 	if len(due.Targets) == 0 {
 		return result, nil
 	}
@@ -246,6 +259,28 @@ func mirrorPublishRetryPolicy() *temporal.RetryPolicy {
 type DueTargets struct {
 	// Targets are the targets that are due to be published.
 	Targets []mirrorsweep.DueTarget `json:"targets"`
+}
+
+// MirrorReapResult is what the reaper closed.
+type MirrorReapResult struct {
+	// Reaped is how many tasks were closed.
+	Reaped int `json:"reaped"`
+}
+
+// MirrorReapInterrupted closes the tasks of the queue that a worker that was
+// stopped left running. The server retries the activity of such a run, so
+// the work is not lost; what the queue holds is the truth, and a task that
+// never ended is not the truth.
+func (a Activities) MirrorReapInterrupted(ctx context.Context, in MirrorSweepInput) (MirrorReapResult, error) {
+	runner, err := a.mirrorRunner()
+	if err != nil {
+		return MirrorReapResult{}, err
+	}
+	reaped, err := runner.Reap(mirrorPublishTimeout)
+	if err != nil {
+		return MirrorReapResult{}, err
+	}
+	return MirrorReapResult{Reaped: reaped}, nil
 }
 
 // MirrorDueTargets asks the mirror queue which targets are due.
