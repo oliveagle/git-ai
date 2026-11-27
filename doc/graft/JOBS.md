@@ -152,11 +152,19 @@ run when a release runs, and a release is not a calendar.
 ## Installing it
 
 `deploy/host-scripts/install-worker.sh` puts the worker on a node: it installs
-the binary, writes the systemd user unit and starts the service.
+the binary, writes the systemd user unit, starts the service and puts the
+schedules of the jobs of that node on the Temporal server. A worker without a
+calendar runs nothing, so the install registers the schedules and prints the
+list of them as the proof.
 
 ```shell
 install-worker.sh --from ~/opt/git-ai/bin/graft-worker
 ```
+
+The register is a create-or-update, so the install may run again after a change of
+the configuration: the runs a schedule had keep their history. `--no-register`
+leaves the calendar of the server alone, for the node whose jobs another node
+already registered.
 
 The script never writes the environment file: it holds the configuration and
 the paths of the credentials, and it must stay at 0600.

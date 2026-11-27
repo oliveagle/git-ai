@@ -4,7 +4,7 @@
 # Runs ON the node that runs the jobs:
 #
 #   install-worker.sh [--from PATH] [--repo DIR] [--prefix DIR]
-#                      [--env FILE] [--unit FILE] [--no-start]
+#                      [--env FILE] [--unit FILE] [--no-start] [--no-register]
 #
 # The worker runs the periodic jobs of the node on a Temporal server: the
 # sweep of the mirror queue, the tiering of its fallbacks, the backup gate of
@@ -13,8 +13,9 @@
 # can read.
 #
 # The binary is built without cgo, so the same file runs on every node. This
-# script installs the binary, writes the systemd user unit and starts the
-# service.
+# script installs the binary, writes the systemd user unit, starts the
+# service and registers the schedules of the jobs of this node on the
+# Temporal server: a worker without a calendar runs nothing.
 #
 # The environment file holds the address of the Temporal server, the files of
 # the node and the credential of the graft server. This script never writes
@@ -28,6 +29,7 @@ UNIT_FILE="${HOME}/.config/systemd/user/graft-worker.service"
 FROM=""
 REPO=""
 START=1
+REGISTER=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
     --env)      ENV_FILE="${2:?--env needs a file}"; shift 2 ;;
     --unit)     UNIT_FILE="${2:?--unit needs a file}"; shift 2 ;;
     --no-start) START=0; shift ;;
+    --no-register) REGISTER=0; shift ;;
     -h|--help)  sed -n '2,22p' "$0"; exit 0 ;;
     *)          printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -107,3 +110,35 @@ if ! systemctl --user is-active --quiet "$unit"; then
   die "the worker is not running"
 fi
 log "the worker runs"
+
+# --- the calendar --------------------------------------------------------
+# The schedule of the jobs lives on the Temporal server, and a worker without
+# a calendar runs nothing. The install therefore puts the schedules of the
+# jobs of this node on the server. The register is a create-or-update, so it
+# may run again after a change of the configuration: the runs a schedule had
+# keep their history.
+#
+# The environment of the register is the environment file of the worker, read
+# the way systemd reads it: a line that assigns a variable is exported, a
+# comment is not, and the quotes around a value are the quotes of the file
+# rather than of the value — a cron expression that keeps its quotes is not a
+# cron expression. The file holds no secret: it holds the paths of the files
+# that hold them.
+[ "$REGISTER" = "1" ] || exit 0
+log "registering the schedules of the jobs of this node"
+while IFS= read -r line; do
+  case "$line" in
+    ''|'#'*) continue ;;
+  esac
+  key="${line%%=*}"
+  value="${line#*=}"
+  case "$value" in
+    \"*\") value="${value#\"}"; value="${value%\"}" ;;
+    \'*\') value="${value#\'}"; value="${value%\'}" ;;
+  esac
+  export "$key=$value"
+done < "$ENV_FILE"
+"$PREFIX/bin/graft-worker" register
+# The list is the proof: a job that is on the calendar names the workflow it
+# starts and the next minute it runs.
+"$PREFIX/bin/graft-worker" list
