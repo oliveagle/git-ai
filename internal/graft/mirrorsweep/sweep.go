@@ -163,7 +163,7 @@ func (r *Runner) Publish(ctx context.Context, name string) (mirrorqueue.Task, er
 	if err := r.observeAndRecord(ctx, queue, changes); err != nil {
 		return mirrorqueue.Task{}, err
 	}
-	return r.publishTarget(ctx, target, changes[r.repoKey(target)]), nil
+	return r.publishTarget(ctx, target, changes[r.repoKey(target)])
 }
 
 // observeAndRecord reads the changeset logs of the queue and stores what they
@@ -235,7 +235,16 @@ func (r *Runner) publish(ctx context.Context, o Options, targets []*mirrorqueue.
 				taskCtx, cancel = context.WithTimeout(ctx, o.TaskTimeout)
 				defer cancel()
 			}
-			task := r.publishTarget(taskCtx, target, changes[r.repoKey(target)])
+			task, err := r.publishTarget(taskCtx, target, changes[r.repoKey(target)])
+			if err != nil {
+				// The outcome of the run could not be written to the queue.
+				// The task says so, and the run counts as a failure: the
+				// target keeps the state it had, and the next run tries
+				// again.
+				task.Status = mirrorqueue.TaskFailed
+				task.Error = err.Error()
+				task.FinishedAt = r.now()
+			}
 			mu.Lock()
 			tasks = append(tasks, task)
 			mu.Unlock()
@@ -247,7 +256,7 @@ func (r *Runner) publish(ctx context.Context, o Options, targets []*mirrorqueue.
 
 // publishTarget publishes one target and records the task of the run in the
 // history of the queue.
-func (r *Runner) publishTarget(ctx context.Context, target *mirrorqueue.Target, c change) mirrorqueue.Task {
+func (r *Runner) publishTarget(ctx context.Context, target *mirrorqueue.Target, c change) (mirrorqueue.Task, error) {
 	now := r.now()
 	task := &mirrorqueue.Task{
 		ID:         TaskID(),
@@ -259,7 +268,10 @@ func (r *Runner) publishTarget(ctx context.Context, target *mirrorqueue.Target, 
 		StartedAt:  now,
 		Changed:    c.changed,
 	}
-	r.record(target, task, c.observed)
+	// The first record says that the run started. A queue that cannot be
+	// written is not a reason to skip the publication: the second record
+	// carries the outcome, and it is the one that has to be written.
+	_ = r.record(target, task, c.observed)
 
 	divergent, err := r.push(ctx, target)
 	finished := r.now()
@@ -274,17 +286,23 @@ func (r *Runner) publishTarget(ctx context.Context, target *mirrorqueue.Target, 
 	default:
 		task.Status = mirrorqueue.TaskOK
 	}
-	r.record(target, task, c.observed)
+	// The outcome has to reach the queue: a target whose last run is not
+	// recorded stays running for ever, and the mirror of it is never
+	// published again. A queue that cannot be written is therefore an error
+	// of the run, and the run is tried again.
+	if err := r.record(target, task, c.observed); err != nil {
+		return *task, err
+	}
 
-	return *task
+	return *task, nil
 }
 
 // record writes the task of a run into the history of the queue, and the
 // outcome of the run into its target. Observed says whether the changeset log
 // of the repository was read: a run that could not read it does not move the
 // quiet count, because the schedule then knows nothing new.
-func (r *Runner) record(target *mirrorqueue.Target, task *mirrorqueue.Task, observed bool) {
-	_ = r.Store.Update(func(queue *mirrorqueue.Queue) error {
+func (r *Runner) record(target *mirrorqueue.Target, task *mirrorqueue.Task, observed bool) error {
+	return r.Store.Update(func(queue *mirrorqueue.Queue) error {
 		if existing, ok := queue.Task(task.ID); ok {
 			*existing = *task
 		} else {
@@ -684,5 +702,5 @@ func (r *Runner) PublishTarget(ctx context.Context, name string, changed, observ
 	if !ok {
 		return mirrorqueue.Task{}, fmt.Errorf("the mirror queue has no target named %q", name)
 	}
-	return r.publishTarget(ctx, target, change{changed: changed, observed: observed}), nil
+	return r.publishTarget(ctx, target, change{changed: changed, observed: observed})
 }
