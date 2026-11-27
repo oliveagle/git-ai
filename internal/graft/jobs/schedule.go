@@ -2,12 +2,15 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 )
 
 // The identifiers of the schedules of the jobs.
@@ -23,6 +26,9 @@ const (
 	ScheduleDatabaseDump = "graft-database-dump"
 	// ScheduleDatabaseDumpCI dumps the database of the CI server of the node.
 	ScheduleDatabaseDumpCI = "graft-database-dump-ci"
+	// ScheduleRemoteImport imports the state of a remote repository into the
+	// storage core.
+	ScheduleRemoteImport = "graft-remote-import"
 	// ScheduleLocalBackupGate asks the gate of the local repositories whether
 	// every checkout has an origin that holds its commits.
 	ScheduleLocalBackupGate = "graft-local-backup-gate"
@@ -147,6 +153,27 @@ func Schedules(o Options) []Schedule {
 			}},
 		})
 	}
+	if o.Import.Script != "" {
+		args := []string{}
+		if o.Import.Repository != "" {
+			args = append(args, o.Import.Repository)
+		}
+		if o.Import.Remote != "" {
+			args = append(args, o.Import.Remote)
+		}
+		schedules = append(schedules, Schedule{
+			ID:        ScheduleRemoteImport,
+			Title:     "import the state of the remote repository into the storage core",
+			Workflow:  WorkflowRemoteImport,
+			TaskQueue: o.TaskQueue,
+			Every:     importEvery(o.Import.Every),
+			Args: []any{RemoteImportInput{
+				Script:  o.Import.Script,
+				Args:    args,
+				Timeout: importTimeout(o.Import.Timeout),
+			}},
+		})
+	}
 	if o.Local.Script != "" {
 		args := []string{}
 		for _, root := range o.Local.Roots {
@@ -211,6 +238,24 @@ func dumpCron(name, fallback string) string {
 	return name
 }
 
+// importEvery is how often the import runs, or the half hour the node used
+// when the operator did not name another.
+func importEvery(every time.Duration) time.Duration {
+	if every <= 0 {
+		return 30 * time.Minute
+	}
+	return every
+}
+
+// importTimeout bounds one import, or the half hour the node used when the
+// operator did not name another.
+func importTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return 30 * time.Minute
+	}
+	return timeout
+}
+
 // localCron is the calendar of a schedule of the workstation, or the one the
 // workstation used when the operator did not name another.
 func localCron(name, fallback string) string {
@@ -248,16 +293,44 @@ func (d DumpOptions) env() map[string]string {
 func Register(ctx context.Context, c client.Client, o Options) ([]string, error) {
 	var registered []string
 	for _, s := range Schedules(o) {
-		handle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		options := client.ScheduleOptions{
 			ID:      s.ID,
 			Spec:    scheduleSpec(s),
 			Action:  scheduleAction(s),
 			Paused:  s.Paused,
 			Note:    s.Title,
 			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_SKIP,
-		})
+		}
+		handle, err := c.ScheduleClient().Create(ctx, options)
 		if err != nil {
-			return registered, fmt.Errorf("the schedule %s could not be created: %w", s.ID, err)
+			var exists *serviceerror.AlreadyExists
+			if !errors.Is(err, temporal.ErrScheduleAlreadyRunning) && !errors.As(err, &exists) {
+				return registered, fmt.Errorf("the schedule %s could not be created: %w", s.ID, err)
+			}
+			// The schedule is on the server already: it is updated instead of
+			// created, so that the operator may run this again after a change
+			// of the configuration, and the runs the schedule had keep their
+			// history.
+			handle = c.ScheduleClient().GetHandle(ctx, s.ID)
+			if err := handle.Update(ctx, client.ScheduleUpdateOptions{
+				DoUpdate: func(in client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+					schedule := in.Description.Schedule
+					schedule.Spec = &options.Spec
+					schedule.Action = options.Action
+					if schedule.Policy == nil {
+						schedule.Policy = &client.SchedulePolicies{}
+					}
+					schedule.Policy.Overlap = options.Overlap
+					if schedule.State == nil {
+						schedule.State = &client.ScheduleState{}
+					}
+					schedule.State.Paused = options.Paused
+					schedule.State.Note = options.Note
+					return &client.ScheduleUpdate{Schedule: &schedule}, nil
+				},
+			}); err != nil {
+				return registered, fmt.Errorf("the schedule %s could not be updated: %w", s.ID, err)
+			}
 		}
 		registered = append(registered, s.ID)
 		_ = handle

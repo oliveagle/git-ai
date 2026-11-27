@@ -191,6 +191,31 @@ is `diverged`, and the run exits 1. Only a target that was given `--force`
 overwrites it, and that is a decision of a person, made once, on the target
 and not on the run.
 
+## The other direction: a remote that moved ahead
+
+The mirror is one-way: the queue publishes the storage core to a remote, and
+the queue never pulls. A remote that is worked on directly moves ahead of the
+storage core, and the queue then reports the target as `diverged` — it does
+not push commits it does not have, and the commits of the remote stay in the
+remote.
+
+The job `graft-remote-import` closes that loop (see [JOBS.md](JOBS.md)). It
+brings the commits of the remote into the storage core through a land, which
+is the only way the storage core moves a reference, and the objects of the
+remote end up in the object store of the storage core.
+
+Two things are worth knowing about it:
+
+- The objects of the remote are fetched into the repository of the server
+  *without* moving a reference. A fetch that moves the reference writes
+  behind the server's back: the database keeps the old commit, the repository
+  of the server has the new one, and the server then believes the branch is
+  already where the remote put it — the land answers "already landed" and the
+  database is never updated.
+- `graft storage import` does not move the references of a repository that is
+  imported already: it brings in the changelog and the reviews. It is the way
+  to register a repository, not the way to bring a remote in.
+
 ## Events, and the interval as the fallback
 
 A schedule alone is a blunt instrument: every repository is published as often

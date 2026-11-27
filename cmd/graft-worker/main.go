@@ -82,6 +82,12 @@ type options struct {
 	dumpCIDir      string
 	dumpCIKeep     int
 
+	importScript  string
+	importRepo    string
+	importRemote  string
+	importEvery   time.Duration
+	importTimeout time.Duration
+
 	tokenFile string
 
 	rest []string
@@ -271,6 +277,13 @@ func (o *options) jobs() jobs.Options {
 			Directory: o.dumpDir,
 			Keep:      o.dumpKeep,
 		},
+		Import: jobs.ImportOptions{
+			Script:     o.importScript,
+			Repository: o.importRepo,
+			Remote:     o.importRemote,
+			Every:      o.importEvery,
+			Timeout:    o.importTimeout,
+		},
 		DumpCI: jobs.DumpOptions{
 			Script:    o.dumpCIScript,
 			Args:      splitArgs(o.dumpCIArgs),
@@ -363,6 +376,11 @@ func parseOptions(args []string) (*options, error) {
 	fs.StringVar(&o.localFullCron, "local-full-cron", os.Getenv("GRAFT_WORKER_LOCAL_FULL_CRON"), "when the full backup runs, in the cron syntax")
 	fs.StringVar(&o.localIncrScript, "local-incremental-script", os.Getenv("GRAFT_WORKER_LOCAL_INCREMENTAL_SCRIPT"), "script that backs the checkouts up since the last one")
 	fs.StringVar(&o.localIncrCron, "local-incremental-cron", os.Getenv("GRAFT_WORKER_LOCAL_INCREMENTAL_CRON"), "when the incremental backup runs, in the cron syntax")
+	fs.StringVar(&o.importScript, "import-script", os.Getenv("GRAFT_WORKER_IMPORT_SCRIPT"), "script that imports the state of a remote repository into the storage core")
+	fs.StringVar(&o.importRepo, "import-repo", os.Getenv("GRAFT_WORKER_IMPORT_REPO"), "repository that is imported, e.g. quant_mt5.git")
+	fs.StringVar(&o.importRemote, "import-remote", os.Getenv("GRAFT_WORKER_IMPORT_REMOTE"), "Git URL the state of the repository is imported from")
+	fs.DurationVar(&o.importEvery, "import-every", envDuration("GRAFT_WORKER_IMPORT_EVERY", 30*time.Minute), "how often the import runs")
+	fs.DurationVar(&o.importTimeout, "import-timeout", envDuration("GRAFT_WORKER_IMPORT_TIMEOUT", 30*time.Minute), "how long one import may run")
 	fs.StringVar(&o.dumpScript, "dump-script", os.Getenv("GRAFT_WORKER_DUMP_SCRIPT"), "script that dumps the database of the node")
 	fs.StringVar(&o.dumpArgs, "dump-args", os.Getenv("GRAFT_WORKER_DUMP_ARGS"), "arguments of the dump script, space separated")
 	fs.StringVar(&o.dumpCron, "dump-cron", os.Getenv("GRAFT_WORKER_DUMP_CRON"), "when the dump of the storage core runs, in the cron syntax")
@@ -416,6 +434,20 @@ func envInt(name string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// envDuration returns the value of the environment variable as a duration, or
+// the fallback when the variable is not set.
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
 	if err != nil {
 		return fallback
 	}

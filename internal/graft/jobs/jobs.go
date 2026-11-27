@@ -62,6 +62,9 @@ type Options struct {
 	Dump DumpOptions
 	// DumpCI is the database of the CI server of the node.
 	DumpCI DumpOptions
+	// Import is the import of the state of a remote repository into the
+	// storage core.
+	Import ImportOptions
 }
 
 // MirrorOptions are the queue and the server of the mirror queue of a node.
@@ -135,6 +138,22 @@ type DumpOptions struct {
 	Keep int
 }
 
+// ImportOptions are the files of the import job of a node.
+type ImportOptions struct {
+	// Script is the import script of the node. It reads the references the
+	// storage core holds, builds the bundle of what the remote has and the
+	// storage core does not, and hands that bundle to the storage core.
+	Script string
+	// Repository is the repository that is imported, e.g. quant_mt5.git.
+	Repository string
+	// Remote is the Git URL the state is imported from.
+	Remote string
+	// Every is how often the import runs.
+	Every time.Duration
+	// Timeout bounds one import.
+	Timeout time.Duration
+}
+
 // NewClient returns a client of the Temporal server the options name.
 func NewClient(o Options) (client.Client, error) {
 	return client.Dial(client.Options{
@@ -161,6 +180,7 @@ func RegisterWorkflows(w worker.Worker) {
 	w.RegisterWorkflowWithOptions(BackupGateWorkflow, workflow.RegisterOptions{Name: WorkflowBackupGate})
 	w.RegisterWorkflowWithOptions(DatabaseDumpWorkflow, workflow.RegisterOptions{Name: WorkflowDatabaseDump})
 	w.RegisterWorkflowWithOptions(LocalBackupWorkflow, workflow.RegisterOptions{Name: WorkflowLocalBackup})
+	w.RegisterWorkflowWithOptions(RemoteImportWorkflow, workflow.RegisterOptions{Name: WorkflowRemoteImport})
 }
 
 // RegisterActivities registers every activity of the package on a worker.
@@ -171,6 +191,7 @@ func RegisterActivities(w worker.Worker, a Activities) {
 	w.RegisterActivity(a.RunGate)
 	w.RegisterActivity(a.DumpDatabase)
 	w.RegisterActivity(a.RunScript)
+	w.RegisterActivity(a.ImportRemote)
 }
 
 // EnsureNamespace registers the namespace of the jobs when the server does not
